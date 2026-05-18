@@ -19,6 +19,8 @@ pyinstaller run.py `
     --specpath (Join-Path $root "build\pyinstaller-spec") `
     --noconfirm `
     --collect-data litellm `
+    --collect-data tiktoken `
+    --collect-data tiktoken_ext `
     --hidden-import uvicorn.logging `
     --hidden-import uvicorn.loops `
     --hidden-import uvicorn.loops.auto `
