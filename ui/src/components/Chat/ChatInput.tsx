@@ -22,6 +22,8 @@ interface ChatInputProps {
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
   placeholder?: string;
+  fillText?: string;
+  onFillTextConsumed?: () => void;
 }
 
 interface PendingFile {
@@ -43,6 +45,7 @@ export function ChatInput({
   onSend, onStop, disabled, isStreaming,
   models, model, onModelChange, thinkingEnabled, onThinkingToggle,
   placeholder = "Message…",
+  fillText, onFillTextConsumed,
 }: ChatInputProps) {
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -145,6 +148,16 @@ export function ChatInput({
     el.addEventListener("keydown", onKey);
     return () => el.removeEventListener("keydown", onKey);
   }, [editor, handleSend, isStreaming]);
+
+  /* ── fill text from outside (chips) ─────────── */
+
+  useEffect(() => {
+    if (!fillText || !editor) return;
+    editor.commands.setContent(fillText);
+    editor.commands.focus("end");
+    setTextLen(fillText.length);
+    onFillTextConsumed?.();
+  }, [fillText, editor, onFillTextConsumed]);
 
   /* ── paste (Ctrl+V images) ────────────────── */
 

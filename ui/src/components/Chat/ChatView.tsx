@@ -83,6 +83,7 @@ export function ChatView({
   const shouldAutoScroll = useRef(true);
   const welcomePhrase = useMemo(() => pickPhrase(), []);
   const { displayed, done: typingDone } = useTypewriter(welcomePhrase);
+  const [fillText, setFillText] = useState<string | null>(null);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -147,7 +148,7 @@ export function ChatView({
           </div>
           <div className="chat-welcome-chips">
             {QUICK_CHIPS.map((chip) => (
-              <button key={chip} className="chat-welcome-chip" onClick={() => onSend(chip, [])}>
+              <button key={chip} className="chat-welcome-chip" onClick={() => setFillText(chip)}>
                 {chip}
               </button>
             ))}
@@ -164,6 +165,8 @@ export function ChatView({
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
               placeholder="Чем я могу помочь?"
+              fillText={fillText ?? undefined}
+              onFillTextConsumed={() => setFillText(null)}
             />
           </div>
         </div>
