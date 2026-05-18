@@ -1,0 +1,76 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev --prefix D:\\AgentChat\\ui",
+    "beforeBuildCommand": "npm run build --prefix D:\\AgentChat\\ui",
+    "devPath": "http://127.0.0.1:5173",
+    "distDir": "../ui/dist"
+  },
+  "package": {
+    "productName": "AgentChat",
+    "version": "0.1.0-beta1"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": true,
+        "execute": true,
+        "sidecar": true,
+        "scope": [
+          { "name": "python", "cmd": "python", "args": true }
+        ]
+      },
+      "fs": {
+        "all": true,
+        "scope": ["**"]
+      },
+      "process": {
+        "all": true
+      },
+      "updater": {
+        "all": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.zorahm.custom-ai-chat",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.ico",
+        "icons/icon.icns",
+        "icons/icon.png"
+      ],
+      "resources": [],
+      "externalBin": [
+        "binaries/backend"
+      ],
+      "copyright": "",
+      "category": "DeveloperTool",
+      "shortDescription": "Desktop AI chat with agent loop",
+      "longDescription": "Desktop application with agentic AI chat. Tauri shell, Python agent loop, LiteLLM provider abstraction, skill packages with hot-reload manifest."
+    },
+    "windows": [
+      {
+        "title": "AgentChat",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 500
+      }
+    ],
+    "updater": {
+      "active": false,
+      "endpoints": [
+        "https://github.com/Zorahm/AgentChat/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": ""
+    },
+    "security": {
+      "csp": null
+    }
+  }
+}

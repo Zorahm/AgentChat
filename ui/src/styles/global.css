@@ -1,0 +1,163 @@
+/* AgentChat — design tokens, reset, typography */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* surface */
+  --bg:        #f6f4ef;
+  --surface:   #ffffff;
+  --surface-2: #faf8f3;
+  --paper:     #ffffff;
+  --paper-2:   #faf8f3;
+  --hover:     #f1efe9;
+
+  /* ink */
+  --ink:       #1a1a1a;
+  --ink-2:     #3d3d3a;
+  --ink-soft:  #5c5b57;
+  --muted:     #767470;
+  --faint:     #a8a59f;
+
+  /* borders */
+  --line:      rgba(20,20,18,.08);
+  --line-2:    rgba(20,20,18,.14);
+
+  /* accent + status */
+  --accent:      #6b4f3a;
+  --accent-2:    #8a6d4f;
+  --accent-soft: #efe9df;
+  --running:     #b8893a;
+  --ok:          #4a7a4a;
+  --err:         #b1554a;
+  --user-bg:     #1a1a1a;
+  --on-ink:      #ffffff;
+  --ink-hover:   #000000;
+  --running-soft:   #fcf8ef;
+  --running-soft-2: #f7ebcb;
+  --running-line:   #e8d3a3;
+  --running-tag-bg: #fcf3df;
+  --running-tag-ln: #ebd5a3;
+  --err-soft:       #fbf4f2;
+  --err-soft-2:     #f3dcd6;
+  --err-soft-3:     #fbf0ec;
+  --err-line:       #e9c8c1;
+  --ok-soft:        #e8f2e6;
+  --ok-soft-2:      #fbfdf9;
+  --ok-line:        #c9dcc4;
+  --skill-bg:   #e3ebe3;
+  --skill-fg:   #3d6b3d;
+  --url-bg:     #e4e2f0;
+  --url-fg:     #4a4585;
+  --switch-off: #d8d5cc;
+  --switch-thumb: #ffffff;
+  --disabled-bg: #d8d5cc;
+  --code-k: #7c3aed;
+  --code-s: #3d6b3d;
+  --code-f: #3a6bb1;
+  --shadow-tone:  20,20,18;
+
+  /* radii */
+  --radius-lg: 14px;
+  --radius:    10px;
+  --radius-sm: 6px;
+
+  /* shadows */
+  --shadow-sm: 0 1px 2px rgba(20,20,18,.04), 0 0 0 1px var(--line);
+  --shadow:    0 1px 3px rgba(20,20,18,.04), 0 8px 24px -12px rgba(20,20,18,.10), 0 0 0 1px var(--line);
+
+  /* type */
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-hand: 'Instrument Serif', 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+[data-theme="dark"] {
+  --bg:        #15130e;
+  --surface:   #1d1b15;
+  --surface-2: #19170f;
+  --paper:     #1d1b15;
+  --paper-2:   #19170f;
+  --hover:     #2a2620;
+
+  --ink:       #f0ead8;
+  --ink-2:     #cdc6b1;
+  --ink-soft:  #bab39e;
+  --muted:     #8a8472;
+  --faint:     #5f5a4d;
+
+  --line:      rgba(245,240,225,.07);
+  --line-2:    rgba(245,240,225,.13);
+
+  --accent:      #d4b088;
+  --accent-2:    #c4a074;
+  --accent-soft: #2c241b;
+  --running:     #d4a050;
+  --ok:          #7eaf7e;
+  --err:         #d68070;
+  --user-bg:     #3a2f23;
+  --on-ink:      #1a1610;
+  --ink-hover:   #ffffff;
+
+  --running-soft:   #221c10;
+  --running-soft-2: #3a2f1a;
+  --running-line:   #4d3d22;
+  --running-tag-bg: #2a2110;
+  --running-tag-ln: #4d3d22;
+  --err-soft:       #261714;
+  --err-soft-2:     #3a221c;
+  --err-soft-3:     #2a1814;
+  --err-line:       #4a2a24;
+  --ok-soft:        #182218;
+  --ok-soft-2:      #161c14;
+  --ok-line:        #2e4530;
+  --skill-bg:   #1c2a1c;
+  --skill-fg:   #8fbf8f;
+  --url-bg:     #1f1e2e;
+  --url-fg:     #9e98d8;
+  --switch-off: #3a352c;
+  --switch-thumb: #d8d2c0;
+  --disabled-bg: #2a2620;
+  --code-k: #b48ce8;
+  --code-s: #8fbf8f;
+  --code-f: #7d9fd8;
+  --shadow-tone:  0,0,0;
+
+  --shadow-sm: 0 1px 2px rgba(var(--shadow-tone),.30), 0 0 0 1px var(--line);
+  --shadow:    0 1px 3px rgba(var(--shadow-tone),.30), 0 8px 24px -12px rgba(var(--shadow-tone),.50), 0 0 0 1px var(--line);
+}
+
+html, body {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--ink);
+  height: 100%;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root { height: 100%; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; margin: 2px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(20,20,18,.12);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(20,20,18,.22);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

@@ -1,0 +1,29 @@
+[project]
+name = "custom-ai-chat"
+version = "0.1.0"
+description = "Desktop AI chat with agent loop"
+requires-python = ">=3.11"
+dependencies = [
+    "litellm>=1.40.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "sse-starlette>=2.0.0",
+    "watchdog>=4.0.0",
+    "python-multipart>=0.0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

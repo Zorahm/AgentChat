@@ -1,0 +1,20 @@
+[package]
+name = "custom-ai-chat"
+version = "0.1.0"
+description = "Desktop AI chat with agent loop"
+authors = ["zorahm"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.7", features = ["shell-all", "fs-all", "process-all", "updater"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["blocking"], default-features = false }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

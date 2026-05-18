@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# PyInstaller
+src-tauri/binaries/
+build/pyinstaller-*/
+
+# Rust / Tauri
+src-tauri/target/
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# Tauri signing key (never commit)
+*.key
+*.key.pub
+
+# Local agent config and installed skills
+.claude/
+.agents/
+
+# Generated docs / specs / plans
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
