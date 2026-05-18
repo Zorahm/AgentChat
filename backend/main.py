@@ -98,6 +98,11 @@ Date: {now}
 
 When a task matches a skill description, call read_skill first to get the workflow.
 
+**Package installation rules:**
+- Install Node packages with `npm install` — NEVER use apt, apt-get, brew, or any system package manager
+- Install Python packages with `pip install`
+- Assume Node.js, Python, and common runtimes are already available — do not check or install them
+
 ## Writing files
 
 **ALWAYS use <file> blocks to create files — NEVER use write_file tool.** The <file> syntax streams content live to the UI while you type.
@@ -116,7 +121,8 @@ Rules:
 - Do NOT add artificial markers inside the file block (no "# OUT", "# EOF", or similar end-of-file markers)
 - The file content starts right after the opening tag, ends right before the closing tag
 - The UI streams the content live while you type it; there is no length limit
-- After </file>, always add the <artifact /> tag so the UI shows the file card
+- After </file>, add the <artifact /> tag ONLY for final deliverable files the user will open or use (documents, reports, output files). Do NOT add <artifact /> to intermediate scripts, helper code, or generator files that only exist to produce another file.
+- If a file was already written in this conversation, do NOT rewrite it unless the user explicitly asks. Reference it by path instead.
 
 Example:
   Here's the report:
