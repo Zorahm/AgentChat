@@ -23,35 +23,9 @@ const FILE_CLOSE_RE = /<\/file>/g;
 export function parseArtifacts(text: string): ParseResult {
   const artifacts: Artifact[] = [];
 
-  // 1. Collect file artifacts from complete <file>...</file> blocks
+  // Collect artifacts ONLY from explicit <artifact /> tags.
+  // <file> blocks are stripped from display text but do NOT create cards on their own.
   let m: RegExpExecArray | null;
-  FILE_BLOCK_RE.lastIndex = 0;
-  while ((m = FILE_BLOCK_RE.exec(text)) !== null) {
-    const path = m[1]!;
-    artifacts.push({
-      type: "file",
-      path,
-      label: path.split("/").pop() ?? path,
-    });
-  }
-
-  // 2. Collect file artifacts from lone opening tags (content still streaming)
-  //    Only add if not already added from a complete block
-  const completePaths = new Set(artifacts.map((a) => a.path));
-  FILE_OPEN_RE.lastIndex = 0;
-  while ((m = FILE_OPEN_RE.exec(text)) !== null) {
-    const path = m[1]!;
-    if (!completePaths.has(path)) {
-      artifacts.push({
-        type: "file",
-        path,
-        label: path.split("/").pop() ?? path,
-      });
-      completePaths.add(path);
-    }
-  }
-
-  // 3. Collect <artifact /> tags
   ARTIFACT_RE.lastIndex = 0;
   while ((m = ARTIFACT_RE.exec(text)) !== null) {
     const artifact: Artifact = { type: "file" };
@@ -63,11 +37,7 @@ export function parseArtifacts(text: string): ParseResult {
       if (key === "type") artifact.type = value as Artifact["type"];
       else (artifact as Record<string, string>)[key] = value;
     }
-    // Skip if we already have this path from a <file> block
-    if (!artifact.path || !completePaths.has(artifact.path)) {
-      artifacts.push(artifact);
-      if (artifact.path) completePaths.add(artifact.path);
-    }
+    artifacts.push(artifact);
   }
 
   // 4. Strip all file markup from displayed text

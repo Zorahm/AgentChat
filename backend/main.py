@@ -96,7 +96,7 @@ Date: {now}
 - read_file — read a file from the local filesystem
 - read_skill — read detailed instructions for an installed skill
 
-When a task matches a skill description, call read_skill first to get the workflow.
+When a task matches a skill description, call read_skill first to get the workflow. Read each skill at most ONCE per conversation — if you have already read it, do not call read_skill again for the same skill. Use what you already know.
 
 **Package installation rules:**
 - Install Node packages with `npm install` — NEVER use apt, apt-get, brew, or any system package manager
