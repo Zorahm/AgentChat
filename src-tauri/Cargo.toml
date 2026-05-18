@@ -1,5 +1,5 @@
 [package]
-name = "custom-ai-chat"
+name = "agentchat"
 version = "0.1.0"
 description = "Desktop AI chat with agent loop"
 authors = ["zorahm"]
@@ -7,14 +7,14 @@ edition = "2021"
 rust-version = "1.77"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "1.7", features = ["shell-all", "fs-all", "process-all", "updater"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["blocking"], default-features = false }
-
-[features]
-default = ["custom-protocol"]
-custom-protocol = ["tauri/custom-protocol"]
+reqwest = { version = "0.12", features = ["blocking"], default-features = false, package = "reqwest" }

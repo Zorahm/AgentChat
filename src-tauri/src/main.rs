@@ -25,17 +25,12 @@ struct BackendProcess {
 }
 
 /// Find the pre-built backend.exe sidecar (production).
-/// Located next to the main executable after Tauri bundles it.
 fn find_sidecar_exe() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))?;
     let sidecar = exe_dir.join("backend.exe");
-    if sidecar.exists() {
-        Some(sidecar)
-    } else {
-        None
-    }
+    if sidecar.exists() { Some(sidecar) } else { None }
 }
 
 /// Fallback: locate system Python (development mode).
@@ -50,34 +45,19 @@ fn find_python() -> Option<String> {
 
 /// Fallback: resolve backend source directory (development mode).
 fn find_backend_dir() -> PathBuf {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_default();
-
     if let Ok(cwd) = std::env::current_dir() {
         let dev_path = cwd.join("../backend");
         if dev_path.join("main.py").exists() {
             return dev_path;
         }
     }
-
-    let prod_path = exe_dir.join("backend");
-    if prod_path.join("main.py").exists() {
-        return prod_path;
-    }
-
-    std::env::current_dir()
-        .unwrap_or_default()
-        .join("../backend")
+    std::env::current_dir().unwrap_or_default().join("../backend")
 }
 
-/// Spawn the bundled backend.exe sidecar.
 fn spawn_sidecar(path: &PathBuf) -> Option<Child> {
     Command::new(path).spawn().ok()
 }
 
-/// Dev fallback: spawn python -m uvicorn.
 fn spawn_python_backend(backend_dir: &std::path::Path) -> Option<Child> {
     let python = find_python()?;
     Command::new(&python)
@@ -109,7 +89,6 @@ fn wait_for_backend() {
 // ---------------------------------------------------------------------------
 
 fn main() {
-    // Try sidecar first (production), fall back to dev python
     let mut backend_child: Option<Child> = if let Some(sidecar) = find_sidecar_exe() {
         spawn_sidecar(&sidecar)
     } else {
@@ -121,6 +100,10 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(BackendProcess {
             child: Mutex::new(backend_child.take()),
         })
