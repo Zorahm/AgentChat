@@ -1,6 +1,6 @@
 /** Chat column — header + scrolled message list + composer. */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, Sparkle } from "@phosphor-icons/react";
 import type { AgentChatState } from "../../hooks/useAgentChat";
 import { ChatInput } from "./ChatInput";
@@ -44,8 +44,33 @@ const WELCOME_PHRASES = [
   "Время магии.",
 ];
 
+const QUICK_CHIPS = [
+  "Напиши bash-скрипт",
+  "Объясни этот код",
+  "Найди баг",
+  "Создай файл",
+];
+
 function pickPhrase(): string {
   return WELCOME_PHRASES[Math.floor(Math.random() * WELCOME_PHRASES.length)]!;
+}
+
+function useTypewriter(text: string, speed = 45): { displayed: string; done: boolean } {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    setDisplayed("");
+    setDone(false);
+  }, [text]);
+  useEffect(() => {
+    if (done || displayed.length >= text.length) { setDone(true); return; }
+    const t = setTimeout(
+      () => setDisplayed(text.slice(0, displayed.length + 1)),
+      speed + Math.random() * 20,
+    );
+    return () => clearTimeout(t);
+  }, [displayed, done, text, speed]);
+  return { displayed, done };
 }
 
 export function ChatView({
@@ -57,6 +82,7 @@ export function ChatView({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const welcomePhrase = useMemo(() => pickPhrase(), []);
+  const { displayed, done: typingDone } = useTypewriter(welcomePhrase);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -113,9 +139,19 @@ export function ChatView({
       {isEmpty ? (
         <div className="chat-welcome">
           <div className="chat-welcome-logo">
-            <Sparkle />
+            <Sparkle weight="duotone" />
           </div>
-          <div className="chat-welcome-title">{welcomePhrase}</div>
+          <div className="chat-welcome-title">
+            {displayed}
+            {!typingDone && <span className="chat-welcome-cursor" aria-hidden>|</span>}
+          </div>
+          <div className="chat-welcome-chips">
+            {QUICK_CHIPS.map((chip) => (
+              <button key={chip} className="chat-welcome-chip" onClick={() => onSend(chip, [])}>
+                {chip}
+              </button>
+            ))}
+          </div>
           <div className="chat-welcome-input">
             <ChatInput
               onSend={onSend}
