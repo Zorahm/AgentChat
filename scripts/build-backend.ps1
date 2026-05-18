@@ -8,6 +8,11 @@ $binDir = Join-Path $root "src-tauri\binaries"
 Write-Host "==> Installing build dependencies..."
 pip install pyinstaller --quiet
 
+Write-Host "==> Pre-downloading tiktoken encoding files..."
+python -c "import tiktoken; [tiktoken.get_encoding(e) for e in ('cl100k_base','p50k_base','r50k_base','o200k_base')]"
+$tiktokenCache = "$env:USERPROFILE\.tiktoken"
+Write-Host "==> tiktoken cache: $tiktokenCache"
+
 Write-Host "==> Running PyInstaller..."
 Set-Location (Join-Path $root "backend")
 
@@ -18,9 +23,11 @@ pyinstaller run.py `
     --workpath (Join-Path $root "build\pyinstaller-work") `
     --specpath (Join-Path $root "build\pyinstaller-spec") `
     --noconfirm `
-    --collect-data litellm `
-    --collect-data tiktoken `
-    --collect-data tiktoken_ext `
+    --collect-all litellm `
+    --collect-all tiktoken `
+    --collect-all tiktoken_ext `
+    --collect-all watchdog `
+    --collect-data certifi `
     --hidden-import uvicorn.logging `
     --hidden-import uvicorn.loops `
     --hidden-import uvicorn.loops.auto `
@@ -30,7 +37,10 @@ pyinstaller run.py `
     --hidden-import uvicorn.lifespan `
     --hidden-import uvicorn.lifespan.on `
     --hidden-import uvicorn.lifespan.off `
-    --hidden-import anyio._backends._asyncio
+    --hidden-import anyio._backends._asyncio `
+    --hidden-import multipart `
+    --hidden-import python_multipart `
+    --add-data "${tiktokenCache};tiktoken_cache"
 
 Set-Location $root
 
