@@ -62,12 +62,12 @@
       }
     ],
     "updater": {
-      "active": false,
+      "active": true,
       "endpoints": [
         "https://github.com/Zorahm/AgentChat/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4NzQzRDcwQjc5NTlDRUQKUldUdG5KVzNjRDEwYUsxeFd1UVFnL1hrVFc4Z0laSHpDZkEyTVBQbWFqM2FHRTFIM2wzSW5qYmsK"
     },
     "security": {
       "csp": null
