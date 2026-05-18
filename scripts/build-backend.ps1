@@ -9,9 +9,13 @@ Write-Host "==> Installing build dependencies..."
 pip install pyinstaller --quiet
 
 Write-Host "==> Pre-downloading tiktoken encoding files..."
+$tiktokenCache = Join-Path $root "build\tiktoken-cache"
+if (Test-Path $tiktokenCache) { Remove-Item $tiktokenCache -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $tiktokenCache | Out-Null
+$env:TIKTOKEN_CACHE_DIR = $tiktokenCache
 python -c "import tiktoken; [tiktoken.get_encoding(e) for e in ('cl100k_base','p50k_base','r50k_base','o200k_base')]"
-$tiktokenCache = "$env:USERPROFILE\.tiktoken"
 Write-Host "==> tiktoken cache: $tiktokenCache"
+Get-ChildItem $tiktokenCache | ForEach-Object { Write-Host "    $($_.Name)" }
 
 Write-Host "==> Running PyInstaller..."
 Set-Location (Join-Path $root "backend")
@@ -38,7 +42,6 @@ pyinstaller run.py `
     --hidden-import uvicorn.lifespan.on `
     --hidden-import uvicorn.lifespan.off `
     --hidden-import anyio._backends._asyncio `
-    --hidden-import multipart `
     --hidden-import python_multipart `
     --add-data "${tiktokenCache};tiktoken_cache"
 
