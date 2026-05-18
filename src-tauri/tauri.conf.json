@@ -26,9 +26,6 @@
       },
       "process": {
         "all": true
-      },
-      "updater": {
-        "all": true
       }
     },
     "bundle": {
