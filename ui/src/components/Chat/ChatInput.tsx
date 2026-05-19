@@ -50,7 +50,12 @@ export function ChatInput({
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mentionSuggestion = useRef(buildMentionSuggestion()).current;
+  // Bind the mention popup's "attach file" action to our file input.
+  const mentionSuggestion = useRef(
+    buildMentionSuggestion({
+      onAttachFile: () => fileInputRef.current?.click(),
+    }),
+  ).current;
 
   /* ── send ─────────────────────────────────── */
 

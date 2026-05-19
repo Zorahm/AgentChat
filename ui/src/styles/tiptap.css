@@ -39,25 +39,59 @@
 .mention-dropdown,
 .mp-pop {
   position: fixed; z-index: 200;
-  width: 280px;
+  width: 260px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px;
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   box-shadow: 0 10px 30px -10px rgba(20,20,18,.18), 0 0 0 1px var(--line);
-  overflow: hidden;
+}
+
+.mp-empty {
+  padding: 14px;
+  color: var(--faint);
+  font-size: 12.5px;
+  text-align: center;
+  font-style: italic;
+}
+
+.mp-item-sub {
+  display: block;
+  color: var(--faint);
+  font-size: 11.5px;
+  margin-top: 1px;
+}
+
+.mp-tooltip {
+  position: fixed;
+  z-index: 201;
+  width: 280px;
+  padding: 10px 12px;
+  background: #1f1f1f;
+  color: #e4e4e4;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0,0,0,.32);
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .mp-head {
-  padding: 8px 14px;
+  padding: 6px 10px;
   font-family: var(--font-mono); font-size: 10px; color: var(--faint);
   letter-spacing: 1px; text-transform: uppercase;
-  border-bottom: 1px solid var(--line);
 }
 
 .mp-item,
 .mention-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 14px; cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
   font-size: 13px;
 }
 .mp-item:hover,
@@ -67,10 +101,10 @@
 
 .mp-item-ic,
 .mention-item-label::before {
-  width: 22px; height: 22px; border-radius: 5px;
-  background: var(--surface-2);
+  width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; flex-shrink: 0;
+  font-size: 13px; flex-shrink: 0;
+  color: var(--faint);
 }
 
 .mp-item-info { flex: 1; min-width: 0; line-height: 1.25; }
@@ -80,14 +114,5 @@
   font-weight: 500; font-size: 13px; color: var(--ink);
 }
 
-.mp-item-desc,
-.mention-item-desc {
-  display: block;
-  color: var(--faint); font-family: var(--font-mono); font-size: 10.5px;
-  margin-top: 1px;
-}
-
 .mp-item.active .mp-item-label,
-.mp-item.active .mp-item-desc,
-.mention-item.active .mention-item-label,
-.mention-item.active .mention-item-desc { color: var(--ink); }
+.mention-item.active .mention-item-label { color: var(--ink); }

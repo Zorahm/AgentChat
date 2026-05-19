@@ -32,6 +32,10 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     model: str | None = Field(default=None, description="Override the configured model")
     attachments: list[AttachmentInfo] | None = None
+    chat_dir_slug: str | None = Field(
+        default=None,
+        description="Per-chat working directory slug (chat-{id}-{ts}). bash_tool cwd's into ~/AgentChat/chats/{slug}/.",
+    )
 
 
 # ── Skills ────────────────────────────────────────────────────────────
@@ -101,6 +105,7 @@ class SettingsData(BaseModel):
     max_iterations: int = 10
     user_name: str = ""
     theme: str = "system"
+    onboarding_completed: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -111,6 +116,7 @@ class SettingsUpdate(BaseModel):
     max_iterations: int | None = None
     user_name: str | None = None
     theme: str | None = None
+    onboarding_completed: bool | None = None
 
 
 class ProviderUpdate(BaseModel):

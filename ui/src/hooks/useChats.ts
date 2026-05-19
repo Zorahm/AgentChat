@@ -42,6 +42,8 @@ export interface UseChatResult {
 
 const STORAGE_KEY = "aic-sessions-v2";
 const OLD_STORAGE_KEY = "aic-sessions-v1";
+const MIGRATION_FLAG = "aic-migration-v3-done";
+const SAVE_DEBOUNCE_MS = 1500;
 
 interface StoredSession {
   id: string;
@@ -95,37 +97,47 @@ function migrateSession(old: StoredSession): ChatSession {
   return { id: old.id, title: old.title, root, createdAt: old.createdAt };
 }
 
-function loadStoredSessions(): ChatSession[] {
+/** Read sessions from localStorage. Used only by the one-shot migration to
+ * SQLite — after migration the backend is the source of truth. */
+function readLocalSessions(): ChatSession[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw) as StoredSession[];
       if (Array.isArray(data) && data.length > 0 && data[0]!.root) {
-        return data as ChatSession[];
+        return (data as ChatSession[]).map(backfillDirSlug);
       }
     }
     const oldRaw = localStorage.getItem(OLD_STORAGE_KEY);
     if (oldRaw) {
       const oldData = JSON.parse(oldRaw) as StoredSession[];
       if (Array.isArray(oldData)) {
-        const migrated = oldData.map(migrateSession);
-        persistSessions(migrated);
-        localStorage.removeItem(OLD_STORAGE_KEY);
-        return migrated;
+        return oldData.map(migrateSession).map(backfillDirSlug);
       }
     }
   } catch {
-    /* corrupt storage — start fresh */
+    /* corrupt — caller treats as no data */
   }
   return [];
 }
 
-function persistSessions(sessions: ChatSession[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  } catch {
-    /* quota exceeded */
-  }
+/** Older sessions predate per-chat folders. Assign a slug derived from createdAt
+ * so the folder is stable across reloads (no UUID drift). */
+function backfillDirSlug(s: ChatSession): ChatSession {
+  if (s.dirSlug) return s;
+  const d = new Date(s.createdAt || Date.now());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const short = s.id.replace(/[^a-z0-9]/gi, "").slice(-4).toLowerCase() || "old0";
+  return { ...s, dirSlug: `chat-${short}-${ts}` };
+}
+
+function makeDirSlug(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  const id = Math.random().toString(36).slice(2, 6);
+  return `chat-${id}-${ts}`;
 }
 
 function makeSession(): ChatSession {
@@ -134,6 +146,7 @@ function makeSession(): ChatSession {
     title: "New chat",
     root: [],
     createdAt: Date.now(),
+    dirSlug: makeDirSlug(),
   };
 }
 
@@ -146,6 +159,127 @@ function deriveTitle(msgs: ChatMessage[]): string {
 
 let nextMsgId = 1;
 const newId = () => String(nextMsgId++);
+
+// ── Backend API helpers ────────────────────────────────────────────────────
+
+interface ChatSummaryDTO {
+  id: string;
+  title: string;
+  dir_slug: string;
+  created_at: number;
+  updated_at: number;
+}
+
+interface ChatFullDTO extends ChatSummaryDTO {
+  root: ChatNode[];
+}
+
+function summaryToSession(s: ChatSummaryDTO): ChatSession {
+  return {
+    id: s.id,
+    title: s.title,
+    root: [],
+    createdAt: s.created_at,
+    dirSlug: s.dir_slug || undefined,
+  };
+}
+
+function fullToSession(f: ChatFullDTO): ChatSession {
+  return {
+    id: f.id,
+    title: f.title,
+    root: f.root ?? [],
+    createdAt: f.created_at,
+    dirSlug: f.dir_slug || undefined,
+  };
+}
+
+async function fetchChatList(): Promise<ChatSession[]> {
+  try {
+    const r = await fetch(`${API_BASE}/chats`);
+    if (!r.ok) return [];
+    const list = (await r.json()) as ChatSummaryDTO[];
+    return list.map(summaryToSession);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchChatFull(id: string): Promise<ChatSession | null> {
+  try {
+    const r = await fetch(`${API_BASE}/chats/${encodeURIComponent(id)}`);
+    if (!r.ok) return null;
+    return fullToSession(await r.json());
+  } catch {
+    return null;
+  }
+}
+
+async function createChatRemote(s: ChatSession): Promise<ChatSession> {
+  try {
+    const r = await fetch(`${API_BASE}/chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: s.id,
+        title: s.title,
+        dir_slug: s.dirSlug ?? "",
+        root: s.root,
+        created_at: s.createdAt,
+      }),
+    });
+    if (r.ok) return fullToSession(await r.json());
+  } catch {
+    /* fall through */
+  }
+  return s; // offline — keep local copy; debounced save will retry
+}
+
+async function putChatRemote(s: ChatSession): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: s.title,
+        dir_slug: s.dirSlug ?? "",
+        root: s.root,
+      }),
+    });
+  } catch {
+    /* will retry on next change */
+  }
+}
+
+async function deleteChatRemote(id: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/chats/${encodeURIComponent(id)}`, { method: "DELETE" });
+  } catch {
+    /* no-op */
+  }
+}
+
+/** One-shot migration: drain localStorage chats into the SQLite backend. */
+async function maybeMigrateLocalStorage(): Promise<void> {
+  if (localStorage.getItem(MIGRATION_FLAG)) return;
+  const local = readLocalSessions();
+  if (local.length === 0) {
+    localStorage.setItem(MIGRATION_FLAG, "1");
+    return;
+  }
+  for (const s of local) {
+    await createChatRemote(s);
+  }
+  localStorage.setItem(MIGRATION_FLAG, "1");
+  // Don't delete STORAGE_KEY — keep as a local fallback in case the user
+  // wants to recover. The migration flag prevents re-import on next load.
+}
+
+/** Stable JSON snapshot for change detection. Skips ChatSession identity
+ * fields the backend doesn't care about. */
+function snapshot(s: ChatSession): string {
+  return JSON.stringify({ t: s.title, d: s.dirSlug ?? "", r: s.root });
+}
 
 // ── Tree helpers ───────────────────────────────────────────────────────────
 
@@ -440,24 +574,81 @@ function addVariant(session: ChatSession, nodeId: string): { session: ChatSessio
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 export function useChats(): UseChatResult {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    const stored = loadStoredSessions();
-    return stored.length ? stored : [makeSession()];
-  });
-
-  const [activeId, setActiveId] = useState<string>(() => {
-    const stored = loadStoredSessions();
-    return stored.length ? stored.at(-1)!.id : "";
-  });
-
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
   const [liveFiles, setLiveFiles] = useState<LiveFile[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sseRef = useRef<SSEReader | null>(null);
   const streamingTargetRef = useRef<{ nodeId: string; variantId: string } | null>(null);
+  const initializedRef = useRef(false);
+  /** Per-session JSON snapshot of the last value pushed to the backend. The
+   * effect that debounces saves compares against this to skip no-op writes. */
+  const lastSavedRef = useRef<Map<string, string>>(new Map());
+  /** Per-session pending save timer. */
+  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  // ── Initial load + one-shot migration ─────────────────────────────────
   useEffect(() => {
-    persistSessions(sessions);
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    (async () => {
+      await maybeMigrateLocalStorage();
+      const remote = await fetchChatList();
+      if (remote.length === 0) {
+        const fresh = makeSession();
+        const created = await createChatRemote(fresh);
+        setSessions([created]);
+        setActiveId(created.id);
+        lastSavedRef.current.set(created.id, snapshot(created));
+        return;
+      }
+      // Lazy-load: fetch the most recently updated chat's full tree right away
+      // so the user sees something on first paint. Other chats are loaded on switch.
+      const active = remote[0]!;
+      const full = await fetchChatFull(active.id);
+      const hydrated = remote.map((s) => (s.id === active.id && full ? full : s));
+      setSessions(hydrated);
+      setActiveId(active.id);
+      for (const s of hydrated) {
+        lastSavedRef.current.set(s.id, snapshot(s));
+      }
+    })();
+  }, []);
+
+  // ── Debounced auto-save ───────────────────────────────────────────────
+  useEffect(() => {
+    for (const s of sessions) {
+      const snap = snapshot(s);
+      if (lastSavedRef.current.get(s.id) === snap) continue;
+      const existing = saveTimersRef.current.get(s.id);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        // Read latest from closure — but we need fresh state, so look it up
+        // via the snapshot. We persist whatever the sessions array carries at
+        // schedule time; that's stale-by-one-batch at worst, fine for autosave.
+        void putChatRemote(s).then(() => {
+          lastSavedRef.current.set(s.id, snap);
+          saveTimersRef.current.delete(s.id);
+        });
+      }, SAVE_DEBOUNCE_MS);
+      saveTimersRef.current.set(s.id, timer);
+    }
+  }, [sessions]);
+
+  // Flush pending saves on unload (best-effort; navigator.sendBeacon doesn't
+  // help here because PUT body is JSON — but the browser may still complete
+  // the fetch if we don't await).
+  useEffect(() => {
+    const flush = () => {
+      for (const [id, timer] of saveTimersRef.current.entries()) {
+        clearTimeout(timer);
+        const s = sessions.find((x) => x.id === id);
+        if (s) void putChatRemote(s);
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
   }, [sessions]);
 
   const activeSession = sessions.find((s) => s.id === activeId) ?? sessions[0];
@@ -671,7 +862,12 @@ export function useChats(): UseChatResult {
       const handler = makeEventHandler(sid, assistantNodeId, variantId);
       const sse = sseConnect(
         `${API_BASE}/chat`,
-        { messages: history, model: model ?? undefined, attachments: attachments ?? undefined },
+        {
+          messages: history,
+          model: model ?? undefined,
+          attachments: attachments ?? undefined,
+          chat_dir_slug: currentSession.dirSlug,
+        },
         handler,
         (err: Error) => {
           setError(err.message);
@@ -733,7 +929,12 @@ export function useChats(): UseChatResult {
     const handler = makeEventHandler(sid, last.nodeId, variantId);
     const sse = sseConnect(
       `${API_BASE}/chat`,
-      { messages: history, model: model ?? undefined, attachments: userAttachments ?? undefined },
+      {
+        messages: history,
+        model: model ?? undefined,
+        attachments: userAttachments ?? undefined,
+        chat_dir_slug: activeSession.dirSlug,
+      },
       handler,
       (err: Error) => {
         setError(err.message);
@@ -782,10 +983,15 @@ export function useChats(): UseChatResult {
     streamingTargetRef.current = null;
     setIsStreaming(false);
     const session = makeSession();
-    setSessions((prev) => [...prev, session]);
+    setSessions((prev) => [session, ...prev]);
     setActiveId(session.id);
     setLiveFiles([]);
     setError(null);
+    // Reserve the row on the server so subsequent PUTs find it. Snapshot the
+    // freshly-created tree so the autosave effect doesn't redundantly PUT.
+    void createChatRemote(session).then(() => {
+      lastSavedRef.current.set(session.id, snapshot(session));
+    });
   }, []);
 
   const switchChat = useCallback(
@@ -798,8 +1004,18 @@ export function useChats(): UseChatResult {
       setActiveId(id);
       setLiveFiles([]);
       setError(null);
+      // Lazy-hydrate the tree if this chat came from the list endpoint
+      // (which only returns summaries).
+      const current = sessions.find((s) => s.id === id);
+      if (current && current.root.length === 0) {
+        void fetchChatFull(id).then((full) => {
+          if (!full) return;
+          setSessions((prev) => prev.map((s) => (s.id === id ? full : s)));
+          lastSavedRef.current.set(id, snapshot(full));
+        });
+      }
     },
-    [activeId],
+    [activeId, sessions],
   );
 
   const deleteChat = useCallback(
@@ -810,14 +1026,30 @@ export function useChats(): UseChatResult {
         streamingTargetRef.current = null;
         setIsStreaming(false);
       }
+      void deleteChatRemote(id);
+      lastSavedRef.current.delete(id);
+      const pendingTimer = saveTimersRef.current.get(id);
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        saveTimersRef.current.delete(id);
+      }
       setSessions((prev) => {
         const remaining = prev.filter((s) => s.id !== id);
         if (id === activeId) {
-          const next = remaining.at(-1) ?? makeSession();
+          if (remaining.length === 0) {
+            const next = makeSession();
+            setActiveId(next.id);
+            void createChatRemote(next).then(() => {
+              lastSavedRef.current.set(next.id, snapshot(next));
+            });
+            setLiveFiles([]);
+            setError(null);
+            return [next];
+          }
+          const next = remaining[0]!;
           setActiveId(next.id);
           setLiveFiles([]);
           setError(null);
-          return remaining.length ? remaining : [next];
         }
         return remaining;
       });

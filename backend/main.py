@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.chat import router as chat_router
+from api.chats import router as chats_router
 from api.files import router as files_router
 from api.health import router as health_router
 from api.models import (
@@ -44,9 +45,11 @@ from api.models import (
 from api.models_routes import router as models_router
 from api.settings import router as settings_router
 from api.skills import router as skills_router
+from api.wsl import router as wsl_router
 from llm.models_fetcher import ModelsFetcher, looks_thinking
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
+from store.chat_store import ChatStore
 from tools.bash_tool import BashTool
 from tools.read_file import ReadFileTool
 from tools.read_skill import ReadSkillTool
@@ -69,6 +72,7 @@ else:
 
 AGENTS_SKILLS_DIR = AGENTS_DIR / "skills"
 SETTINGS_FILE = AGENTS_DIR / "settings.json"
+CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
 # Cross-agent shared skills location per the Agent Skills convention:
 # ~/.agents/skills/ — read-only from this app's perspective (we don't install or
 # delete here, but we DO surface them to the model).
@@ -92,7 +96,7 @@ Date: {now}
 
 ## Tools
 
-- bash_tool — execute bash commands inside WSL. $USER and $HOME are set.
+- bash_tool — execute bash commands inside WSL. $USER and $HOME are set. Working directory is the current chat's folder under ~/AgentChat/chats/chat-<id>-<timestamp>/ — files you create with relative paths land there. Use absolute paths only when you explicitly need to write somewhere else.
 - read_file — read a file from the local filesystem
 - read_skill — read detailed instructions for an installed skill
 
@@ -229,6 +233,7 @@ class SettingsStore:
         self._max_iterations = 10
         self._user_name = ""
         self._theme = "system"
+        self._onboarding_completed = False
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -280,6 +285,9 @@ class SettingsStore:
             th = global_block.get("theme")
             if isinstance(th, str):
                 self._theme = th
+            ob = global_block.get("onboarding_completed")
+            if isinstance(ob, bool):
+                self._onboarding_completed = ob
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -318,6 +326,7 @@ class SettingsStore:
                 "max_iterations": self._max_iterations,
                 "user_name": self._user_name,
                 "theme": self._theme,
+                "onboarding_completed": self._onboarding_completed,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -355,6 +364,7 @@ class SettingsStore:
             max_iterations=self._max_iterations,
             user_name=self._user_name,
             theme=self._theme,
+            onboarding_completed=self._onboarding_completed,
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -368,6 +378,8 @@ class SettingsStore:
             self._user_name = patch.user_name
         if patch.theme is not None:
             self._theme = patch.theme
+        if patch.onboarding_completed is not None:
+            self._onboarding_completed = patch.onboarding_completed
         self._save()
         return self.get()
 
@@ -455,6 +467,10 @@ class SettingsStore:
     def theme(self) -> str:
         return self._theme
 
+    @property
+    def onboarding_completed(self) -> bool:
+        return self._onboarding_completed
+
 
 # ---------------------------------------------------------------------------
 # app factory
@@ -476,6 +492,7 @@ def create_app() -> FastAPI:
     installer = GitHubSkillInstaller(AGENTS_SKILLS_DIR, reader)
     models_fetcher = ModelsFetcher()
     settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
+    chat_store = ChatStore(CHAT_DB_FILE)
 
     # --- tools ---
     registry = ToolRegistry()
@@ -495,14 +512,20 @@ def create_app() -> FastAPI:
     )
 
     # --- CORS (allow Vite dev server + Tauri webview) ---
+    # Tauri v2 on Windows serves the webview from http://tauri.localhost (HTTP).
+    # macOS/Linux use https://tauri.localhost or the tauri:// custom scheme.
+    # If the production scheme is missing here, fetch() in the installed app
+    # is blocked by the browser and the UI hangs on "Загрузка…" forever.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "tauri://localhost",
+            "http://tauri.localhost",
             "https://tauri.localhost",
         ],
+        allow_origin_regex=r"^(tauri|https?)://(.*\.)?tauri\.localhost$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -512,6 +535,7 @@ def create_app() -> FastAPI:
     app.state.skill_reader = reader
     app.state.skill_installer = installer
     app.state.settings_store = settings_store
+    app.state.chat_store = chat_store
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.system_prompt_factory: Callable[[], str] = lambda: build_system_prompt(
@@ -520,11 +544,13 @@ def create_app() -> FastAPI:
 
     # --- routers ---
     app.include_router(chat_router, prefix="/api")
+    app.include_router(chats_router, prefix="/api")
     app.include_router(files_router, prefix="/api")
     app.include_router(skills_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(models_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
+    app.include_router(wsl_router, prefix="/api")
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

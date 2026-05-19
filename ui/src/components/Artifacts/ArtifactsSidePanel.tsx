@@ -4,13 +4,28 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { X, ArrowsClockwise, Copy, Download } from "@phosphor-icons/react";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
-import { RENDERABLE_EXTS } from "../../types/artifact";
+import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
 import { parseArtifacts } from "../../utils/parseArtifacts";
 import { API_BASE } from "../../utils/apiBase";
 import { fileExtIcon } from "../../utils/toolIcons";
 import { RenderView, CodeView } from "./ArtifactViews";
 
 type ViewTab = "render" | "code";
+
+function isRenderable(ext: string): boolean {
+  return RENDERABLE_EXTS.has(ext);
+}
+
+function isCodeViewable(ext: string): boolean {
+  // Binary formats have no useful textual source — hide the Code tab.
+  return !BINARY_EXTS.has(ext);
+}
+
+function pickDefaultTab(ext: string): ViewTab {
+  if (isRenderable(ext)) return "render";
+  if (isCodeViewable(ext)) return "code";
+  return "render"; // binary, non-renderable — fall back to render slot (shows download hint)
+}
 
 interface Props {
   messages: ChatMessage[];
@@ -21,33 +36,18 @@ interface Props {
 }
 
 function collectArtifacts(messages: ChatMessage[]): Artifact[] {
+  // Only files explicitly tagged with <artifact /> count. Intermediate scripts,
+  // generator helpers, and other write_file output without the tag are NOT
+  // surfaced here — that's the model's contract per the system prompt.
   const seen = new Set<string>();
   const result: Artifact[] = [];
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
-
-    // 1. Inline markers (<file>...</file>, <artifact />) from streamed text.
     for (const a of parseArtifacts(msg.content).artifacts) {
       const key = a.path ?? a.label ?? JSON.stringify(a);
-      if (!seen.has(key)) {
-        seen.add(key);
-        result.push(a);
-      }
-    }
-
-    // 2. write_file tool calls — covers both the streaming <file> tag (which
-    // synthesises a write_file call) and the real WriteFileTool invocation
-    // when a weaker model ignores the system prompt and uses the tool directly.
-    for (const tc of msg.toolCalls ?? []) {
-      if (tc.name !== "write_file") continue;
-      const path = String(tc.input?.path ?? "");
-      if (!path || seen.has(path)) continue;
-      seen.add(path);
-      result.push({
-        type: "file",
-        path,
-        label: path.split("/").pop() ?? path,
-      });
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(a);
     }
   }
   return result;
@@ -67,7 +67,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     const idx = artifacts.length - 1;
     setSelectedIdx(idx);
     const ext = artifacts[idx]?.path?.split(".").pop()?.toLowerCase() ?? "";
-    setTab(RENDERABLE_EXTS.has(ext) ? "render" : "code");
+    setTab(pickDefaultTab(ext));
   }, [artifacts.length]);
 
   // Select artifact by file path when "Open" is clicked in chat.
@@ -78,7 +78,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     if (idx >= 0) {
       setSelectedIdx(idx);
       const ext = openFilePath.split(".").pop()?.toLowerCase() ?? "";
-      setTab(RENDERABLE_EXTS.has(ext) ? "render" : "code");
+      setTab(pickDefaultTab(ext));
     }
   }, [openFilePath]);
 
@@ -177,7 +177,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
                 onClick={() => {
                   setSelectedIdx(i);
                   const ext = a.path?.split(".").pop()?.toLowerCase() ?? "";
-                  setTab(RENDERABLE_EXTS.has(ext) ? "render" : "code");
+                  setTab(pickDefaultTab(ext));
                 }}
                 title={a.path}
               >
@@ -200,18 +200,22 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
       </div>
 
       <div className="art-view-tabs">
-        <button
-          className={`art-view-tab${tab === "render" ? " active" : ""}`}
-          onClick={() => setTab("render")}
-        >
-          Render
-        </button>
-        <button
-          className={`art-view-tab${tab === "code" ? " active" : ""}`}
-          onClick={() => setTab("code")}
-        >
-          Code
-        </button>
+        {isRenderable(ext.toLowerCase()) && (
+          <button
+            className={`art-view-tab${tab === "render" ? " active" : ""}`}
+            onClick={() => setTab("render")}
+          >
+            Render
+          </button>
+        )}
+        {isCodeViewable(ext.toLowerCase()) && (
+          <button
+            className={`art-view-tab${tab === "code" ? " active" : ""}`}
+            onClick={() => setTab("code")}
+          >
+            Code
+          </button>
+        )}
         <button className="art-view-tab" disabled title="Coming later">
           Edit
         </button>

@@ -71,17 +71,22 @@ fn spawn_python_backend(backend_dir: &std::path::Path) -> Option<Child> {
 fn wait_for_backend() {
     let client = reqwest::blocking::Client::new();
     for _ in 0..30 {
-        if client
-            .get("http://127.0.0.1:8787/api/health")
-            .timeout(Duration::from_secs(2))
-            .send()
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-        {
+        if backend_is_healthy(&client) {
             return;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
+}
+
+/// One-shot health probe. Used both to wait for our spawned backend and to
+/// detect a leftover instance on 8787 before we try to bind a new one.
+fn backend_is_healthy(client: &reqwest::blocking::Client) -> bool {
+    client
+        .get("http://127.0.0.1:8787/api/health")
+        .timeout(Duration::from_secs(1))
+        .send()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +94,15 @@ fn wait_for_backend() {
 // ---------------------------------------------------------------------------
 
 fn main() {
-    let mut backend_child: Option<Child> = if let Some(sidecar) = find_sidecar_exe() {
+    // If a previous backend (zombie sidecar or dev uvicorn) is already serving
+    // 8787, reuse it instead of trying to bind a second one and crashing with
+    // OSError 10048.
+    let probe_client = reqwest::blocking::Client::new();
+    let already_running = backend_is_healthy(&probe_client);
+
+    let mut backend_child: Option<Child> = if already_running {
+        None
+    } else if let Some(sidecar) = find_sidecar_exe() {
         spawn_sidecar(&sidecar)
     } else {
         spawn_python_backend(&find_backend_dir())

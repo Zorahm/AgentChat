@@ -61,4 +61,6 @@ export interface ChatSession {
   title: string;
   root: ChatNode[];
   createdAt: number;
+  /** Working directory slug used by bash_tool: `~/AgentChat/chats/{dirSlug}/`. */
+  dirSlug?: string;
 }

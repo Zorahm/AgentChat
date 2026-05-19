@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -12,7 +13,22 @@ from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from api.models import AttachmentInfo, ChatRequest
 from llm.client import LLMClient
+from tools.bash_tool import BashTool
 from tools.registry import ToolRegistry
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
+
+
+def _resolve_chat_cwd(slug: str | None, user_home: str) -> str:
+    """Map a chat slug to an absolute WSL path under ~/AgentChat/chats/.
+
+    Returns empty string for missing / malformed slug (bash_tool falls back to
+    whatever cwd wsl.exe picks). Slugs are validated against a strict regex
+    to keep command injection out of the shell prefix.
+    """
+    if not slug or not _SLUG_RE.match(slug):
+        return ""
+    return f"{user_home}/AgentChat/chats/{slug}"
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -132,6 +148,13 @@ async def chat(
     )
 
     registry: ToolRegistry = app_state.tool_registry
+
+    # Point bash_tool at this chat's working folder so files the model writes
+    # via `cd && ...` land per-chat rather than piling up at $HOME.
+    bash = registry.get(BashTool.name)
+    if isinstance(bash, BashTool):
+        from main import WSL_USER_HOME
+        bash.set_cwd(_resolve_chat_cwd(body.chat_dir_slug, WSL_USER_HOME))
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key)
     agent = AgentLoop(config=config, tools=registry, llm=llm)

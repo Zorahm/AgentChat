@@ -19,6 +19,7 @@ interface SettingsData {
   default_model: string; temperature: number; max_iterations: number;
   user_name: string;
   theme: string;
+  onboarding_completed?: boolean;
 }
 
 type NavTab = "providers" | "models" | "main" | "paths" | "shortcuts" | "about";
@@ -61,8 +62,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       if (r.ok) {
         const data = await r.json();
         setSettings({ ...data, models: data.models ?? [] });
+        setError(null);
+      } else {
+        setError(`Не удалось загрузить настройки: HTTP ${r.status}`);
       }
-    } catch { /* no-op */ }
+    } catch (e) {
+      setError(`Не удалось подключиться к бэкенду (${API_BASE}): ${e instanceof Error ? e.message : "сеть"}`);
+    }
     await fetchModels();
   }, [fetchModels]);
 
@@ -115,7 +121,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     window.dispatchEvent(new CustomEvent("settings-changed"));
   };
 
-  if (!settings) return <Loading />;
+  if (!settings) return <Loading error={error} onRetry={reload} />;
 
   return (
     <div className="st2">
@@ -547,6 +553,19 @@ function AboutTab() {
   </>;
 }
 
-function Loading() {
-  return <div className="st2"><div className="st2-body"><p style={{ color: "var(--muted)" }}>Загрузка…</p></div></div>;
+function Loading({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  return (
+    <div className="st2">
+      <div className="st2-body">
+        {error ? (
+          <>
+            <div className="st2-error">{error}</div>
+            <button className="st2-btn" onClick={onRetry} style={{ marginTop: 12 }}>Повторить</button>
+          </>
+        ) : (
+          <p style={{ color: "var(--muted)" }}>Загрузка…</p>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -7,6 +7,7 @@ import "./styles/components.css";
 import "./styles/panels.css";
 import "./styles/tiptap.css";
 import "./styles/settings-v2.css";
+import "./styles/onboarding.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

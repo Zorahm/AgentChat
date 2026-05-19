@@ -11,6 +11,7 @@ import { FilesPanel } from "./components/Artifacts/FilesPanel";
 import { SkillsManager } from "./components/Skills/SkillsManager";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
+import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
 
@@ -32,6 +33,7 @@ export function App() {
   const [userName, setUserName] = useState("");
   const [theme, setTheme] = useState("system");
   const [wslWarning, setWslWarning] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const panelWidthRef = useRef(panelWidth);
 
   const panelOpen = generalPanelOpen || openFilePath !== null;
@@ -84,6 +86,11 @@ export function App() {
         if (data.default_model) setModel(data.default_model);
         if (typeof data.user_name === "string") setUserName(data.user_name);
         if (typeof data.theme === "string") setTheme(data.theme);
+        if (typeof data.onboarding_completed === "boolean") {
+          setOnboardingDone(data.onboarding_completed);
+        } else {
+          setOnboardingDone(true);
+        }
         if (data.providers?.length) {
           const enabled = new Set<string>();
           for (const p of data.providers as Array<{ id: string; enabled: boolean }>) {
@@ -198,6 +205,9 @@ export function App() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {onboardingDone === false && (
+        <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
+      )}
       <div
         className={`app-body${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
         style={{ gridTemplateColumns: gridCols }}

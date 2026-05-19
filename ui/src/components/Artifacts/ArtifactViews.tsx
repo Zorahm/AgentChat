@@ -34,6 +34,15 @@ export function RenderView({
     return <iframe className="art-render-iframe" src={src} title="PDF preview" />;
   }
 
+  if (["docx", "doc", "pptx", "ppt", "xlsx", "xls"].includes(ext)) {
+    return (
+      <div className="art-state">
+        Превью недоступно для {ext.toUpperCase()}
+        <small>нажмите «Скачать», чтобы открыть в нативном приложении</small>
+      </div>
+    );
+  }
+
   if (content === null) {
     return (
       <div className="art-state">
