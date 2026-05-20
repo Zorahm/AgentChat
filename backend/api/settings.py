@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.models import ProviderCreate, ProviderUpdate, SettingsData, SettingsUpdate
+from api.schemas.settings import ProviderCreate, ProviderUpdate, SettingsData, SettingsUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 

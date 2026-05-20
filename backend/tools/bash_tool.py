@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import shlex
 import subprocess
 
+from agent.sandbox import SandboxPolicy
 from tools.base import BaseTool, ToolDefinition, ToolSchema
+
+# Hide the Windows console window for spawned wsl.exe — no flash on each call.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class BashTool(BaseTool):
@@ -24,17 +27,16 @@ class BashTool(BaseTool):
     def __init__(self, user_name: str, user_home: str | None = None) -> None:
         self._user_name = user_name
         self._user_home = user_home or f"/home/{user_name}"
-        # Set per-request from api/chat.py. Empty string = no cd, command runs
-        # from wherever wsl.exe drops you (default: %USERPROFILE% mapped via /mnt).
-        self._cwd: str = ""
+        # Set per-request from api/chat.py. Default policy = no chat dir, no
+        # cage, no blocks — equivalent to unrestricted, used only before the
+        # first chat request lands.
+        self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
 
-    def set_cwd(self, cwd: str) -> None:
-        """Set the working directory for the next execute() call.
-
-        Single-user assumption: there's no concurrent chat from this process.
-        Setting cwd globally on the tool instance is fine for now.
-        """
-        self._cwd = cwd
+    def set_policy(self, policy: SandboxPolicy) -> None:
+        """Install the per-chat sandbox policy. Single-user assumption — there's
+        no concurrent chat from this process, so storing it on the instance
+        is fine."""
+        self._policy = policy
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -55,20 +57,21 @@ class BashTool(BaseTool):
         )
 
     async def execute(self, command: str) -> str:
-        """Run a command via wsl.exe with user env vars, return stdout+stderr.
+        """Run a command via wsl.exe, return stdout+stderr.
 
-        Uses blocking subprocess.run inside asyncio.to_thread to avoid
-        asyncio.create_subprocess_exec, which raises NotImplementedError on
-        Windows SelectorEventLoop (the loop uvicorn sometimes picks).
+        The command is wrapped by the SandboxPolicy: in restricted mode the
+        wrapper invokes bwrap to confine the process to the chat directory;
+        in unrestricted mode it simply cds into the chat dir (or runs raw).
         """
-        cd_prefix = ""
-        if self._cwd:
-            cwd_q = shlex.quote(self._cwd)
-            cd_prefix = f"mkdir -p {cwd_q} && cd {cwd_q} && "
+        # Outer envelope sets USER/USER_HOME/HOME — these are inherited into
+        # the bwrap sandbox via --setenv, but we also keep them on the outer
+        # shell for backwards compatibility with any tool that bypasses
+        # wrap_bash (e.g. wsl_run helpers in agent/wsl_exec.py).
+        inner = self._policy.wrap_bash(command)
         full_cmd = (
             f"export USER='{self._user_name}' "
             f"USER_HOME='{self._user_home}' "
-            f"HOME='{self._user_home}'; {cd_prefix}{command}"
+            f"HOME='{self._user_home}'; {inner}"
         )
         try:
             result = await asyncio.to_thread(
@@ -76,6 +79,7 @@ class BashTool(BaseTool):
                 ["wsl.exe", "bash", "-c", full_cmd],
                 capture_output=True,
                 timeout=300,
+                creationflags=_NO_WINDOW,
             )
         except FileNotFoundError:
             return "[bash_tool error] wsl.exe not found in PATH — install WSL or check $PATH."

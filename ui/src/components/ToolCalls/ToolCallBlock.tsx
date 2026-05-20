@@ -17,11 +17,13 @@ export function ToolCallBlock({ call, inline = false }: ToolCallBlockProps) {
   const statusClass =
     call.status === "running" ? "tc--running"
     : call.status === "error" ? "tc--error"
+    : call.status === "cancelled" ? "tc--cancelled"
     : "tc--success";
 
   const statusLabel =
     call.status === "running" ? "⟳ running"
     : call.status === "error" ? `✗ error${call.durationMs != null ? ` · ${(call.durationMs / 1000).toFixed(1)}s` : ""}`
+    : call.status === "cancelled" ? "⏹ cancelled"
     : `✓ ${call.durationMs != null ? (call.durationMs / 1000).toFixed(1) + "s" : ""}`;
 
   const inputStr =

@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from api.models import ModelConfig, ProviderConfig
+from api.schemas.settings import ModelConfig, ProviderConfig
 
 
 # Substrings that suggest a model is a "thinking" / reasoning model.

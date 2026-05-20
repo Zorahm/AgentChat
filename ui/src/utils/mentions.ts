@@ -381,6 +381,6 @@ export function extractText(json: Record<string, unknown>): string {
   const children = json.content as Array<Record<string, unknown>> | undefined;
   if (!children) return "";
   const inner = children.map(extractText).join("");
-  if (json.type === "paragraph") return inner + " ";
+  if (json.type === "paragraph") return inner + "\n";
   return inner;
 }

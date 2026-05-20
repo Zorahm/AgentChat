@@ -6,6 +6,7 @@ import type { AgentChatState } from "../../hooks/useAgentChat";
 import { ChatInput } from "./ChatInput";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, AttachmentInfo, ChatNode } from "../../types/chat";
+import { API_BASE } from "../../utils/apiBase";
 
 export interface ModelItem {
   id: string;
@@ -16,6 +17,7 @@ export interface ModelItem {
 interface ChatViewProps {
   state: AgentChatState;
   chatTitle: string;
+  dirSlug: string | null;
   onSend: (text: string, attachments: AttachmentInfo[]) => void;
   onStop: () => void;
   onRetry: () => void;
@@ -29,20 +31,13 @@ interface ChatViewProps {
   onThinkingToggle: () => void;
 }
 
-const WELCOME_PHRASES = [
-  "Чем займёмся сегодня?",
-  "Что будем кодить?",
-  "Новый проект или багфикс?",
-  "Готов к работе.",
-  "Спрашивай — не стесняйся.",
-  "Идеи в студию.",
-  "Давай сделаем что-то крутое.",
-  "Код, чай и никаких дедлайнов.",
-  "Ваш персональный агент на связи.",
-  "Что на повестке?",
-  "Ныряем в код?",
-  "Время магии.",
-];
+function getTimeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return "Доброе утро";
+  if (hour >= 12 && hour < 18) return "Добрый день";
+  if (hour >= 18 && hour < 22) return "Добрый вечер";
+  return "Доброй ночи";
+}
 
 const QUICK_CHIPS = [
   "Напиши bash-скрипт",
@@ -50,10 +45,6 @@ const QUICK_CHIPS = [
   "Найди баг",
   "Создай файл",
 ];
-
-function pickPhrase(): string {
-  return WELCOME_PHRASES[Math.floor(Math.random() * WELCOME_PHRASES.length)]!;
-}
 
 function useTypewriter(text: string, speed = 45): { displayed: string; done: boolean } {
   const [displayed, setDisplayed] = useState("");
@@ -74,30 +65,31 @@ function useTypewriter(text: string, speed = 45): { displayed: string; done: boo
 }
 
 export function ChatView({
-  state, chatTitle, onSend, onStop, onRetry, onSwitchVariant, branchNodes, onToggleFiles,
+  state, chatTitle, dirSlug, onSend, onStop, onRetry, onSwitchVariant, branchNodes, onToggleFiles,
   models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
 }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
-  const welcomePhrase = useMemo(() => pickPhrase(), []);
+  const [userName, setUserName] = useState<string>("");
+  useEffect(() => {
+    fetch(`${API_BASE}/settings`)
+      .then((r) => r.json())
+      .then((data) => setUserName(data.user_name ?? ""))
+      .catch(() => {});
+  }, []);
+
+  const welcomePhrase = useMemo(() => {
+    if (userName) return `${getTimeGreeting()}, ${userName}`;
+    return getTimeGreeting();
+  }, [userName]);
   const { displayed, done: typingDone } = useTypewriter(welcomePhrase);
   const [fillText, setFillText] = useState<string | null>(null);
 
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry) shouldAutoScroll.current = entry.isIntersecting;
-      },
-      { root, threshold: 0, rootMargin: "0px 0px 80px 0px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    shouldAutoScroll.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }, []);
 
   useEffect(() => {
@@ -167,12 +159,13 @@ export function ChatView({
               placeholder="Чем я могу помочь?"
               fillText={fillText ?? undefined}
               onFillTextConsumed={() => setFillText(null)}
+              dirSlug={dirSlug}
             />
           </div>
         </div>
       ) : (
         <>
-          <div className="chat-scroll" ref={scrollRef}>
+          <div className="chat-scroll" ref={scrollRef} onScroll={handleScroll}>
             {state.messages.map((msg: ChatMessage, idx: number) => {
               const node = branchNodes[idx];
               const isLast = idx === branchNodes.length - 1;
@@ -202,7 +195,6 @@ export function ChatView({
                 Error: {state.error}
               </div>
             )}
-            <div ref={sentinelRef} aria-hidden style={{ height: 1, width: "100%" }} />
           </div>
 
           <ChatInput
@@ -215,6 +207,7 @@ export function ChatView({
             onModelChange={onModelChange}
             thinkingEnabled={thinkingEnabled}
             onThinkingToggle={onThinkingToggle}
+            dirSlug={dirSlug}
           />
         </>
       )}

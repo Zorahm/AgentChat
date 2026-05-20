@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent.sandbox import SandboxPolicy
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 MAX_BYTES = 100_000
@@ -17,6 +18,12 @@ class ReadFileTool(BaseTool):
         "Read the contents of a file on the local filesystem. "
         "Accepts an absolute path. Returns file contents as a string."
     )
+
+    def __init__(self) -> None:
+        self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
+
+    def set_policy(self, policy: SandboxPolicy) -> None:
+        self._policy = policy
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -38,6 +45,10 @@ class ReadFileTool(BaseTool):
 
     async def execute(self, path: str) -> str:
         """Read the file at *path* and return its content."""
+        denied = self._policy.check_read(path)
+        if denied:
+            return f"Error: {denied}"
+
         file_path = Path(path)
         if not file_path.exists():
             return f"Error: file not found — {path}"

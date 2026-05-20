@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent.sandbox import SandboxPolicy
 from agent.wsl_exec import wsl_write_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
@@ -18,6 +19,12 @@ class WriteFileTool(BaseTool):
         "For files longer than 60 lines, split into multiple calls: "
         "first call with append=false (creates/overwrites), subsequent calls with append=true."
     )
+
+    def __init__(self) -> None:
+        self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
+
+    def set_policy(self, policy: SandboxPolicy) -> None:
+        self._policy = policy
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -54,6 +61,10 @@ class WriteFileTool(BaseTool):
 
     async def execute(self, path: str, content: str, append: bool = False) -> str:
         """Write or append *content* to the file at *path*."""
+        denied = self._policy.check_write(path)
+        if denied:
+            return f"Error: {denied}"
+
         if path.startswith("/"):
             try:
                 await wsl_write_bytes(path, content.encode("utf-8"), append=append)

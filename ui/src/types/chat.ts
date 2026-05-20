@@ -13,6 +13,9 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   reasoningContent?: string;
   attachments?: AttachmentInfo[];
+  /** Rich-text HTML for user bubbles (tiptap getHTML). Display-only — `content`
+   * stays plain text for title derivation, copy, retry, and backend history. */
+  displayHtml?: string;
 }
 
 export interface AttachmentInfo {
@@ -42,6 +45,8 @@ export interface UserNode {
   id: string;
   role: "user";
   content: string;
+  /** Optional rich-text HTML (tiptap getHTML) preserved for display only. */
+  displayHtml?: string;
   attachments?: AttachmentInfo[];
   createdAt: number;
   child?: AssistantNode;

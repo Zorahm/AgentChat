@@ -8,8 +8,7 @@ import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
-import { SkillsManager } from "./components/Skills/SkillsManager";
-import { SettingsPanel } from "./components/Settings/SettingsPanel";
+import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
 import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import type { AttachmentInfo } from "./types/chat";
@@ -22,6 +21,7 @@ const PANEL_DEFAULT = 400;
 export function App() {
   const chats = useChats();
   const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats">("chat");
+  const [settingsTab, setSettingsTab] = useState<NavTab>("main");
   const [model, setModel] = useState("openai/gpt-4o");
   const [models, setModels] = useState<ModelItem[]>([]);
   const [enabledProviders, setEnabledProviders] = useState<Set<string>>(new Set());
@@ -156,14 +156,20 @@ export function App() {
     }).catch(() => {});
   };
 
-  const handleSend = (text: string, attachments: AttachmentInfo[]) => {
+  const handleSend = (text: string, attachments: AttachmentInfo[], html?: string) => {
     if (view !== "chat") setView("chat");
-    chats.sendMessage(text, model, attachments);
+    chats.sendMessage(text, model, attachments, html);
   };
 
   const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats") => {
-    setView(v);
-    if (v === "chat" || v === "settings") setTimeout(fetchSettings, 300);
+    if (v === "skills") {
+      setSettingsTab("skills");
+      setView("settings");
+      setTimeout(fetchSettings, 300);
+    } else {
+      setView(v);
+      if (v === "chat" || v === "settings") setTimeout(fetchSettings, 300);
+    }
   };
 
   // Listen for navigation from child components (e.g. model selector "settings" link)
@@ -229,6 +235,7 @@ export function App() {
         <ChatView
           state={chatState}
           chatTitle={shortTitle}
+          dirSlug={chats.activeDirSlug}
           onSend={handleSend}
           onStop={chats.abort}
           onRetry={chats.retry}
@@ -273,14 +280,9 @@ export function App() {
           />
         </div>
       )}
-      {view === "skills" && (
-        <div className="page-overlay">
-          <SkillsManager onClose={() => handleNavigate("chat")} />
-        </div>
-      )}
       {view === "settings" && (
         <div className="page-overlay">
-          <SettingsPanel onClose={() => handleNavigate("chat")} />
+          <SettingsPanel onClose={() => handleNavigate("chat")} initialTab={settingsTab} />
         </div>
       )}
       {wslWarning && (

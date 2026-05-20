@@ -85,6 +85,42 @@
   color: var(--muted, #888);
 }
 
+.ob-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2, #ccc);
+  line-height: 1.45;
+}
+.ob-bullets li {
+  display: flex;
+  gap: 8px;
+  padding-left: 14px;
+  position: relative;
+}
+.ob-bullets li::before {
+  content: "·";
+  position: absolute;
+  left: 4px;
+  color: var(--accent, #d4b088);
+  font-weight: 700;
+}
+.ob-bullets b { color: var(--ink, #fff); font-weight: 600; }
+
+.ob-success {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--ok-soft, rgba(126, 175, 126, 0.15));
+  border: 1px solid var(--ok-line, rgba(126, 175, 126, 0.4));
+  color: var(--ok, #7eaf7e);
+  font-size: 13px;
+}
+
 .ob-label {
   display: block;
   font-size: 12px;

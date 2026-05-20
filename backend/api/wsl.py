@@ -12,6 +12,9 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/wsl", tags=["wsl"])
 
+# Suppress the Windows console flash for wsl/probe subprocesses.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 # ── Models ────────────────────────────────────────────────────────────────
 
@@ -46,6 +49,7 @@ async def _run(args: list[str], timeout: int = 30) -> tuple[int, str, str]:
             args,
             capture_output=True,
             timeout=timeout,
+            creationflags=_NO_WINDOW,
         )
     except FileNotFoundError:
         return 127, "", f"{args[0]}: not found"

@@ -32,7 +32,9 @@ interface OnboardingWizardProps {
   onComplete: () => void;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
+
+const ANTHROPIC_SKILLS_SOURCE = "anthropics/skills";
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState<Step>(1);
@@ -47,6 +49,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [wslLog, setWslLog] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [skillsInstalling, setSkillsInstalling] = useState(false);
+  const [skillsInstalled, setSkillsInstalled] = useState<number | null>(null);
 
   // Initial load: fetch providers list
   useEffect(() => {
@@ -190,6 +194,25 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
+  const installAnthropicSkills = async () => {
+    setSkillsInstalling(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/skills/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: ANTHROPIC_SKILLS_SOURCE }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail ?? `HTTP ${r.status}`);
+      setSkillsInstalled(Array.isArray(d) ? d.length : 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось установить");
+    } finally {
+      setSkillsInstalling(false);
+    }
+  };
+
   const finish = async () => {
     setSaving(true);
     setError(null);
@@ -218,7 +241,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="ob-steps">
             <span className={step === 1 ? "active" : step > 1 ? "done" : ""}>1 · Имя</span>
             <span className={step === 2 ? "active" : step > 2 ? "done" : ""}>2 · Провайдер</span>
-            <span className={step === 3 ? "active" : ""}>3 · WSL</span>
+            <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>3 · WSL</span>
+            <span className={step === 4 ? "active" : ""}>4 · Скиллы</span>
           </div>
         </div>
 
@@ -358,9 +382,50 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
               <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>Назад</button>
-              <button className="ob-btn" onClick={finish} disabled={saving}>
-                {saving ? "Завершаю…" : "Готово"}
-              </button>
+              <button className="ob-btn" onClick={() => setStep(4)}>Далее</button>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="ob-body">
+            <h3>Скиллы от Anthropic</h3>
+            <p className="ob-sub">
+              Готовый набор инструментов, расширяющий модель: создание документов и работа с офисными форматами.
+            </p>
+            <ul className="ob-bullets">
+              <li><b>Word</b> (.docx) — отчёты, документы со стилями и таблицами</li>
+              <li><b>Excel</b> (.xlsx) — таблицы, формулы, формат ячеек</li>
+              <li><b>PowerPoint</b> (.pptx) — презентации со слайдами и шаблонами</li>
+              <li><b>PDF</b> — генерация и парсинг</li>
+              <li><b>Создание скиллов</b> — мета-скилл для написания своих</li>
+            </ul>
+            <p className="ob-sub2">
+              Источник: <code>github.com/{ANTHROPIC_SKILLS_SOURCE}</code>. Установка займёт 10–30 секунд.
+            </p>
+
+            {skillsInstalled !== null && (
+              <div className="ob-success">
+                Установлено: <b>{skillsInstalled}</b> {skillsInstalled === 1 ? "скилл" : "скиллов"}.
+              </div>
+            )}
+
+            <div className="ob-actions" style={{ marginTop: 24 }}>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>Назад</button>
+              {skillsInstalled === null ? (
+                <>
+                  <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>
+                    Пропустить
+                  </button>
+                  <button className="ob-btn" onClick={installAnthropicSkills} disabled={skillsInstalling || saving}>
+                    {skillsInstalling ? "Устанавливаю…" : "Установить"}
+                  </button>
+                </>
+              ) : (
+                <button className="ob-btn" onClick={finish} disabled={saving}>
+                  {saving ? "Завершаю…" : "Готово"}
+                </button>
+              )}
             </div>
           </div>
         )}

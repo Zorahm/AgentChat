@@ -44,8 +44,13 @@
   border-radius: 18px 18px 4px 18px;
   font-size: 14.5px; line-height: 1.5;
 }
+.msg-user-bubble strong, .msg-user-bubble b { font-weight: 600; }
+.msg-user-bubble em, .msg-user-bubble i { font-style: italic; }
+.msg-user-bubble p { margin: 0; }
+.msg-user-bubble p + p { margin-top: 8px; }
+.msg-user-bubble--plain { white-space: pre-wrap; word-break: break-word; }
 .msg-assistant {
-  align-self: flex-start; align-items: stretch;
+  align-self: center; align-items: stretch;
   max-width: 720px; width: 100%;
   font-size: 14.5px; color: var(--ink);
 }
@@ -108,49 +113,7 @@
   color: var(--muted);
 }
 
-.role-tag {
-  font-family: var(--font-mono); font-size: 10px; color: var(--faint);
-  letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2px;
-}
-
-/* ── Markdown ──────────────────────────────────────────────────────────── */
-.msg-markdown { line-height: 1.65; }
-.msg-markdown p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.65; color: var(--ink); }
-.msg-markdown p:last-child { margin-bottom: 0; }
-.msg-markdown h1, .msg-markdown h2, .msg-markdown h3,
-.msg-markdown h4, .msg-markdown h5, .msg-markdown h6 {
-  font-family: var(--font-hand); font-weight: 400; margin: 18px 0 8px; line-height: 1.2;
-}
-.msg-markdown h1 { font-size: 28px; letter-spacing: -.3px; }
-.msg-markdown h2 { font-size: 22px; letter-spacing: -.2px; }
-.msg-markdown h3 { font-size: 18px; }
-.msg-markdown h4, .msg-markdown h5, .msg-markdown h6 { font-size: 15px; }
-.msg-markdown ul, .msg-markdown ol { padding-left: 22px; margin: 0 0 8px; font-size: 14.5px; color: var(--ink-2); }
-.msg-markdown li { margin-bottom: 3px; line-height: 1.55; }
-.msg-markdown li > p { margin: 0; }
-.msg-markdown strong { font-weight: 600; color: var(--ink); }
-.msg-markdown em { font-style: italic; color: var(--muted); }
-.msg-markdown a { color: var(--accent); text-decoration: underline; }
-.msg-markdown a:hover { opacity: .8; }
-.msg-markdown blockquote {
-  border-left: 3px solid var(--line-2); padding: 4px 0 4px 16px;
-  color: var(--muted); margin: 8px 0; font-style: italic;
-}
-.msg-markdown code {
-  font-family: var(--font-mono); font-size: 12px;
-  background: var(--surface-2); border: 1px solid var(--line);
-  padding: 1px 5px; border-radius: 4px;
-}
-.msg-markdown pre {
-  background: var(--surface-2); border: 1px solid var(--line);
-  padding: 14px 16px; margin: 10px 0; overflow-x: auto; border-radius: var(--radius);
-}
-.msg-markdown pre code { background: none; border: none; padding: 0; font-size: 11.5px; line-height: 1.6; }
-.msg-markdown table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-.msg-markdown th, .msg-markdown td { border: 1px solid var(--line); padding: 6px 10px; font-size: 13px; }
-.msg-markdown th { background: var(--surface-2); font-weight: 600; text-align: left; }
-.msg-markdown tr:nth-child(even) td { background: var(--surface-2); }
-.msg-markdown hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+/* ── Markdown: typography lives in styles/markdown.css under .md ──────── */
 
 /* error message */
 .msg-error { color: var(--err); font-size: 13px; padding: 10px 14px;

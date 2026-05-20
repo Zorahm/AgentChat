@@ -2,17 +2,20 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from agent.wsl_exec import wsl_run, wsl_write_bytes
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
 
 async def _wsl_read_bytes(path: str) -> bytes:
@@ -93,11 +96,27 @@ async def _wsl_home() -> str:
     return _cached_wsl_home
 
 
-async def _upload_dir() -> str:
+async def _upload_dir(chat_dir_slug: str | None) -> str:
+    """Resolve where uploads land for this request.
+
+    Per-chat folder when a valid slug is provided — keeps uploads inside the
+    sandbox so the model can read them. Falls back to the legacy date-bucketed
+    cache directory if no slug is supplied (rare; pre-sandbox clients).
+    """
     home = await _wsl_home()
+    if chat_dir_slug and _SLUG_RE.match(chat_dir_slug):
+        return f"{home}/AgentChat/chats/{chat_dir_slug}/uploads"
     base = f"{home}/.aicache/uploads" if home != "/tmp" else "/tmp/aicache-uploads"
     day = datetime.now().strftime("%Y-%m-%d")
     return f"{base}/{day}"
+
+
+def _safe_filename(name: str) -> str:
+    """Strip path components and dangerous chars from a user-supplied filename."""
+    bare = Path(name).name or "unnamed"
+    # Drop anything that would break a shell-quoted path or escape the dir.
+    cleaned = re.sub(r"[^\w\s._\-()]+", "_", bare, flags=re.UNICODE)
+    return cleaned[:200] or "unnamed"
 
 
 async def _extract_pdf_text(wsl_path: str) -> str | None:
@@ -113,13 +132,16 @@ async def _extract_pdf_text(wsl_path: str) -> str | None:
 
 
 @router.post("/upload")
-async def upload_files(files: list[UploadFile]) -> list[dict[str, object]]:
-    dir_path = await _upload_dir()
+async def upload_files(
+    files: list[UploadFile],
+    chat_dir_slug: str | None = Form(default=None),
+) -> list[dict[str, object]]:
+    dir_path = await _upload_dir(chat_dir_slug)
     results: list[dict[str, object]] = []
 
     for f in files:
         data = await f.read()
-        name = f.filename or "unnamed"
+        name = _safe_filename(f.filename or "unnamed")
         full = f"{dir_path}/{name}"
         await wsl_write_bytes(full, data)
 

@@ -7,6 +7,24 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+// Windows process flag: prevent the child from opening a console window.
+// Without this every Command::spawn for backend.exe / python.exe pops a black
+// console alongside the Tauri webview, which scares users and steals focus.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Apply CREATE_NO_WINDOW on Windows. No-op on other platforms.
+fn hide_console(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -36,7 +54,10 @@ fn find_sidecar_exe() -> Option<PathBuf> {
 /// Fallback: locate system Python (development mode).
 fn find_python() -> Option<String> {
     for cmd in &["python", "python3"] {
-        if Command::new(cmd).arg("--version").output().is_ok() {
+        let mut probe = Command::new(cmd);
+        probe.arg("--version");
+        hide_console(&mut probe);
+        if probe.output().is_ok() {
             return Some(cmd.to_string());
         }
     }
@@ -55,16 +76,18 @@ fn find_backend_dir() -> PathBuf {
 }
 
 fn spawn_sidecar(path: &PathBuf) -> Option<Child> {
-    Command::new(path).spawn().ok()
+    let mut cmd = Command::new(path);
+    hide_console(&mut cmd);
+    cmd.spawn().ok()
 }
 
 fn spawn_python_backend(backend_dir: &std::path::Path) -> Option<Child> {
     let python = find_python()?;
-    Command::new(&python)
-        .args(["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8787"])
-        .current_dir(backend_dir)
-        .spawn()
-        .ok()
+    let mut cmd = Command::new(&python);
+    cmd.args(["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8787"])
+        .current_dir(backend_dir);
+    hide_console(&mut cmd);
+    cmd.spawn().ok()
 }
 
 /// Block until the backend health-check responds (max ~15 s).

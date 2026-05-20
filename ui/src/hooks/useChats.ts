@@ -23,6 +23,7 @@ export type { ChatSession } from "../types/chat";
 export interface UseChatResult {
   sessions: ChatSession[];
   activeId: string;
+  activeDirSlug: string | null;
   messages: ChatMessage[];
   branchNodes: ChatNode[];
   liveFiles: LiveFile[];
@@ -32,7 +33,7 @@ export interface UseChatResult {
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
-  sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[]) => void;
+  sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[], html?: string) => void;
   retry: () => void;
   switchVariant: (nodeId: string, idx: number) => void;
   abort: () => void;
@@ -297,6 +298,7 @@ function currentBranch(session: ChatSession): ChatMessage[] {
           content: node.content,
           timestamp: node.createdAt,
           attachments: node.attachments,
+          displayHtml: node.displayHtml,
         });
       } else {
         const v = node.variants[node.activeVariantIdx];
@@ -696,8 +698,12 @@ export function useChats(): UseChatResult {
                 return mapVariant(s, nodeId, variantId, (v) => {
                   const steps: ProcessStep[] = [...(v.steps ?? [])];
                   const last = steps[steps.length - 1];
-                  if (last?.type === "thought") {
-                    steps[steps.length - 1] = { type: "thought", content: last.content + text };
+                  if (last?.type === "text") {
+                    steps.push({ type: "break" });
+                  }
+                  const tail = steps[steps.length - 1];
+                  if (tail?.type === "thought") {
+                    steps[steps.length - 1] = { type: "thought", content: tail.content + text };
                   } else {
                     steps.push({ type: "thought", content: text });
                   }
@@ -708,18 +714,7 @@ export function useChats(): UseChatResult {
             break;
           }
           case "reasoning_break": {
-            setSessions((prev) =>
-              prev.map((s) => {
-                if (s.id !== sessionId) return s;
-                return mapVariant(s, nodeId, variantId, (v) => {
-                  const steps: ProcessStep[] = [...(v.steps ?? [])];
-                  if (steps.length > 0 && steps[steps.length - 1]!.type !== "break") {
-                    steps.push({ type: "break" });
-                  }
-                  return { ...v, steps };
-                });
-              }),
-            );
+            // Ignore - breaks are now only inserted when text precedes reasoning/tool_start
             break;
           }
           case "tool_start": {
@@ -732,11 +727,15 @@ export function useChats(): UseChatResult {
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== sessionId) return s;
-                return mapVariant(s, nodeId, variantId, (v) => ({
-                  ...v,
-                  steps: [...(v.steps ?? []), { type: "tool" as const, call: tc }],
-                  toolCalls: [...(v.toolCalls ?? []), tc],
-                }));
+                return mapVariant(s, nodeId, variantId, (v) => {
+                  const steps: ProcessStep[] = [...(v.steps ?? [])];
+                  const last = steps[steps.length - 1];
+                  if (last?.type === "text") {
+                    steps.push({ type: "break" });
+                  }
+                  steps.push({ type: "tool" as const, call: tc });
+                  return { ...v, steps, toolCalls: [...(v.toolCalls ?? []), tc] };
+                });
               }),
             );
             if (tc.name === "write_file" && typeof tc.input.path === "string") {
@@ -803,7 +802,7 @@ export function useChats(): UseChatResult {
   // ── Public API ──────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    (content: string, model?: string, attachments?: AttachmentInfo[]) => {
+    (content: string, model?: string, attachments?: AttachmentInfo[], html?: string) => {
       if ((!content.trim() && (!attachments || attachments.length === 0)) || isStreaming) return;
 
       sseRef.current?.close();
@@ -814,10 +813,12 @@ export function useChats(): UseChatResult {
       const currentSession = sessions.find((s) => s.id === sid);
       if (!currentSession) return;
 
+      const htmlBody = html ? html.replace(/<[^>]+>/g, "").trim() : "";
       const userNode: UserNode = {
         id: newId(),
         role: "user",
         content,
+        displayHtml: html && htmlBody !== "" ? html : undefined,
         attachments,
         createdAt: Date.now(),
       };
@@ -963,10 +964,23 @@ export function useChats(): UseChatResult {
         prev.map((s) => {
           if (s.id !== activeId) return s;
           return mapVariant(s, nodeId, variantId, (v) => {
-            if (v.content.length === 0 && (v.steps?.length ?? 0) === 0) {
+            const hasRunning = (v.toolCalls ?? []).some((tc) => tc.status === "running");
+            const isEmpty = v.content.length === 0 && (v.steps?.length ?? 0) === 0;
+            if (!hasRunning && isEmpty) {
               return { ...v, content: "[aborted]" };
             }
-            return v;
+            if (!hasRunning) return v;
+            return {
+              ...v,
+              toolCalls: (v.toolCalls ?? []).map((tc) =>
+                tc.status === "running" ? { ...tc, status: "cancelled" as const } : tc,
+              ),
+              steps: (v.steps ?? []).map((st) =>
+                st.type === "tool" && st.call.status === "running"
+                  ? { ...st, call: { ...st.call, status: "cancelled" as const } }
+                  : st,
+              ),
+            };
           });
         }),
       );
@@ -978,6 +992,16 @@ export function useChats(): UseChatResult {
   }, [activeId, activeSession]);
 
   const newChat = useCallback(() => {
+    const current = sessions.find((s) => s.id === activeId);
+    if (current && current.root.length === 0) {
+      sseRef.current?.close();
+      sseRef.current = null;
+      streamingTargetRef.current = null;
+      setIsStreaming(false);
+      setLiveFiles([]);
+      setError(null);
+      return;
+    }
     sseRef.current?.close();
     sseRef.current = null;
     streamingTargetRef.current = null;
@@ -992,7 +1016,7 @@ export function useChats(): UseChatResult {
     void createChatRemote(session).then(() => {
       lastSavedRef.current.set(session.id, snapshot(session));
     });
-  }, []);
+  }, [activeId, sessions]);
 
   const switchChat = useCallback(
     (id: string) => {
@@ -1067,6 +1091,7 @@ export function useChats(): UseChatResult {
   return {
     sessions,
     activeId,
+    activeDirSlug: activeSession?.dirSlug ?? null,
     messages,
     branchNodes,
     liveFiles,

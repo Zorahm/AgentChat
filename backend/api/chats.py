@@ -2,12 +2,48 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from agent.wsl_exec import wsl_run
+
 router = APIRouter(prefix="/chats", tags=["chats"])
+
+# Same pattern as api/chat.py — keeps shell injection out of rm -rf.
+# Slugs created by the UI are "chat-<short>-<timestamp>"; require the prefix
+# explicitly so a malicious or buggy client can't pass "." / ".." / "" / "/".
+_SAFE_SLUG_RE = re.compile(r"^chat-[a-z0-9][a-z0-9_\-]{0,62}$")
+
+
+async def _purge_chat_dir(dir_slug: str) -> None:
+    """Remove the WSL working folder for a chat. Silent on failure — the DB row
+    is already gone and a stale folder is recoverable, but raising here would
+    surface as a 500 even though the chat itself was deleted.
+
+    Defense-in-depth against rm -rf accidents:
+      1. Python-side regex: slug must start with ``chat-`` and contain only
+         ``[a-z0-9_-]``. Rejects "..", "/", empty, absolute paths.
+      2. Shell-side ``case`` guard: only proceeds if the resolved path starts
+         with ``$HOME/AgentChat/chats/chat-``. A regex bypass would still hit
+         this check and exit without touching anything.
+    """
+    if not dir_slug or not _SAFE_SLUG_RE.match(dir_slug):
+        return
+    slug_q = shlex.quote(dir_slug)
+    cmd = (
+        f"target=\"$HOME/AgentChat/chats/$( printf %s {slug_q} )\"; "
+        f"case \"$target\" in \"$HOME/AgentChat/chats/chat-\"*) "
+        f"  rm -rf -- \"$target\" ;; "
+        f"esac"
+    )
+    try:
+        await wsl_run(cmd, timeout=30)
+    except Exception:
+        pass
 
 
 class ChatSummary(BaseModel):
@@ -88,6 +124,12 @@ async def update_chat(request: Request, chat_id: str, body: ChatUpdate) -> ChatF
 
 @router.delete("/{chat_id}")
 async def delete_chat(request: Request, chat_id: str) -> dict[str, str]:
-    if not request.app.state.chat_store.delete_chat(chat_id):
+    store = request.app.state.chat_store
+    # Snapshot the slug before deleting so we know which folder to purge.
+    row = store.get_chat(chat_id)
+    if row is None:
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")
+    if not store.delete_chat(chat_id):
+        raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")
+    await _purge_chat_dir(row.get("dir_slug") or "")
     return {"status": "ok"}

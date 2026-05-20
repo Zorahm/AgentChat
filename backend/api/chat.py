@@ -11,10 +11,13 @@ from fastapi.responses import StreamingResponse
 
 from agent.config import AgentConfig
 from agent.loop import AgentLoop
-from api.models import AttachmentInfo, ChatRequest
+from agent.sandbox import SandboxPolicy
+from api.schemas.chat import AttachmentInfo, ChatRequest
 from llm.client import LLMClient
 from tools.bash_tool import BashTool
+from tools.read_file import ReadFileTool
 from tools.registry import ToolRegistry
+from tools.write_file import WriteFileTool
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
@@ -149,15 +152,31 @@ async def chat(
 
     registry: ToolRegistry = app_state.tool_registry
 
-    # Point bash_tool at this chat's working folder so files the model writes
-    # via `cd && ...` land per-chat rather than piling up at $HOME.
+    # Build the per-chat sandbox policy and push it into every tool that can
+    # touch the filesystem plus the agent loop (which handles <file>/<edit>
+    # stream tags). In restricted mode bash_tool is wrapped with bwrap and
+    # read/write tools refuse paths outside their allowed scope.
+    from main import WSL_USER_HOME, USER_NAME, get_blocked_read_prefixes
+    chat_dir = _resolve_chat_cwd(body.chat_dir_slug, WSL_USER_HOME)
+    policy = SandboxPolicy(
+        chat_dir=chat_dir,
+        blocked_read_prefixes=get_blocked_read_prefixes(),
+        user_name=USER_NAME,
+        unrestricted=store.unrestricted_mode,
+    )
+
     bash = registry.get(BashTool.name)
     if isinstance(bash, BashTool):
-        from main import WSL_USER_HOME
-        bash.set_cwd(_resolve_chat_cwd(body.chat_dir_slug, WSL_USER_HOME))
+        bash.set_policy(policy)
+    read = registry.get(ReadFileTool.name)
+    if isinstance(read, ReadFileTool):
+        read.set_policy(policy)
+    write = registry.get(WriteFileTool.name)
+    if isinstance(write, WriteFileTool):
+        write.set_policy(policy)
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key)
-    agent = AgentLoop(config=config, tools=registry, llm=llm)
+    agent = AgentLoop(config=config, tools=registry, llm=llm, policy=policy)
     app_state.skill_reader.rebuild()
     agent.set_manifest(app_state.skill_reader.render_prompt())
 

@@ -11,6 +11,7 @@ from typing import Any
 
 from agent.config import AgentConfig
 from agent.file_tag_interceptor import FileTagInterceptor
+from agent.sandbox import SandboxPolicy
 from agent.types import ToolCall, ToolResult
 from agent.write_file_stream import emit_write_file_chunks
 from agent.wsl_exec import wsl_read_text, wsl_write_bytes
@@ -18,10 +19,17 @@ from llm.client import LLMClient
 from tools.registry import ToolRegistry
 
 
-async def _write_file_from_tag(event: dict[str, Any]) -> None:
+async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
     """Write file to disk from a completed <file> tag event. Mutates event in-place."""
     path: str = event.pop("_path")
     content: str = event.pop("_content")
+
+    denied = policy.check_write(path)
+    if denied:
+        event["output"] = f"Error: {denied}"
+        event["success"] = False
+        return
+
     try:
         size = len(content.encode("utf-8"))
         if path.startswith("/"):
@@ -37,7 +45,7 @@ async def _write_file_from_tag(event: dict[str, Any]) -> None:
         event["success"] = False
 
 
-async def _edit_file_from_tag(event: dict[str, Any]) -> None:
+async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
     """Perform an in-place replacement from a completed <edit /> tag event.
 
     Semantics match Claude Code's Edit tool:
@@ -48,6 +56,12 @@ async def _edit_file_from_tag(event: dict[str, Any]) -> None:
     path: str = event.pop("_edit_path")
     old: str = event.pop("_edit_old")
     new: str = event.pop("_edit_new")
+
+    denied = policy.check_write(path)
+    if denied:
+        event["output"] = f"Edit refused: {denied}"
+        event["success"] = False
+        return
 
     try:
         if not path:
@@ -104,13 +118,19 @@ class AgentLoop:
         config: AgentConfig,
         tools: ToolRegistry,
         llm: LLMClient,
+        policy: SandboxPolicy | None = None,
     ) -> None:
         self.config = config
         self.tools = tools
         self.llm = llm
+        # Default policy is unrestricted — api/chat.py overrides per request.
+        self._policy: SandboxPolicy = policy or SandboxPolicy(unrestricted=True)
         self.messages: list[dict[str, Any]] = []
         self.steps: list[dict[str, Any]] = []
         self._manifest_text: str = ""
+
+    def set_policy(self, policy: SandboxPolicy) -> None:
+        self._policy = policy
 
     # ------------------------------------------------------------------
     # public API
@@ -194,9 +214,9 @@ class AgentLoop:
                             accumulated_content += event["content"]
                         elif event["type"] == "tool_end":
                             if "_path" in event:
-                                await _write_file_from_tag(event)
+                                await _write_file_from_tag(event, self._policy)
                             elif "_edit_path" in event:
-                                await _edit_file_from_tag(event)
+                                await _edit_file_from_tag(event, self._policy)
                         yield event
 
                 if delta.tool_calls:

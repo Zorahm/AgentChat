@@ -1,6 +1,6 @@
 /** Tool call display types. */
 
-export type ToolCallStatus = "running" | "success" | "error";
+export type ToolCallStatus = "running" | "success" | "error" | "cancelled";
 
 export type ProcessStep =
   | { type: "thought"; content: string }

@@ -30,11 +30,8 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.chat import router as chat_router
-from api.chats import router as chats_router
-from api.files import router as files_router
-from api.health import router as health_router
-from api.models import (
+from api.router import api_router
+from api.schemas.settings import (
     ModelConfig,
     ProviderConfig,
     ProviderCreate,
@@ -42,10 +39,6 @@ from api.models import (
     SettingsData,
     SettingsUpdate,
 )
-from api.models_routes import router as models_router
-from api.settings import router as settings_router
-from api.skills import router as skills_router
-from api.wsl import router as wsl_router
 from llm.models_fetcher import ModelsFetcher, looks_thinking
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
@@ -82,6 +75,33 @@ USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogi
 USER_HOME = os.path.expanduser("~")
 WSL_USER_HOME = f"/home/{USER_NAME.lower()}" if USER_NAME else "/home/user"
 
+# Tauri bundle identifier — keeps Local AppData/com.zorahm.agentchat off-limits
+# to the model alongside the agents settings/db folder.
+TAURI_LOCAL_DIR = Path(os.environ.get("LOCALAPPDATA", USER_HOME)) / "com.zorahm.agentchat"
+
+
+def _wsl_form(win_path: Path) -> str:
+    """Translate ``C:\\foo\\bar`` to ``/mnt/c/foo/bar`` for WSL-side comparisons."""
+    s = str(win_path)
+    if len(s) >= 2 and s[1] == ":":
+        drive = s[0].lower()
+        rest = s[2:].replace("\\", "/").lstrip("/")
+        return f"/mnt/{drive}/{rest}" if rest else f"/mnt/{drive}"
+    return s
+
+
+def get_blocked_read_prefixes() -> tuple[str, ...]:
+    """Paths the model is forbidden to read in restricted mode.
+
+    Both Windows and WSL-mount forms are returned so checks work whichever
+    path style the model passes in.
+    """
+    blocks: list[str] = []
+    for win in (AGENTS_DIR, TAURI_LOCAL_DIR):
+        blocks.append(str(win))
+        blocks.append(_wsl_form(win))
+    return tuple(blocks)
+
 def build_system_prompt(user_name: str = "") -> str:
     """Build the system prompt with fresh date on every call."""
     name = user_name or os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
@@ -99,6 +119,12 @@ Date: {now}
 - bash_tool — execute bash commands inside WSL. $USER and $HOME are set. Working directory is the current chat's folder under ~/AgentChat/chats/chat-<id>-<timestamp>/ — files you create with relative paths land there. Use absolute paths only when you explicitly need to write somewhere else.
 - read_file — read a file from the local filesystem
 - read_skill — read detailed instructions for an installed skill
+
+## Sandbox & uploads
+
+By default this chat runs in a sandbox: bash is confined to the chat folder, write operations are restricted to it, and reads from the app's settings folder are blocked. The user can disable the sandbox in Settings → "Unrestricted mode".
+
+User-attached files (images, documents, archives) are saved into `./uploads/` relative to the chat folder before your turn begins. You have full read/write access to that subfolder — open, inspect, extract, transform, rename, or move them as needed. Treat each attachment's `path:` reference in the user message as the canonical location.
 
 When a task matches a skill description, call read_skill first to get the workflow. Read each skill at most ONCE per conversation — if you have already read it, do not call read_skill again for the same skill. Use what you already know.
 
@@ -234,6 +260,7 @@ class SettingsStore:
         self._user_name = ""
         self._theme = "system"
         self._onboarding_completed = False
+        self._unrestricted_mode = False
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -288,6 +315,9 @@ class SettingsStore:
             ob = global_block.get("onboarding_completed")
             if isinstance(ob, bool):
                 self._onboarding_completed = ob
+            ur = global_block.get("unrestricted_mode")
+            if isinstance(ur, bool):
+                self._unrestricted_mode = ur
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -327,6 +357,7 @@ class SettingsStore:
                 "user_name": self._user_name,
                 "theme": self._theme,
                 "onboarding_completed": self._onboarding_completed,
+                "unrestricted_mode": self._unrestricted_mode,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -365,6 +396,7 @@ class SettingsStore:
             user_name=self._user_name,
             theme=self._theme,
             onboarding_completed=self._onboarding_completed,
+            unrestricted_mode=self._unrestricted_mode,
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -380,6 +412,8 @@ class SettingsStore:
             self._theme = patch.theme
         if patch.onboarding_completed is not None:
             self._onboarding_completed = patch.onboarding_completed
+        if patch.unrestricted_mode is not None:
+            self._unrestricted_mode = patch.unrestricted_mode
         self._save()
         return self.get()
 
@@ -471,6 +505,10 @@ class SettingsStore:
     def onboarding_completed(self) -> bool:
         return self._onboarding_completed
 
+    @property
+    def unrestricted_mode(self) -> bool:
+        return self._unrestricted_mode
+
 
 # ---------------------------------------------------------------------------
 # app factory
@@ -543,14 +581,7 @@ def create_app() -> FastAPI:
     )
 
     # --- routers ---
-    app.include_router(chat_router, prefix="/api")
-    app.include_router(chats_router, prefix="/api")
-    app.include_router(files_router, prefix="/api")
-    app.include_router(skills_router, prefix="/api")
-    app.include_router(settings_router, prefix="/api")
-    app.include_router(models_router, prefix="/api")
-    app.include_router(health_router, prefix="/api")
-    app.include_router(wsl_router, prefix="/api")
+    app.include_router(api_router)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

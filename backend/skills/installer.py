@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -12,12 +13,25 @@ from urllib.request import Request, urlopen
 from skills.reader import AgentSkillsReader, SkillEntry
 
 
+_SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_\-\.]*$", re.IGNORECASE)
+
+
 def _is_subpath(child: Path, parent: Path) -> bool:
     try:
         child.resolve().relative_to(parent.resolve())
         return True
     except ValueError:
         return False
+
+
+def _safe_member_path(member: str) -> bool:
+    """Reject absolute paths, drive letters and '..' segments (Zip Slip)."""
+    if not member or member.startswith(("/", "\\")):
+        return False
+    if re.match(r"^[a-zA-Z]:", member):
+        return False
+    parts = member.replace("\\", "/").split("/")
+    return ".." not in parts
 
 
 class GitHubSkillInstaller:
@@ -70,6 +84,52 @@ class GitHubSkillInstaller:
         self._reader.rebuild()
 
         # Collect every skill whose dir lives under the freshly-installed repo
+        installed: list[SkillEntry] = [
+            e for e in self._reader.list_skills() if _is_subpath(e.path, dest)
+        ]
+        if not installed:
+            raise RuntimeError(f"Skills installed to {dest} but none found after rebuild")
+        return installed
+
+    def install_from_archive(self, archive_bytes: bytes, filename: str) -> list[SkillEntry]:
+        """Install one or more skills from a local archive (.skill / .zip).
+
+        The archive must contain at least one SKILL.md at any depth. Filename
+        (sans extension) determines the install folder under skills_dir/.
+        """
+        stem = Path(filename).stem or "skill"
+        if not _SAFE_NAME_RE.match(stem):
+            raise ValueError(f"Unsafe archive name: '{filename}'")
+
+        dest = self.skills_dir / stem
+        if dest.exists():
+            shutil.rmtree(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                for member in zf.namelist():
+                    if not _safe_member_path(member):
+                        shutil.rmtree(dest, ignore_errors=True)
+                        raise ValueError(f"Unsafe path in archive: '{member}'")
+                for member in zf.namelist():
+                    rel = member.replace("\\", "/")
+                    target = dest / rel
+                    if member.endswith("/"):
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(zf.read(member))
+        except zipfile.BadZipFile as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise ValueError(f"Not a valid zip archive: {exc}") from exc
+
+        skill_md_files = list(dest.rglob("SKILL.md"))
+        if not skill_md_files:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise ValueError(f"'{filename}' contains no SKILL.md — not a valid Skills 2.0 package")
+
+        self._reader.rebuild()
         installed: list[SkillEntry] = [
             e for e in self._reader.list_skills() if _is_subpath(e.path, dest)
         ]

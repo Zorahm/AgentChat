@@ -4,16 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp } from "@phosphor-icons/react";
 import { Brain, Spinner, CheckCircle } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
-import { marked } from "marked";
 import type { ChatMessage, AttachmentInfo } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import { ToolCallBlock } from "../ToolCalls/ToolCallBlock";
 import { ArtifactCard } from "../Artifacts/ArtifactCard";
-import { CodeBlockView } from "./CodeBlockView";
+import { Markdown } from "../Markdown/Markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { parseArtifacts } from "../../utils/parseArtifacts";
-import { parseCodeBlocks } from "../../utils/parseCodeBlocks";
 import { getLang } from "../../utils/getLang";
 import { formatTime } from "../../utils/formatTime";
 import type { LiveFile } from "../../types/artifact";
@@ -29,26 +27,8 @@ interface MessageBubbleProps {
   onSwitchVariant?: (nodeId: string, idx: number) => void;
 }
 
-function parseMarkdown(src: string): string {
-  const result = marked.parse(src);
-  return typeof result === "string" ? result : "";
-}
-
 function MarkdownContent({ text }: { text: string }) {
-  const html = parseMarkdown(text);
-  const segments = parseCodeBlocks(html);
-
-  return (
-    <div className="msg-markdown">
-      {segments.map((seg, i) =>
-        seg.type === "code" ? (
-          <CodeBlockView key={i} language={seg.language} code={seg.code} />
-        ) : seg.html ? (
-          <div key={i} dangerouslySetInnerHTML={{ __html: seg.html }} />
-        ) : null
-      )}
-    </div>
-  );
+  return <Markdown text={text} className="msg-markdown" breaks={true} />;
 }
 
 export function MessageBubble({
@@ -57,6 +37,14 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   if (message.role === "user") {
     const hasAttachments = (message.attachments?.length ?? 0) > 0;
+    const legacyHtml = !message.displayHtml &&
+      (message.content.startsWith("<p>") || message.content.startsWith("<div>"))
+      ? message.content
+      : null;
+    const renderHtml = message.displayHtml ?? legacyHtml;
+    const copyText = legacyHtml
+      ? message.content.replace(/<[^>]+>/g, "").trim()
+      : message.content;
     return (
       <div className="msg msg-user">
         {hasAttachments && (
@@ -71,9 +59,16 @@ export function MessageBubble({
             ))}
           </div>
         )}
-        <div className="msg-user-bubble">{message.content}</div>
+        {renderHtml ? (
+          <div
+            className="msg-user-bubble"
+            dangerouslySetInnerHTML={{ __html: renderHtml }}
+          />
+        ) : (
+          <div className="msg-user-bubble msg-user-bubble--plain">{message.content}</div>
+        )}
         <div className="msg-user-time">{formatTime(message.timestamp)}</div>
-        <MsgActions content={message.content} compact />
+        <MsgActions content={copyText} compact />
       </div>
     );
   }
@@ -98,7 +93,6 @@ export function MessageBubble({
           onNext={() => nodeId && onSwitchVariant?.(nodeId, variantIndex)}
         />
       )}
-      {hasContent && <div className="role-tag">assistant</div>}
 
       {groups.map((g, i) => {
         const procSteps = g.filter((s): s is Extract<ProcessStep, { type: "thought" | "tool" }> =>
@@ -337,6 +331,7 @@ function BashToolStep({ call }: { call: ToolCall }) {
   const preview = firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
   const isRunning = call.status === "running";
   const isError = call.status === "error";
+  const isCancelled = call.status === "cancelled";
 
   return (
     <div className="thinking-step thinking-step--tool">
@@ -348,7 +343,8 @@ function BashToolStep({ call }: { call: ToolCall }) {
             <span className="bash-head-cmd">{preview || "(пустая команда)"}</span>
             {isRunning && <span className="bash-status running">⟳</span>}
             {isError && <span className="bash-status err">✗ ошибка</span>}
-            {!isRunning && !isError && call.durationMs != null && (
+            {isCancelled && <span className="bash-status cancelled">⏹ отменено</span>}
+            {!isRunning && !isError && !isCancelled && call.durationMs != null && (
               <span className="bash-status">{(call.durationMs / 1000).toFixed(1)}с</span>
             )}
             <span className="bash-chev">{expanded ? <CaretUp /> : <CaretDown />}</span>

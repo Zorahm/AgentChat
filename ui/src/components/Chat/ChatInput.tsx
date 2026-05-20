@@ -12,7 +12,7 @@ import { buildMentionSuggestion, extractText } from "../../utils/mentions";
 import { API_BASE } from "../../utils/apiBase";
 
 interface ChatInputProps {
-  onSend: (text: string, attachments: AttachmentInfo[]) => void;
+  onSend: (text: string, attachments: AttachmentInfo[], html?: string) => void;
   onStop: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
@@ -24,6 +24,7 @@ interface ChatInputProps {
   placeholder?: string;
   fillText?: string;
   onFillTextConsumed?: () => void;
+  dirSlug?: string | null;
 }
 
 interface PendingFile {
@@ -36,6 +37,7 @@ interface PendingFile {
   dataUrl: string | null;
   uploading: boolean;
   error: string | null;
+  uploadedPath?: string;
 }
 
 let _fid = 1;
@@ -46,6 +48,7 @@ export function ChatInput({
   models, model, onModelChange, thinkingEnabled, onThinkingToggle,
   placeholder = "Message…",
   fillText, onFillTextConsumed,
+  dirSlug,
 }: ChatInputProps) {
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -61,6 +64,7 @@ export function ChatInput({
 
   const handleSend = useCallback(async () => {
     if (!editorRef.current) return;
+    const html = editorRef.current.getHTML();
     const text = extractText(editorRef.current.getJSON());
     if ((!text.trim() && pendingFiles.length === 0) || disabled) return;
 
@@ -81,6 +85,7 @@ export function ChatInput({
       for (const pf of needUpload) {
         form.append("files", pf.file);
       }
+      if (dirSlug) form.append("chat_dir_slug", dirSlug);
       try {
         const r = await fetch(`${API_BASE}/files/upload`, { method: "POST", body: form });
         if (r.ok) {
@@ -92,6 +97,7 @@ export function ChatInput({
                 ...finalFiles[idx]!,
                 content: up.content ?? finalFiles[idx]!.content,
                 uploading: false,
+                uploadedPath: up.path,
               };
             }
           }
@@ -103,14 +109,14 @@ export function ChatInput({
       .filter((pf) => !pf.error)
       .map((pf) => ({
         name: pf.name,
-        path: pf.content || pf.dataUrl ? null : null,
+        path: pf.uploadedPath ?? null,
         size: pf.size,
         mime_type: pf.type,
         content: pf.content,
         data_url: pf.dataUrl,
       }));
 
-    onSend(text.trim() || "(attached files)", attachments);
+    onSend(text.trim() || "(attached files)", attachments, html.trim());
     editorRef.current.commands.clearContent();
     setTextLen(0);
     setPendingFiles([]);

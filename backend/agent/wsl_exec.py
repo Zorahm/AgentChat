@@ -11,6 +11,11 @@ import asyncio
 import shlex
 import subprocess
 
+# Suppress the black console flash that Windows would otherwise pop for every
+# wsl.exe spawn when the parent (backend.exe / python.exe) itself has no
+# console attached. 0 on non-Windows so the kwarg is a no-op.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 async def wsl_run(
     bash_cmd: str,
@@ -29,6 +34,7 @@ async def wsl_run(
         input=stdin,
         capture_output=True,
         timeout=timeout,
+        creationflags=_NO_WINDOW,
     )
 
 

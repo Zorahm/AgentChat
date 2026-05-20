@@ -133,15 +133,42 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     if (content !== null) navigator.clipboard.writeText(content).catch(() => {});
   };
 
-  const download = () => {
-    if (content === null || !selected) return;
+  const download = async () => {
+    if (!selected) return;
     const name = selected.path?.split("/").pop() ?? "artifact";
+
+    // Files on disk: pull raw bytes via /api/files/serve so binary formats
+    // (PDF, images, office docs) download correctly. The text-only path
+    // through `content` mangled them via UTF-8 replacement.
+    if (selected.path) {
+      try {
+        const r = await fetch(`${API_BASE}/files/serve?path=${encodeURIComponent(selected.path)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        return;
+      } catch {
+        /* fall through to text blob if serve fails (e.g. file moved) */
+      }
+    }
+
+    // Inline-only artifact (no path) — text blob is the only option.
+    if (content === null) return;
     const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const filePath = selected?.path ?? "";
@@ -235,7 +262,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
         <div className="ap-foot-actions">
           <button onClick={refresh}><ArrowsClockwise /> Обновить</button>
           <button onClick={copy} disabled={content === null}><Copy /> Копировать</button>
-          <button onClick={download} disabled={content === null}><Download /> Скачать</button>
+          <button onClick={download} disabled={!selected?.path && content === null}><Download /> Скачать</button>
         </div>
       </div>
     </aside>
