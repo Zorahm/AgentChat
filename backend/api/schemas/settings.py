@@ -36,6 +36,9 @@ class SettingsData(BaseModel):
     theme: str = "system"
     onboarding_completed: bool = False
     unrestricted_mode: bool = False
+    # "auto" — use WSL if available, fall back to PowerShell on Windows.
+    # "wsl" — force WSL (errors if missing). "powershell" — force PowerShell.
+    shell_preference: str = "auto"
 
 
 class SettingsUpdate(BaseModel):
@@ -46,6 +49,7 @@ class SettingsUpdate(BaseModel):
     theme: str | None = None
     onboarding_completed: bool | None = None
     unrestricted_mode: bool | None = None
+    shell_preference: str | None = None
 
 
 class ProviderUpdate(BaseModel):

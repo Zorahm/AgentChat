@@ -864,3 +864,147 @@
   box-shadow: 0 1px 2px rgba(var(--shadow-tone),.12);
 }
 .st2-theme svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ── Update checker ────────────────────────────────────────────────────── */
+.st2-about-version {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.st2-update-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.st2-update-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+
+.st2-update-status svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.st2-update-status .spin {
+  animation: st2-spin 1s linear infinite;
+}
+
+@keyframes st2-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.st2-update-latest {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+}
+
+.st2-update-available {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.st2-update-error {
+  color: var(--err);
+  background: var(--err-soft);
+  border-color: var(--err-line);
+}
+
+.st2-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── Shell (WSL ⇄ PowerShell) section ──────────────── */
+
+.st2-shell-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.st2-shell-card {
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--paper-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.st2-shell-card.ok { border-color: var(--ok-line, #2a8a3e); }
+.st2-shell-card.bad { border-color: var(--err-line, #b54545); }
+.st2-shell-card.active {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.st2-shell-card-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 2px;
+}
+
+.st2-shell-card.ok .st2-shell-card-h svg { color: var(--ok-line, #2a8a3e); }
+.st2-shell-card.bad .st2-shell-card-h svg { color: var(--err-line, #b54545); }
+
+.st2-shell-card-title {
+  flex: 1;
+}
+
+.st2-shell-card-active {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.st2-shell-card-ln {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.st2-shell-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--paper-2);
+  border: 1px solid var(--ink-soft);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .st2-shell-grid { grid-template-columns: 1fr; }
+}

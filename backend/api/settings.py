@@ -18,7 +18,10 @@ async def get_settings(request: Request) -> SettingsData:
 @router.put("", response_model=SettingsData)
 async def update_settings(request: Request, body: SettingsUpdate) -> SettingsData:
     """Update global settings (model, temperature, iterations)."""
-    return request.app.state.settings_store.update(body)
+    try:
+        return request.app.state.settings_store.update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.put("/providers/{provider_id}")

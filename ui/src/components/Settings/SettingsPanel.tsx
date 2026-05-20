@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Key, Cpu, Folder, Command, Info, Sliders, Sun, Moon, Monitor, Books, Plus, MagnifyingGlass, CaretDown, Trash, DotsThree } from "@phosphor-icons/react";
-import { Atom, Lightning, Desktop, Brain, Code, User, GithubLogo, Globe } from "@phosphor-icons/react";
+import { Atom, Lightning, Desktop, Brain, Code, User, GithubLogo, Globe, ArrowClockwise, CheckCircle, WarningCircle, Terminal, XCircle } from "@phosphor-icons/react";
 import { Markdown } from "../Markdown/Markdown";
 import { API_BASE, setBackendUrl } from "../../utils/apiBase";
+import { checkForUpdates, isTauri, UpdateStatus } from "../../utils/updater";
 import pkg from "../../../package.json";
 
 export interface ProviderConfig {
@@ -22,6 +23,20 @@ interface SettingsData {
   theme: string;
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
+  shell_preference?: "auto" | "wsl" | "powershell";
+}
+
+interface ShellStatus {
+  wsl_installed: boolean;
+  default_distro: string | null;
+  distro_running: boolean;
+  node: string | null;
+  python: string | null;
+  npm: string | null;
+  docx: boolean;
+  powershell_available: boolean;
+  active_shell: "wsl" | "powershell";
+  shell_preference: "auto" | "wsl" | "powershell";
 }
 
 export type NavTab = "providers" | "models" | "main" | "paths" | "shortcuts" | "about" | "skills";
@@ -519,6 +534,240 @@ function MainTab({ settings, onUpdate }: {
           </div>
         </div>
       </section>
+
+      {/* 04 Терминал */}
+      <ShellSection
+        preference={settings.shell_preference ?? "auto"}
+        onChange={(v) => onUpdate({ shell_preference: v })}
+      />
+    </div>
+  );
+}
+
+/* ── Shell (WSL ⇄ PowerShell) ───────────────────── */
+
+function ShellSection({
+  preference,
+  onChange,
+}: {
+  preference: "auto" | "wsl" | "powershell";
+  onChange: (v: "auto" | "wsl" | "powershell") => void;
+}) {
+  const [status, setStatus] = useState<ShellStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [installing, setInstalling] = useState<null | "distro" | "deps">(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/status`);
+      if (r.ok) setStatus(await r.json());
+    } catch { /* no-op */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const installDistro = async () => {
+    setInstalling("distro");
+    setMessage(null);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
+      const data = await r.json();
+      setMessage(data.output ?? (r.ok ? "Установка запущена" : "Ошибка"));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+    } finally {
+      setInstalling(null);
+      reload();
+    }
+  };
+
+  const installDeps = async () => {
+    setInstalling("deps");
+    setMessage(null);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
+      const data = await r.json();
+      setMessage(data.output ?? (r.ok ? "Готово" : "Ошибка"));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+    } finally {
+      setInstalling(null);
+      reload();
+    }
+  };
+
+  const wslOk = !!status?.wsl_installed && !!status?.distro_running;
+  const psOk = !!status?.powershell_available;
+  const activeShell = status?.active_shell ?? (preference === "powershell" ? "powershell" : "wsl");
+
+  return (
+    <section>
+      <div className="st2-mh">
+        <span className="st2-mn">04</span>
+        <h2>Терминал</h2>
+      </div>
+      <p className="st2-md">
+        Через какой шелл агент выполняет команды. По умолчанию — bash внутри WSL,
+        с автоматическим откатом на Windows PowerShell, если WSL не установлен.
+      </p>
+
+      <div className="st2-mrows">
+        {/* Status grid */}
+        <div className="st2-mrow stack">
+          <div className="st2-mctl">
+            <div className="st2-shell-grid">
+              <ShellStatusCard
+                title="WSL · bash"
+                ok={wslOk}
+                lines={[
+                  status
+                    ? status.wsl_installed
+                      ? `wsl.exe найден${status.default_distro ? ` · ${status.default_distro}` : ""}`
+                      : "wsl.exe не установлен"
+                    : "—",
+                  status?.wsl_installed
+                    ? status.distro_running
+                      ? "Дистрибутив запускается"
+                      : "Дистрибутив недоступен"
+                    : "",
+                  status?.distro_running
+                    ? [
+                        status.node ? "node ✓" : "node ✗",
+                        status.python ? "python3 ✓" : "python3 ✗",
+                        status.npm ? "npm ✓" : "npm ✗",
+                      ].join(" · ")
+                    : "",
+                ].filter(Boolean)}
+                active={activeShell === "wsl"}
+              />
+              <ShellStatusCard
+                title="Windows PowerShell"
+                ok={psOk}
+                lines={[
+                  status
+                    ? status.powershell_available
+                      ? "powershell.exe найден"
+                      : "powershell.exe не найден"
+                    : "—",
+                  "Без bwrap-cage — песочница «мягкая»",
+                ]}
+                active={activeShell === "powershell"}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Preference picker */}
+        <div className="st2-mrow">
+          <div className="st2-mlab">
+            <p className="t">Какой шелл использовать</p>
+            <p className="d">
+              «Авто» — bash в WSL, при ошибке откат на PowerShell. «Только WSL» —
+              падать с ошибкой, если WSL недоступен. «Только PowerShell» —
+              никогда не звать WSL.
+            </p>
+          </div>
+          <div className="st2-mctl">
+            <div className="st2-theme">
+              <button
+                className={preference === "auto" ? "active" : ""}
+                onClick={() => onChange("auto")}
+              >
+                <Terminal /> Авто
+              </button>
+              <button
+                className={preference === "wsl" ? "active" : ""}
+                onClick={() => onChange("wsl")}
+              >
+                <Terminal /> WSL
+              </button>
+              <button
+                className={preference === "powershell" ? "active" : ""}
+                onClick={() => onChange("powershell")}
+              >
+                <Terminal /> PowerShell
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="st2-mrow stack">
+          <div className="st2-mctl">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button
+                className="st2-btn"
+                onClick={installDistro}
+                disabled={installing !== null}
+                title="Запускает `wsl --install -d Ubuntu` с правами администратора"
+              >
+                {installing === "distro" ? "Установка…" : "Установить WSL + Ubuntu"}
+              </button>
+              <button
+                className="st2-btn"
+                onClick={installDeps}
+                disabled={installing !== null || !status?.distro_running}
+                title="Ставит nodejs, python3, npm и docx внутри WSL"
+              >
+                {installing === "deps" ? "Установка…" : "Установить Node + Python"}
+              </button>
+              <button
+                className="st2-btn st2-btn--ghost"
+                onClick={reload}
+                disabled={loading}
+              >
+                <ArrowClockwise /> {loading ? "Проверяю…" : "Проверить снова"}
+              </button>
+              {!wslOk && psOk && preference !== "powershell" && (
+                <button
+                  className="st2-btn"
+                  onClick={() => onChange("powershell")}
+                  title="WSL недоступен — переключиться на Windows PowerShell"
+                >
+                  Перейти на PowerShell
+                </button>
+              )}
+            </div>
+            {message && (
+              <pre className="st2-shell-msg">{message}</pre>
+            )}
+            {activeShell === "powershell" && (
+              <div className="st2-risk-note" style={{ marginTop: 10 }}>
+                <b>Режим PowerShell.</b> bwrap-песочница на Windows недоступна —
+                модель ограничена только папкой чата через проверки путей,
+                kernel-level изоляции нет.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ShellStatusCard({
+  title,
+  ok,
+  lines,
+  active,
+}: {
+  title: string;
+  ok: boolean;
+  lines: string[];
+  active: boolean;
+}) {
+  return (
+    <div className={`st2-shell-card${active ? " active" : ""}${ok ? " ok" : " bad"}`}>
+      <div className="st2-shell-card-h">
+        {ok ? <CheckCircle weight="fill" /> : <XCircle weight="fill" />}
+        <span className="st2-shell-card-title">{title}</span>
+        {active && <span className="st2-shell-card-active">активен</span>}
+      </div>
+      {lines.map((ln, i) => (
+        <div key={i} className="st2-shell-card-ln">{ln}</div>
+      ))}
     </div>
   );
 }
@@ -1033,6 +1282,63 @@ function AboutTab() {
     { name: "Python", icon: <Code />, desc: "Агентный цикл, инструменты" },
   ];
 
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle" });
+  const [checking, setChecking] = useState(false);
+
+  const handleCheckUpdate = async () => {
+    if (checking) return;
+    setChecking(true);
+    await checkForUpdates((status) => {
+      setUpdateStatus(status);
+      if (status.state === "latest" || status.state === "error" || status.state === "installing") {
+        setChecking(false);
+      }
+    });
+  };
+
+  const renderUpdateStatus = () => {
+    switch (updateStatus.state) {
+      case "checking":
+        return (
+          <div className="st2-update-status">
+            <ArrowClockwise className="spin" /> Проверяю обновления...
+          </div>
+        );
+      case "available":
+        return (
+          <div className="st2-update-status st2-update-available">
+            <WarningCircle /> Доступна версия <b>v{updateStatus.version}</b>
+          </div>
+        );
+      case "downloading":
+        return (
+          <div className="st2-update-status">
+            <ArrowClockwise className="spin" /> Загрузка обновления...
+          </div>
+        );
+      case "installing":
+        return (
+          <div className="st2-update-status">
+            <ArrowClockwise className="spin" /> Установка... Перезапустите приложение.
+          </div>
+        );
+      case "latest":
+        return (
+          <div className="st2-update-status st2-update-latest">
+            <CheckCircle /> Установлена последняя версия
+          </div>
+        );
+      case "error":
+        return (
+          <div className="st2-update-status st2-update-error">
+            <WarningCircle /> {updateStatus.message}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return <>
     <h3 className="st2-h">О приложении</h3>
     <p className="st2-sub">
@@ -1055,12 +1361,26 @@ function AboutTab() {
 
     <div className="st2-section">
       <h4 style={{ marginBottom: 10 }}>Версия приложения</h4>
-      <div className="st2-about-author" style={{ gap: 12 }}>
-        <img src="/dots.svg" alt="" style={{ width: 36, height: 36, borderRadius: 7 }} />
-        <div>
-          <span className="st2-about-author-name">AgentChat</span>
-          <span className="st2-about-author-meta">v{pkg.version}</span>
+      <div className="st2-about-version">
+        <div className="st2-about-author" style={{ gap: 12 }}>
+          <img src="/dots.svg" alt="" style={{ width: 36, height: 36, borderRadius: 7 }} />
+          <div>
+            <span className="st2-about-author-name">AgentChat</span>
+            <span className="st2-about-author-meta">v{pkg.version}</span>
+          </div>
         </div>
+        {isTauri() && (
+          <div className="st2-update-row">
+            <button
+              className="st2-btn st2-btn--ghost"
+              onClick={handleCheckUpdate}
+              disabled={checking}
+            >
+              <ArrowClockwise /> {checking ? "Проверяю..." : "Проверить обновления"}
+            </button>
+            {renderUpdateStatus()}
+          </div>
+        )}
       </div>
     </div>
 

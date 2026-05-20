@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/wsl", tags=["wsl"])
@@ -29,6 +29,11 @@ class WSLStatus(BaseModel):
     python: str | None
     npm: str | None
     docx: bool  # global npm `docx` package available
+    powershell_available: bool
+    # Resolved shell the next chat will use: "wsl" or "powershell".
+    active_shell: str
+    # Raw preference from settings ("auto" | "wsl" | "powershell").
+    shell_preference: str
 
 
 class InstallResult(BaseModel):
@@ -119,9 +124,16 @@ async def _has_global_npm_pkg(pkg: str) -> bool:
 
 
 @router.get("/status", response_model=WSLStatus)
-async def status() -> WSLStatus:
-    """Probe WSL and required tooling state."""
+async def status(request: Request) -> WSLStatus:
+    """Probe WSL and required tooling state, plus PowerShell availability and
+    the resolved active shell for the next chat."""
+    from main import resolve_active_shell  # avoid circular import at module load
+
+    settings_store = request.app.state.settings_store
+    preference = settings_store.shell_preference
+    ps_available = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
     wsl_installed = shutil.which("wsl") is not None
+
     if not wsl_installed:
         return WSLStatus(
             wsl_installed=False,
@@ -131,6 +143,9 @@ async def status() -> WSLStatus:
             python=None,
             npm=None,
             docx=False,
+            powershell_available=ps_available,
+            active_shell=resolve_active_shell(preference),
+            shell_preference=preference,
         )
 
     distro = await _wsl_default_distro()
@@ -160,6 +175,9 @@ async def status() -> WSLStatus:
         python=python,
         npm=npm,
         docx=docx,
+        powershell_available=ps_available,
+        active_shell=resolve_active_shell(preference),
+        shell_preference=preference,
     )
 
 

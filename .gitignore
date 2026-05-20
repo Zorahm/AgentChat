@@ -26,6 +26,9 @@ ui/dist/
 .claude/
 .agents/
 
+# Runtime chat working dirs (model-created files per chat)
+chats/
+
 # Generated docs / specs / plans
 docs/
 

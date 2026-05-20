@@ -4,8 +4,12 @@ Three rules:
   1. bash_tool runs inside a bubblewrap (bwrap) cage that exposes only the
      chat directory read-write plus read-only system paths (/usr, /bin, /lib,
      /etc). The model cannot read $HOME, /mnt, or anything outside the cage.
-  2. read_file is open by default but rejects anything under AgentChat's
-     own settings/database directory (the .agents folder).
+  2. read_file is restricted to ``chat_dir`` — i.e. files the user has
+     attached via @-mention (which land under ``chat_dir/uploads/``) plus
+     anything the model itself created through <file>. Reading arbitrary
+     filesystem paths is forbidden so the model can't scan ``~/.ssh``,
+     ``/etc``, AppData, or the rest of the host. The .agents directory is
+     always blocked even when it sits under chat_dir.
   3. write_file and the <file>/<edit> stream tags only accept paths inside
      the chat directory.
 
@@ -16,33 +20,75 @@ the user-facing escape hatch for power users.
 from __future__ import annotations
 
 import os
+import posixpath
 import shlex
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 
 
 @dataclass(frozen=True)
 class SandboxPolicy:
     """One policy per chat request, built in api/chat.py."""
 
-    chat_dir: str = ""  # WSL absolute path; empty = no per-chat folder
+    chat_dir: str = ""  # absolute path; WSL form for shell="wsl", Windows for "powershell"
     blocked_read_prefixes: tuple[str, ...] = field(default_factory=tuple)
     user_name: str = ""
     unrestricted: bool = False
+    # Which terminal the bash_tool envelope wraps. PowerShell has no bwrap
+    # equivalent — restricted mode falls back to "soft" sandboxing (cd into
+    # chat_dir, no kernel-level isolation) and the user sees a warning.
+    shell: str = "wsl"
 
     # ── reads ─────────────────────────────────────────────────────────
 
     def check_read(self, path: str) -> str | None:
-        """Return an error message if reading *path* is forbidden, else None."""
+        """Return an error message if reading *path* is forbidden, else None.
+
+        In restricted mode the rule is allowlist-style: the path must be
+        inside ``chat_dir``. That gives the model access to attached files
+        (``chat_dir/uploads/*``) and files it created itself, and nothing
+        else. The .agents blocklist is checked first as defense in depth in
+        case a future bug ever lets chat_dir overlap with it.
+        """
         if self.unrestricted:
             return None
+
         norm = _normalize(path)
+
+        # Belt-and-braces: reject the settings/db directory even if it
+        # somehow sits inside the configured chat_dir.
         for blocked in self.blocked_read_prefixes:
             if _is_under(norm, _normalize(blocked)):
                 return (
                     f"Sandbox: чтение из системной папки агента запрещено ({path}). "
                     "Включи 'Unrestricted mode' в Settings, если правда нужно."
                 )
+
+        if not self.chat_dir:
+            return (
+                "Sandbox: чтение запрещено — для этого чата нет рабочей папки. "
+                "Создай новый чат или включи 'Unrestricted mode' в Settings."
+            )
+
+        # Path-namespace check: a Windows path in WSL mode (or vice versa)
+        # never matches chat_dir under _is_under, so we'd land in the
+        # generic "outside chat folder" branch — but the user-facing error
+        # is nicer if we call out the mismatch directly.
+        chat_is_posix = self.chat_dir.startswith("/")
+        path_is_posix = path.startswith("/")
+        if chat_is_posix != path_is_posix:
+            return (
+                f"Sandbox: путь '{path}' в чужой ФС — текущая папка чата "
+                f"{self.chat_dir}. Прикрепи файл через @-меню."
+            )
+
+        if not _is_under(norm, _normalize(self.chat_dir)):
+            return (
+                f"Sandbox: read_file разрешён только внутри папки чата "
+                f"({self.chat_dir}). Файл '{path}' за её пределами. "
+                "Чтобы дать модели доступ к файлу с диска — прикрепи его "
+                "через @-меню в чате (тогда он окажется в uploads/). "
+                "Альтернатива — включить 'Unrestricted mode' в Settings."
+            )
         return None
 
     # ── writes ────────────────────────────────────────────────────────
@@ -56,13 +102,21 @@ class SandboxPolicy:
                 "Sandbox: нет рабочей папки чата (chat_dir_slug отсутствует). "
                 "Создай новый чат или включи 'Unrestricted mode'."
             )
-        # Only WSL absolute paths allowed in restricted mode. Anything else
-        # (Windows paths, relative paths) is rejected outright.
-        if not path.startswith("/"):
-            return (
-                f"Sandbox: запись разрешена только в папку чата ({self.chat_dir}). "
-                f"Путь '{path}' не WSL-абсолютный."
-            )
+        # Path must be absolute in the matching namespace: WSL ("/…") for the
+        # bash shell, Windows drive letter for PowerShell. Anything else is
+        # rejected outright.
+        if self.shell == "powershell":
+            if not (len(path) >= 3 and path[1] == ":" and path[2] in ("\\", "/")):
+                return (
+                    f"Sandbox: запись разрешена только в папку чата ({self.chat_dir}). "
+                    f"Путь '{path}' не Windows-абсолютный."
+                )
+        else:
+            if not path.startswith("/"):
+                return (
+                    f"Sandbox: запись разрешена только в папку чата ({self.chat_dir}). "
+                    f"Путь '{path}' не WSL-абсолютный."
+                )
         if not _is_under(_normalize(path), _normalize(self.chat_dir)):
             return (
                 f"Sandbox: запись разрешена только в {self.chat_dir}; путь '{path}' "
@@ -148,6 +202,31 @@ class SandboxPolicy:
         )
         return f"mkdir -p {chat_q}; if command -v bwrap >/dev/null 2>&1; then {bwrap_str}; else {fallback}; fi"
 
+    # ── powershell wrap ───────────────────────────────────────────────
+
+    def wrap_powershell(self, inner_cmd: str) -> str:
+        """Return *inner_cmd* prefixed with a chat-dir Set-Location.
+
+        PowerShell on Windows has no bwrap equivalent, so the restricted mode
+        is "soft": we only ensure the cwd is the chat folder. The model can
+        still resolve absolute Windows paths, but the file-write tools refuse
+        anything outside chat_dir, so writes stay contained. The user is told
+        in Settings that PowerShell mode disables the kernel-level cage.
+        """
+        if not self.chat_dir:
+            return inner_cmd
+        # PowerShell single-quoted strings escape ' as ''. Avoid quoting the
+        # entire inner command (it may already contain quotes); just guard the
+        # path.
+        ps_path = self.chat_dir.replace("'", "''")
+        prefix = (
+            f"$d = '{ps_path}'; "
+            f"if (-not (Test-Path -LiteralPath $d)) {{ "
+            f"New-Item -ItemType Directory -Force -Path $d | Out-Null }}; "
+            f"Set-Location -LiteralPath $d; "
+        )
+        return prefix + inner_cmd
+
 
 # ── helpers ───────────────────────────────────────────────────────────
 
@@ -155,15 +234,21 @@ class SandboxPolicy:
 def _normalize(path: str) -> str:
     """Normalize a path for prefix comparison.
 
-    Posix-style paths are normalised via PurePosixPath. Windows-style paths
-    are normalised via os.path.normpath and lowercased (Windows is case-
-    insensitive). The two namespaces never overlap, so this is enough to
+    Critically, this collapses ``..`` and ``.`` segments LEXICALLY so that
+    paths like ``/home/x/chat/uploads/../../etc/passwd`` resolve to
+    ``/etc/passwd`` before the chat_dir prefix check runs. Without this,
+    the sandbox is bypassable via a literal-prefix-but-traversed path.
+
+    Posix-style paths use ``posixpath.normpath``. Windows-style paths use
+    ``os.path.normpath`` (which on Windows collapses both ``..`` and
+    backslash variants) and are then lowercased — Windows is case-
+    insensitive. The two namespaces never overlap, so this is enough to
     block lookups in both at once.
     """
     if not path:
         return ""
     if path.startswith("/"):
-        return str(PurePosixPath(path))
+        return posixpath.normpath(path)
     return os.path.normpath(path).lower()
 
 

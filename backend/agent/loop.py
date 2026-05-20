@@ -20,9 +20,19 @@ from tools.registry import ToolRegistry
 
 
 async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
-    """Write file to disk from a completed <file> tag event. Mutates event in-place."""
-    path: str = event.pop("_path")
-    content: str = event.pop("_content")
+    """Write file to disk from a completed <file> tag event. Mutates event in-place.
+
+    Catches every exception (not just OSError) so that one malformed write
+    can't take down the SSE stream — we always come back with a structured
+    tool_end the UI can render.
+    """
+    path: str = event.pop("_path", "")
+    content: str = event.pop("_content", "")
+
+    if not path:
+        event["output"] = "Error: <file> tag had no path attribute."
+        event["success"] = False
+        return
 
     denied = policy.check_write(path)
     if denied:
@@ -32,6 +42,9 @@ async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> 
 
     try:
         size = len(content.encode("utf-8"))
+        # Choose the write backend by path namespace (not by configured shell):
+        # the model is free to write either a WSL or a Windows path as long as
+        # the sandbox allowed it, and we want both to actually land on disk.
         if path.startswith("/"):
             await wsl_write_bytes(path, content.encode("utf-8"))
         else:
@@ -40,22 +53,43 @@ async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> 
             await asyncio.to_thread(p.write_text, content, "utf-8")
         event["output"] = f"Written {size} bytes to {path}"
         event["success"] = True
+    except FileNotFoundError as exc:
+        event["output"] = (
+            f"Error: cannot write to {path}: {exc}. "
+            "Parent directory may be missing on a read-only mount, or wsl.exe "
+            "is unavailable (try switching to PowerShell in Settings → Терминал)."
+        )
+        event["success"] = False
+    except PermissionError as exc:
+        event["output"] = f"Error: permission denied writing to {path}: {exc}"
+        event["success"] = False
     except OSError as exc:
-        event["output"] = f"Error: {exc}"
+        event["output"] = f"Error: writing to {path} failed: {exc}"
+        event["success"] = False
+    except Exception as exc:  # noqa: BLE001 — last-resort guard for the SSE stream
+        event["output"] = f"Error: unexpected failure writing {path}: {exc!r}"
         event["success"] = False
 
 
 async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
-    """Perform an in-place replacement from a completed <edit /> tag event.
+    """Perform an in-place replacement from a completed <edit> tag event.
 
     Semantics match Claude Code's Edit tool:
       - old must appear EXACTLY once
       - 0 matches → error (model gave wrong context)
       - 2+ matches → error (ambiguous, model must add more context)
+
+    Works for both syntactic forms (self-closing attribute-based and block
+    with nested <old>/<new>). Catches every exception so SSE keeps flowing.
     """
-    path: str = event.pop("_edit_path")
-    old: str = event.pop("_edit_old")
-    new: str = event.pop("_edit_new")
+    path: str = event.pop("_edit_path", "")
+    old: str = event.pop("_edit_old", "")
+    new: str = event.pop("_edit_new", "")
+
+    if not path:
+        event["output"] = "Edit failed: missing path attribute on <edit>."
+        event["success"] = False
+        return
 
     denied = policy.check_write(path)
     if denied:
@@ -64,10 +98,8 @@ async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> N
         return
 
     try:
-        if not path:
-            raise ValueError("missing path")
         if not old:
-            raise ValueError("empty 'old' string — use <file> to create or overwrite")
+            raise ValueError("empty 'old' string — use <file> to create or overwrite a whole file")
 
         if path.startswith("/"):
             original = await wsl_read_text(path)
@@ -79,12 +111,22 @@ async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> N
 
         count = original.count(old)
         if count == 0:
+            # Help the model see the gap. Show the first ~80 chars of old and
+            # whether a normalised version (CRLF→LF, trimmed trailing spaces)
+            # would have matched — common breakage from copy-pasted snippets.
+            preview = old.replace("\n", "\\n")[:80]
+            hint = ""
+            if "\r\n" in original and old.replace("\n", "\r\n") in original:
+                hint = " (file uses CRLF line endings; emit old with literal CRLF)"
+            elif _normalise_ws(original).count(_normalise_ws(old)) == 1:
+                hint = " (only whitespace differs — match exact indentation)"
             raise ValueError(
-                "'old' string not found in file — check exact whitespace and indentation"
+                f"'old' string not found in {path}. Tried to match {preview!r}.{hint}"
             )
         if count > 1:
             raise ValueError(
-                f"'old' string matches {count} times — add surrounding context to make it unique"
+                f"'old' string matches {count} times in {path} — add surrounding "
+                "context (line above/below) to make it unique"
             )
 
         updated = original.replace(old, new, 1)
@@ -95,11 +137,30 @@ async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> N
             await asyncio.to_thread(Path(path).write_text, updated, "utf-8")
 
         size_diff = len(updated.encode("utf-8")) - len(original.encode("utf-8"))
-        event["output"] = f"Edited {path} ({size_diff:+d} bytes)"
+        line_delta = updated.count("\n") - original.count("\n")
+        event["output"] = f"Edited {path} ({size_diff:+d} bytes, {line_delta:+d} lines)"
         event["success"] = True
+    except FileNotFoundError as exc:
+        event["output"] = f"Edit failed: {exc}"
+        event["success"] = False
     except (OSError, ValueError) as exc:
         event["output"] = f"Edit failed: {exc}"
         event["success"] = False
+    except Exception as exc:  # noqa: BLE001 — last-resort guard for the SSE stream
+        event["output"] = f"Edit failed: unexpected error in {path}: {exc!r}"
+        event["success"] = False
+
+
+def _normalise_ws(s: str) -> str:
+    """Collapse all whitespace runs to a single space and trim per-line edges.
+
+    Used only as a diagnostic when an <edit> can't match — tells the model
+    "only whitespace differs" so it doesn't keep retrying the same string.
+    Differs from a strict normalise: we want to ignore tabs-vs-spaces and
+    indent depth so a near-match still trips the hint.
+    """
+    import re as _re
+    return _re.sub(r"\s+", " ", s.replace("\r\n", "\n")).strip()
 
 
 class AgentLoop:

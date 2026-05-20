@@ -22,15 +22,19 @@ from tools.write_file import WriteFileTool
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
 
-def _resolve_chat_cwd(slug: str | None, user_home: str) -> str:
-    """Map a chat slug to an absolute WSL path under ~/AgentChat/chats/.
+def _resolve_chat_cwd(slug: str | None, user_home: str, shell: str = "wsl") -> str:
+    """Map a chat slug to an absolute path under ~/AgentChat/chats/.
 
-    Returns empty string for missing / malformed slug (bash_tool falls back to
-    whatever cwd wsl.exe picks). Slugs are validated against a strict regex
-    to keep command injection out of the shell prefix.
+    For ``shell="wsl"`` returns a WSL path with forward slashes; for
+    ``shell="powershell"`` returns a Windows path with backslashes. Empty
+    string is returned for missing / malformed slug — bash_tool then falls
+    back to whatever cwd the shell picks. Slugs are validated against a
+    strict regex to keep command injection out of the shell prefix.
     """
     if not slug or not _SLUG_RE.match(slug):
         return ""
+    if shell == "powershell":
+        return f"{user_home}\\AgentChat\\chats\\{slug}"
     return f"{user_home}/AgentChat/chats/{slug}"
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -156,13 +160,22 @@ async def chat(
     # touch the filesystem plus the agent loop (which handles <file>/<edit>
     # stream tags). In restricted mode bash_tool is wrapped with bwrap and
     # read/write tools refuse paths outside their allowed scope.
-    from main import WSL_USER_HOME, USER_NAME, get_blocked_read_prefixes
-    chat_dir = _resolve_chat_cwd(body.chat_dir_slug, WSL_USER_HOME)
+    from main import (
+        USER_HOME,
+        USER_NAME,
+        WSL_USER_HOME,
+        get_blocked_read_prefixes,
+        resolve_active_shell,
+    )
+    active_shell = resolve_active_shell(store.shell_preference)
+    home = USER_HOME if active_shell == "powershell" else WSL_USER_HOME
+    chat_dir = _resolve_chat_cwd(body.chat_dir_slug, home, shell=active_shell)
     policy = SandboxPolicy(
         chat_dir=chat_dir,
         blocked_read_prefixes=get_blocked_read_prefixes(),
         user_name=USER_NAME,
         unrestricted=store.unrestricted_mode,
+        shell=active_shell,
     )
 
     bash = registry.get(BashTool.name)

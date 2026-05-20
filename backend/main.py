@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
 from contextlib import asynccontextmanager
@@ -90,6 +91,29 @@ def _wsl_form(win_path: Path) -> str:
     return s
 
 
+def wsl_available() -> bool:
+    """True iff wsl.exe is on PATH. Cheap — just a PATH lookup."""
+    return shutil.which("wsl") is not None
+
+
+def powershell_available() -> bool:
+    """True iff powershell.exe is on PATH. Always true on Windows."""
+    return shutil.which("powershell") is not None or shutil.which("pwsh") is not None
+
+
+def resolve_active_shell(preference: str) -> str:
+    """Resolve the auto/wsl/powershell preference to a concrete "wsl" or "powershell".
+
+    Auto: WSL when available, otherwise PowerShell. Forced modes return as-is;
+    BashTool then surfaces a clear error if the chosen shell isn't installed.
+    """
+    if preference == "wsl":
+        return "wsl"
+    if preference == "powershell":
+        return "powershell"
+    return "wsl" if wsl_available() else "powershell"
+
+
 def get_blocked_read_prefixes() -> tuple[str, ...]:
     """Paths the model is forbidden to read in restricted mode.
 
@@ -102,27 +126,62 @@ def get_blocked_read_prefixes() -> tuple[str, ...]:
         blocks.append(_wsl_form(win))
     return tuple(blocks)
 
-def build_system_prompt(user_name: str = "") -> str:
-    """Build the system prompt with fresh date on every call."""
+def build_system_prompt(user_name: str = "", shell: str = "wsl") -> str:
+    """Build the system prompt with fresh date on every call.
+
+    ``shell`` controls which terminal the bash_tool description advertises —
+    "wsl" (bash inside WSL) or "powershell" (Windows PowerShell). The chat
+    working folder lives on the matching filesystem.
+    """
     name = user_name or os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
     now = datetime.now().strftime("%d %B %Y, %H:%M")
+
+    if shell == "powershell":
+        shell_block = (
+            f"Home (Windows): {USER_HOME}\n"
+            f"Shell: Windows PowerShell — WSL is not available on this machine."
+        )
+        bash_desc = (
+            "- bash_tool — execute a Windows PowerShell command. The working directory is the "
+            f"current chat's folder under {USER_HOME}\\AgentChat\\chats\\chat-<id>-<timestamp>\\. "
+            "Use PowerShell syntax: `$env:VAR`, `Get-ChildItem`, `Set-Location`, backtick for line "
+            "continuation. `&&` is NOT available — chain with `;` or `if ($?) { ... }`."
+        )
+    else:
+        shell_block = (
+            f"Home (WSL): {WSL_USER_HOME}\n"
+            f"Home (Windows): {USER_HOME}\n"
+            f"Shell: bash inside WSL."
+        )
+        bash_desc = (
+            "- bash_tool — execute bash commands inside WSL. $USER and $HOME are set. Working "
+            "directory is the current chat's folder under ~/AgentChat/chats/chat-<id>-<timestamp>/ "
+            "— files you create with relative paths land there. Use absolute paths only when you "
+            "explicitly need to write somewhere else."
+        )
+
     return f"""\
 You are an AI assistant running in a desktop application called "AgentChat".
 
 User: {name}
-Home (WSL): {WSL_USER_HOME}
-Home (Windows): {USER_HOME}
+{shell_block}
 Date: {now}
 
 ## Tools
 
-- bash_tool — execute bash commands inside WSL. $USER and $HOME are set. Working directory is the current chat's folder under ~/AgentChat/chats/chat-<id>-<timestamp>/ — files you create with relative paths land there. Use absolute paths only when you explicitly need to write somewhere else.
+{bash_desc}
 - read_file — read a file from the local filesystem
 - read_skill — read detailed instructions for an installed skill
 
 ## Sandbox & uploads
 
-By default this chat runs in a sandbox: bash is confined to the chat folder, write operations are restricted to it, and reads from the app's settings folder are blocked. The user can disable the sandbox in Settings → "Unrestricted mode".
+By default this chat runs in a sandbox confined to the chat folder:
+- bash is confined to the chat folder (bwrap cage in WSL; soft cwd-only in PowerShell)
+- write operations (write_file, <file>, <edit>) are restricted to the chat folder
+- **read_file is restricted to the chat folder too** — you CANNOT read `/etc/passwd`, `~/.ssh/*`, `C:\Users\…`, AppData, or any other system / user path. Attempts will return a sandbox error.
+- If the user wants you to read a file from somewhere else on their disk, they must attach it through the @-menu in the chat input. The attachment lands in `./uploads/` under the chat folder, and only THEN you can read it via read_file or bash_tool.
+
+The user can disable all sandbox checks in Settings → "Unrestricted mode".
 
 User-attached files (images, documents, archives) are saved into `./uploads/` relative to the chat folder before your turn begins. You have full read/write access to that subfolder — open, inspect, extract, transform, rename, or move them as needed. Treat each attachment's `path:` reference in the user message as the canonical location.
 
@@ -171,24 +230,51 @@ Example:
 
 ## Editing existing files
 
-For small in-place changes, use the self-closing <edit /> tag — it replaces ONE occurrence of `old` with `new`:
+Two forms, pick by edit size:
+
+### A. Short, single-line edits — self-closing <edit /> (all in attributes)
 
 <edit path="/absolute/path" old="exact text to find" new="replacement text" />
 
 Rules:
 - Path must be absolute
-- `old` must match EXACTLY ONCE in the file (include surrounding context if needed for uniqueness)
+- `old` must match EXACTLY ONCE in the file
 - Attribute values use JSON-style escapes: \\n for newline, \\t for tab, \\" for quote, \\\\ for backslash
-- If you need to rewrite the whole file, use <file> instead
 - The whole tag must fit on a single logical line (newlines inside values must be escaped as \\n)
+- Use this form ONLY when both old and new are short single-line snippets
 
-Example — fix a typo in a Python file:
+Example — fix a typo:
 
   <edit path="/home/user/app.py" old="def proces_data(items):" new="def process_data(items):" />
 
-Example — change a return value (multi-line, using \\n):
+### B. Multi-line edits — block <edit>…</edit> with nested <old> and <new>
 
-  <edit path="/home/user/app.py" old="def get_count():\\n    return 1" new="def get_count():\\n    return 2" />
+PREFER THIS FORM whenever old or new spans more than one line — no escapes, copy-paste exact content.
+
+<edit path="/absolute/path">
+<old>
+def get_count():
+    return 1
+</old>
+<new>
+def get_count():
+    total = sum(load())
+    return total
+</new>
+</edit>
+
+Rules:
+- Path on the opening tag must be absolute and uses the same attribute syntax as <file>
+- ONE leading and ONE trailing newline are stripped from the inner content of <old> and <new>, so the example above matches/replaces exactly the literal lines shown
+- `old` must match EXACTLY ONCE in the file — include enough surrounding lines for uniqueness
+- Indentation and whitespace must match the file byte-for-byte
+- Do NOT escape newlines, quotes, or anything else inside <old>/<new> — the parser treats them as raw text
+- For whole-file rewrites use <file> instead
+
+Common failure modes (the tool will tell you which):
+- "'old' string not found" — your snippet doesn't match. Re-read the file with read_file or bash_tool first; common culprits are mismatched indentation (tabs vs spaces) or stripped trailing whitespace
+- "'old' string matches N times" — add one line of surrounding context above or below to disambiguate
+- "<edit> block was never closed with </edit>" — finish emitting the tag
 
 ## Skills
 """
@@ -261,6 +347,7 @@ class SettingsStore:
         self._theme = "system"
         self._onboarding_completed = False
         self._unrestricted_mode = False
+        self._shell_preference = "auto"
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -318,6 +405,9 @@ class SettingsStore:
             ur = global_block.get("unrestricted_mode")
             if isinstance(ur, bool):
                 self._unrestricted_mode = ur
+            sp = global_block.get("shell_preference")
+            if isinstance(sp, str) and sp in ("auto", "wsl", "powershell"):
+                self._shell_preference = sp
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -358,6 +448,7 @@ class SettingsStore:
                 "theme": self._theme,
                 "onboarding_completed": self._onboarding_completed,
                 "unrestricted_mode": self._unrestricted_mode,
+                "shell_preference": self._shell_preference,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -397,6 +488,7 @@ class SettingsStore:
             theme=self._theme,
             onboarding_completed=self._onboarding_completed,
             unrestricted_mode=self._unrestricted_mode,
+            shell_preference=self._shell_preference,
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -414,6 +506,12 @@ class SettingsStore:
             self._onboarding_completed = patch.onboarding_completed
         if patch.unrestricted_mode is not None:
             self._unrestricted_mode = patch.unrestricted_mode
+        if patch.shell_preference is not None:
+            if patch.shell_preference not in ("auto", "wsl", "powershell"):
+                raise ValueError(
+                    f"shell_preference must be one of auto|wsl|powershell, got {patch.shell_preference!r}"
+                )
+            self._shell_preference = patch.shell_preference
         self._save()
         return self.get()
 
@@ -509,6 +607,10 @@ class SettingsStore:
     def unrestricted_mode(self) -> bool:
         return self._unrestricted_mode
 
+    @property
+    def shell_preference(self) -> str:
+        return self._shell_preference
+
 
 # ---------------------------------------------------------------------------
 # app factory
@@ -578,6 +680,7 @@ def create_app() -> FastAPI:
     app.state.tool_registry = registry
     app.state.system_prompt_factory: Callable[[], str] = lambda: build_system_prompt(
         user_name=settings_store.user_name,
+        shell=resolve_active_shell(settings_store.shell_preference),
     )
 
     # --- routers ---
