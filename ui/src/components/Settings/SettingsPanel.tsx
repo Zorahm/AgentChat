@@ -1,9 +1,11 @@
 /** Settings panel — v2: provider cards with models, paths. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Key, Cpu, Folder, Command, Info, Sliders, Sun, Moon, Monitor, Books, Plus, MagnifyingGlass, CaretDown, Trash, DotsThree, LinkSimple } from "@phosphor-icons/react";
+import { Key, Cpu, Folder, Command, Info, Sliders, Sun, Moon, Monitor, Books, Plus, MagnifyingGlass, CaretDown, Trash, DotsThree, LinkSimple, ArrowLeft, Camera, X as XIcon, SignOut, Warning } from "@phosphor-icons/react";
 import { Atom, Lightning, Desktop, Brain, Code, User, GithubLogo, Globe, ArrowClockwise, CheckCircle, WarningCircle, Terminal, XCircle } from "@phosphor-icons/react";
+import { AvatarCircle } from "../Sidebar";
 import { Markdown } from "../Markdown/Markdown";
+import { SkillsManager } from "../Skills/SkillsManager";
 import { API_BASE, setBackendUrl } from "../../utils/apiBase";
 import { checkForUpdates, isTauri, UpdateStatus } from "../../utils/updater";
 import pkg from "../../../package.json";
@@ -53,9 +55,14 @@ interface ProviderStatus { id: string; status: string; count: number; error: str
 interface SettingsPanelProps {
   onClose?: () => void;
   initialTab?: NavTab;
+  avatarUrl: string | null;
+  setAvatarFromFile: (file: File) => Promise<void>;
+  clearAvatar: () => void;
+  onSignOut: (deleteChats: boolean) => void;
+  onStartGhostChat?: () => void;
 }
 
-export function SettingsPanel({ onClose, initialTab }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onStartGhostChat }: SettingsPanelProps) {
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<ProviderStatus[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -141,7 +148,7 @@ export function SettingsPanel({ onClose, initialTab }: SettingsPanelProps) {
     window.dispatchEvent(new CustomEvent("settings-changed"));
   };
 
-  if (!settings) return <Loading error={error} onRetry={reload} />;
+  if (!settings) return <Loading error={error} onRetry={reload} onClose={onClose} />;
 
   return (
     <div className="st2">
@@ -162,13 +169,13 @@ export function SettingsPanel({ onClose, initialTab }: SettingsPanelProps) {
 
       <div className="st2-body">
         {error && <div className="st2-error">{error}</div>}
-        {tab === "main" && <MainTab settings={settings} onUpdate={updateGlobal} />}
+        {tab === "main" && <MainTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} />}
         {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} />}
         {tab === "models" && <ModelsTab settings={settings} loading={modelsLoading} onUpdate={updateGlobal} onRefresh={() => fetchModels(true)} />}
-        {tab === "skills" && <SkillsTab />}
+        {tab === "skills" && <SkillsManager />}
         {tab === "paths" && <PathsTab />}
         {tab === "shortcuts" && <Placeholder t="Горячие клавиши" />}
-        {tab === "about" && <AboutTab />}
+        {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
       </div>
     </div>
   );
@@ -205,13 +212,23 @@ function ProvidersTab({ settings, statuses, loading, expanded, setExpanded, onUp
       </button>
     </div>
     {settings.providers.map((p) => (
-      <ProviderCard key={p.id} p={p}
-        models={settings.models.filter((m) => m.id.startsWith(p.id + "/"))}
-        status={statusMap.get(p.id)}
-        defaultModel={settings.default_model} open={expanded === p.id}
-        onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
-        onUpdate={(x) => onUpdate(p.id, x)}
-        onDelete={p.custom ? () => onDelete(p.id) : undefined} />
+      p.id === "ollama" ? (
+        <OfflineProviderCard key={p.id} p={p}
+          models={settings.models.filter((m) => m.id.startsWith(p.id + "/"))}
+          status={statusMap.get(p.id)}
+          defaultModel={settings.default_model} open={expanded === p.id}
+          onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
+          onUpdate={(x) => onUpdate(p.id, x)}
+          onRefreshModels={onRefreshModels} />
+      ) : (
+        <ProviderCard key={p.id} p={p}
+          models={settings.models.filter((m) => m.id.startsWith(p.id + "/"))}
+          status={statusMap.get(p.id)}
+          defaultModel={settings.default_model} open={expanded === p.id}
+          onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
+          onUpdate={(x) => onUpdate(p.id, x)}
+          onDelete={p.custom ? () => onDelete(p.id) : undefined} />
+      )
     ))}
     <AddProviderForm existingIds={new Set(settings.providers.map((p) => p.id))} onAdd={onAdd} />
   </>;
@@ -365,6 +382,200 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
   );
 }
 
+/* ── Offline Provider card (Ollama) ───────────────────────────── */
+
+function OfflineProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdate, onRefreshModels }: {
+  p: ProviderConfig; models: ModelConfig[]; status?: ProviderStatus;
+  defaultModel: string;
+  open: boolean; onToggle: () => void;
+  onUpdate: (patch: Record<string, unknown>) => Promise<boolean | undefined>;
+  onRefreshModels: () => void;
+}) {
+  const [offlineStatus, setOfflineStatus] = useState<boolean | null>(null);
+  const [modelName, setModelName] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState<{ status: string, pct?: number } | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingStatus(true);
+      fetch(`${API_BASE}/offline/status`)
+        .then(r => r.json())
+        .then(d => { setOfflineStatus(!!d.running); setLoadingStatus(false); })
+        .catch(() => { setOfflineStatus(false); setLoadingStatus(false); });
+    }
+  }, [open]);
+
+  const handleDownload = async (nameToDownload?: string) => {
+    const target = nameToDownload || modelName.trim();
+    if (!target) return;
+    setDownloading(true);
+    setProgress({ status: "Подключение...", pct: 0 });
+    try {
+      const res = await fetch(`${API_BASE}/offline/pull`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: target })
+      });
+      if (!res.body) throw new Error("No body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter(l => l.trim());
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.error) {
+              setProgress({ status: `Ошибка: ${data.error}` });
+              setDownloading(false);
+              return;
+            }
+            if (data.status) {
+              const pct = data.total ? Math.round((data.completed / data.total) * 100) : undefined;
+              setProgress({ status: data.status, pct });
+            }
+          } catch { /* ignore parse error */ }
+        }
+      }
+      setProgress({ status: "Завершено!", pct: 100 });
+      setModelName("");
+      onRefreshModels();
+      setTimeout(() => setProgress(null), 3000);
+    } catch (e: any) {
+      setProgress({ status: `Ошибка: ${e.message}` });
+    }
+    setDownloading(false);
+  };
+
+  const handleDelete = async (name: string) => {
+    if (!confirm(`Удалить локальную модель ${name}?`)) return;
+    await fetch(`${API_BASE}/offline/${encodeURIComponent(name)}`, { method: "DELETE" });
+    onRefreshModels();
+  };
+
+  const badge = loadingStatus ? <span className="st2-pv-badge" style={{ background: "transparent", color: "var(--ink-soft)" }}>Проверка...</span>
+    : offlineStatus === false ? <span className="st2-pv-badge err">Ollama не запущена</span>
+    : <span className="st2-pv-badge ok">Ollama активна</span>;
+
+  const RECOMMENDED = [
+    { id: "llama3.2", name: "Llama 3.2", desc: "Умная и быстрая модель от Meta" },
+    { id: "qwen2.5:7b", name: "Qwen 2.5 (7B)", desc: "Мощная модель для кода и текста" },
+    { id: "phi3", name: "Phi-3", desc: "Легковесная модель от Microsoft" }
+  ];
+
+  return (
+    <div className={`st2-provider ${open ? "open" : ""}`} style={{ borderColor: open ? "var(--brand)" : undefined, transition: "border-color 0.2s" }}>
+      <div className="st2-pv-head" onClick={onToggle}>
+        <div className={`st2-pv-logo ${LOGO[p.id] ?? "lg-other"}`}>O</div>
+        <div className="st2-pv-name">{p.name}<small>Локальные ИИ-модели</small></div>
+        {badge}
+        <div className={`st2-switch${p.enabled ? " on" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onUpdate({ enabled: !p.enabled }); }} />
+      </div>
+      
+      {open && (
+        <div className="st2-pv-body" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "24px" }}>
+          
+          {offlineStatus === false && (
+            <div style={{ padding: "16px", borderRadius: "8px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ fontWeight: 600, color: "#ef4444", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <WarningCircle size={18} weight="bold" />
+                Движок Ollama не найден или не запущен
+              </div>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--ink-soft)", lineHeight: 1.5 }}>
+                Для скачивания и запуска локальных моделей требуется установить <strong>Ollama</strong>. Это бесплатный и безопасный движок, который позволяет запускать ИИ прямо на вашей видеокарте.
+              </p>
+              <a href="https://ollama.com/download" target="_blank" rel="noreferrer" className="st2-btn" style={{ width: "fit-content", marginTop: "8px", textDecoration: "none" }}>
+                Скачать Ollama с официального сайта
+              </a>
+            </div>
+          )}
+
+          {/* Recommended Models */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", opacity: offlineStatus === false ? 0.5 : 1, pointerEvents: offlineStatus === false ? "none" : "auto" }}>
+            <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "var(--ink)" }}>Рекомендуемые модели</h4>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+              {RECOMMENDED.map(m => {
+                const isDownloaded = models.some(x => x.id === m.id || x.name === m.id || x.id.endsWith(`/${m.id}`));
+                return (
+                  <div key={m.id} style={{ padding: "12px", border: "1px solid var(--line)", borderRadius: "8px", background: "var(--surface-2)", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ fontWeight: 500, fontSize: "14px", color: "var(--ink)" }}>{m.name}</div>
+                    <div style={{ fontSize: "12px", color: "var(--ink-soft)", flex: 1 }}>{m.desc}</div>
+                    {isDownloaded ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--ok)", fontSize: "12px", fontWeight: 500, marginTop: "4px" }}>
+                        <CheckCircle weight="fill" /> Скачано
+                      </div>
+                    ) : (
+                      <button className="st2-btn st2-btn--ghost" style={{ width: "100%", justifyContent: "center", marginTop: "4px" }} 
+                              onClick={() => handleDownload(m.id)} disabled={downloading}>
+                        Скачать ↓
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Download */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", opacity: offlineStatus === false ? 0.5 : 1, pointerEvents: offlineStatus === false ? "none" : "auto" }}>
+            <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "var(--ink)" }}>Скачать другую модель</h4>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input className="st2-field" style={{ flex: 1 }} placeholder="Например: mistral или codellama..."
+                value={modelName} onChange={e => setModelName(e.target.value)} disabled={downloading} 
+                onKeyDown={e => e.key === "Enter" && handleDownload()} />
+              <button className="st2-btn" onClick={() => handleDownload()} disabled={downloading || !modelName.trim()}>
+                {downloading ? "Подготовка..." : "Скачать"}
+              </button>
+            </div>
+            
+            {progress && (
+              <div style={{ padding: "12px", background: "var(--surface-3)", border: "1px solid var(--line)", borderRadius: "6px", fontSize: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink)", fontWeight: 500 }}>
+                  <span>{progress.status}</span>
+                  {progress.pct !== undefined && <span>{progress.pct}%</span>}
+                </div>
+                {progress.pct !== undefined && (
+                  <div style={{ height: "6px", background: "var(--surface-2)", borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", background: "var(--brand)", width: `${progress.pct}%`, transition: "width 0.2s ease" }} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Downloaded Models List */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "var(--ink)", borderBottom: "1px solid var(--line)", paddingBottom: "8px" }}>Установленные модели</h4>
+            {models.length === 0 ? (
+              <div style={{ fontSize: "13px", color: "var(--ink-soft)", fontStyle: "italic", padding: "8px 0" }}>У вас пока нет скачанных локальных моделей.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                {models.map((m) => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 500, color: "var(--ink)" }}>{m.name ?? m.id}</span>
+                      {m.thinking && <span className="st2-think-tag">thinking</span>}
+                    </div>
+                    <button className="st2-btn st2-btn--ghost" style={{ padding: "4px 8px", fontSize: "12px", color: "#ef4444", borderColor: "transparent" }} onClick={() => handleDelete(m.name ?? m.id)}>
+                      Удалить
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Models ──────────────────────────────────── */
 
 function ModelsTab({ settings, loading, onUpdate, onRefresh }: {
@@ -407,11 +618,17 @@ function ModelsTab({ settings, loading, onUpdate, onRefresh }: {
 
 /* ── Main Settings ──────────────────── */
 
-function MainTab({ settings, onUpdate }: {
+function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut }: {
   settings: SettingsData;
   onUpdate: (patch: Partial<SettingsData>) => void;
+  avatarUrl: string | null;
+  setAvatarFromFile: (file: File) => Promise<void>;
+  clearAvatar: () => void;
+  onSignOut: (deleteChats: boolean) => void;
 }) {
   const [draft, setDraft] = useState(settings.user_name ?? "");
+  const [showSignOut, setShowSignOut] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraft(settings.user_name ?? "");
@@ -422,6 +639,13 @@ function MainTab({ settings, onUpdate }: {
       onUpdate({ user_name: draft });
     }
   }, [draft, settings.user_name, onUpdate]);
+
+  const handleAvatarFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await setAvatarFromFile(file);
+    e.target.value = "";
+  }, [setAvatarFromFile]);
 
   const currentTheme = settings.theme || "system";
   const unrestricted = settings.unrestricted_mode ?? false;
@@ -444,11 +668,58 @@ function MainTab({ settings, onUpdate }: {
           Как модель к вам обращается. Не отправляется наружу.
         </p>
         <div className="st2-mrows">
+          {/* Avatar row */}
+          <div className="st2-mrow st2-mrow--avatar">
+            <div className="st2-mlab">
+              <p className="t">Аватарка</p>
+              <p className="d">Отображается в сайдбаре. Хранится только локально.</p>
+            </div>
+            <div className="st2-mctl">
+              <div className="st2-avatar-wrap">
+                <div
+                  className="st2-avatar-preview"
+                  onClick={() => avatarInputRef.current?.click()}
+                  title="Нажми чтобы загрузить фото"
+                >
+                  <AvatarCircle url={avatarUrl} name={draft || settings.user_name} size={64} />
+                  <div className="st2-avatar-overlay">
+                    <Camera size={18} weight="bold" />
+                  </div>
+                </div>
+                <div className="st2-avatar-actions">
+                  <button
+                    className="st2-avatar-btn"
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarUrl ? "Изменить фото" : "Загрузить фото"}
+                  </button>
+                  {avatarUrl && (
+                    <button
+                      className="st2-avatar-btn st2-avatar-btn--del"
+                      onClick={clearAvatar}
+                    >
+                      <XIcon size={12} weight="bold" /> Удалить
+                    </button>
+                  )}
+                  <p className="st2-avatar-hint">JPG, PNG, WEBP · обрезается до квадрата</p>
+                </div>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleAvatarFile}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Name row */}
           <div className="st2-mrow">
             <div className="st2-mlab">
               <p className="t">Имя пользователя</p>
               <p className="d">
-                Модель использует это имя в обращениях. Можно оставить пустым — тогда без обращений.
+                Модель использует это имя в обращениях. Можно оставить пустым.
               </p>
             </div>
             <div className="st2-mctl">
@@ -458,8 +729,29 @@ function MainTab({ settings, onUpdate }: {
                 placeholder="Введите имя" />
             </div>
           </div>
+
+          {/* Sign out row */}
+          <div className="st2-mrow st2-mrow--signout">
+            <div className="st2-mlab">
+              <p className="t">Выход из профиля</p>
+              <p className="d">Сбросить имя, аватарку и при желании удалить все чаты.</p>
+            </div>
+            <div className="st2-mctl">
+              <button className="st2-signout-btn" onClick={() => setShowSignOut(true)}>
+                <SignOut size={14} weight="bold" />
+                Выйти из профиля
+              </button>
+            </div>
+          </div>
         </div>
       </section>
+
+      {showSignOut && (
+        <SignOutDialog
+          onClose={() => setShowSignOut(false)}
+          onConfirm={(deleteChats) => { setShowSignOut(false); onSignOut(deleteChats); }}
+        />
+      )}
 
       {/* 02 Оформление */}
       <section>
@@ -1301,7 +1593,8 @@ function Placeholder({ t }: { t: string }) {
   return <><h3 className="st2-h">{t}</h3><p className="st2-sub" style={{ color: "var(--muted)" }}>Скоро.</p></>;
 }
 
-function AboutTab() {
+function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }) {
+  const [ghostClicks, setGhostClicks] = useState(0);
   const stack = [
     { name: "React", icon: <Atom />, desc: "UI-фреймворк" },
     { name: "TypeScript", icon: <Code />, desc: "Типизированный фронтенд" },
@@ -1392,7 +1685,24 @@ function AboutTab() {
       <h4 style={{ marginBottom: 10 }}>Версия приложения</h4>
       <div className="st2-about-version">
         <div className="st2-about-author" style={{ gap: 12 }}>
-          <img src="/dots.svg" alt="" style={{ width: 36, height: 36, borderRadius: 7 }} />
+          <div style={{ position: "relative", width: 36, height: 36 }}>
+            {ghostClicks >= 5 && (
+              <button 
+                className="st2-ghost-btn revealed"
+                onClick={onStartGhostChat}
+                title="????"
+              >
+                +
+              </button>
+            )}
+            <img 
+              src="/dots.svg" 
+              alt="" 
+              onClick={() => setGhostClicks(c => c + 1)}
+              className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
+              style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }} 
+            />
+          </div>
           <div>
             <span className="st2-about-author-name">AgentChat</span>
             <span className="st2-about-author-meta">v{pkg.version}</span>
@@ -1446,18 +1756,107 @@ function AboutTab() {
   </>;
 }
 
-function Loading({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+function Loading({ error, onRetry, onClose }: { error: string | null; onRetry: () => void; onClose?: () => void }) {
+  if (error) {
+    return (
+      <div className="error-page">
+        <div className="error-card">
+          <div className="error-icon-wrapper">
+            <WarningCircle size={48} className="error-icon" weight="duotone" />
+          </div>
+          
+          <h2 className="error-title">Что-то пошло не так</h2>
+          
+          <div className="error-message-box">
+            <p className="error-message-text">{error}</p>
+          </div>
+          
+          <p className="error-hint">
+            Возникла ошибка при взаимодействии с сервером. Пожалуйста, проверьте, запущен ли бэкенд, или попробуйте снова.
+          </p>
+
+          <div className="error-actions">
+            {onClose && (
+              <button className="error-btn error-btn--secondary" onClick={onClose}>
+                <ArrowLeft size={16} weight="bold" />
+                <span>Назад к чатам</span>
+              </button>
+            )}
+            <button className="error-btn error-btn--primary" onClick={onRetry}>
+              <ArrowClockwise size={16} weight="bold" />
+              <span>Повторить попытку</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="st2">
-      <div className="st2-body">
-        {error ? (
-          <>
-            <div className="st2-error">{error}</div>
-            <button className="st2-btn" onClick={onRetry} style={{ marginTop: 12 }}>Повторить</button>
-          </>
-        ) : (
-          <p style={{ color: "var(--muted)" }}>Загрузка…</p>
-        )}
+    <div className="loading-page">
+      <div className="loading-container">
+        <div className="loading-spinner" />
+        <p className="loading-text">Инициализация настроек…</p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Sign Out Dialog ────────────────────────────────────────────────────── */
+
+function SignOutDialog({
+  onClose,
+  onConfirm,
+}: {
+  onClose: () => void;
+  onConfirm: (deleteChats: boolean) => void;
+}) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onClose]);
+
+  return (
+    <div className="confirm-overlay" onClick={onClose}>
+      <div className="confirm-dialog signout-dialog" onClick={(e) => e.stopPropagation()}>
+        <button className="confirm-close" onClick={onClose}><XIcon weight="bold" /></button>
+
+        <div className="signout-header">
+          <div className="signout-icon"><Warning size={22} weight="fill" /></div>
+          <div>
+            <h3 className="confirm-title">Выход из профиля</h3>
+            <p className="signout-sub">Выберите что сделать с данными</p>
+          </div>
+        </div>
+
+        <div className="signout-options">
+          <button
+            className="signout-opt signout-opt--danger"
+            onClick={() => onConfirm(true)}
+          >
+            <div className="signout-opt-icon"><Trash size={16} weight="bold" /></div>
+            <div className="signout-opt-text">
+              <span className="signout-opt-title">Удалить всё</span>
+              <span className="signout-opt-desc">Чаты, история и личные данные будут стёрты</span>
+            </div>
+          </button>
+
+          <button
+            className="signout-opt"
+            onClick={() => onConfirm(false)}
+          >
+            <div className="signout-opt-icon"><SignOut size={16} weight="bold" /></div>
+            <div className="signout-opt-text">
+              <span className="signout-opt-title">Сохранить чаты</span>
+              <span className="signout-opt-desc">Только имя и аватарка будут сброшены</span>
+            </div>
+          </button>
+        </div>
+
+        <button className="confirm-btn confirm-btn--cancel" style={{ width: "100%", textAlign: "center", marginTop: 4 }} onClick={onClose}>
+          Отмена
+        </button>
       </div>
     </div>
   );

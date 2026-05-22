@@ -68,4 +68,6 @@ export interface ChatSession {
   createdAt: number;
   /** Working directory slug used by bash_tool: `~/AgentChat/chats/{dirSlug}/`. */
   dirSlug?: string;
+  /** Client-side pin flag — stored in localStorage, not synced to backend. */
+  pinned?: boolean;
 }

@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   Trash, PencilSimple, Check, X, MagnifyingGlass, ArrowLeft,
+  PushPin, Chats, SortAscending, SortDescending,
 } from "@phosphor-icons/react";
-import type { ChatSession } from "../hooks/useChats";
+import type { ChatSession, ChatNode } from "../types/chat";
 
 interface AllChatsPageProps {
   sessions: ChatSession[];
@@ -10,189 +11,422 @@ interface AllChatsPageProps {
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onPin: (id: string) => void;
   onBack: () => void;
 }
 
-export function AllChatsPage({ sessions, activeId, onSwitch, onDelete, onRename, onBack }: AllChatsPageProps) {
+type SortMode = "newest" | "oldest" | "alpha";
+
+function getMessageCount(root: ChatNode[]): number {
+  let count = 0;
+  function walk(nodes: ChatNode[]) {
+    for (const node of nodes) {
+      if (node.role === "user") {
+        count++;
+        if (node.child) walk([node.child]);
+      } else {
+        count++;
+        for (const v of node.variants) {
+          if (v.children?.length) walk(v.children);
+        }
+      }
+    }
+  }
+  walk(root);
+  return count;
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return "Сегодня";
+  if (days === 1) return "Вчера";
+  if (days < 7) return `${days} дн. назад`;
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+export function AllChatsPage({
+  sessions, activeId, onSwitch, onDelete, onRename, onPin, onBack,
+}: AllChatsPageProps) {
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortMode>("newest");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const sorted = useMemo(
-    () => [...sessions].sort((a, b) => b.createdAt - a.createdAt),
-    [sessions],
-  );
+  useEffect(() => { searchRef.current?.focus(); }, []);
 
-  const filtered = query.trim()
-    ? sorted.filter((s) => s.title.toLowerCase().includes(query.toLowerCase()))
-    : sorted;
+  const sorted = useMemo(() => {
+    const arr = [...sessions];
+    if (sort === "newest") arr.sort((a, b) => b.createdAt - a.createdAt);
+    else if (sort === "oldest") arr.sort((a, b) => a.createdAt - b.createdAt);
+    else arr.sort((a, b) => a.title.localeCompare(b.title, "ru"));
+    return arr;
+  }, [sessions, sort]);
 
-  const allVisibleSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id));
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? sorted.filter((s) => s.title.toLowerCase().includes(q)) : sorted;
+  }, [sorted, query]);
 
-  const toggleSelect = (id: string) => {
+  const pinned = useMemo(() => filtered.filter((s) => s.pinned), [filtered]);
+  const unpinned = useMemo(() => filtered.filter((s) => !s.pinned), [filtered]);
+
+  const allSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id));
+
+  const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const toggleSelectAll = () => {
-    if (allVisibleSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const s of filtered) next.delete(s.id);
-        return next;
-      });
-    } else {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const s of filtered) next.add(s.id);
-        return next;
-      });
-    }
-  };
+  const toggleSelectAll = useCallback(() => {
+    setSelected(allSelected ? new Set() : new Set(filtered.map((s) => s.id)));
+  }, [allSelected, filtered]);
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = useCallback(() => {
     if (selected.size === 0) return;
-    const msg = `Удалить ${selected.size} чат(ов)?`;
-    if (!confirm(msg)) return;
+    if (!confirm(`Удалить ${selected.size} чат(ов)?`)) return;
     for (const id of selected) onDelete(id);
     setSelected(new Set());
+    setSelectMode(false);
+  }, [selected, onDelete]);
+
+  const handleExitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, []);
+
+  const cycleSortMode = useCallback(() => {
+    setSort((s) => s === "newest" ? "oldest" : s === "oldest" ? "alpha" : "newest");
+  }, []);
+
+  const sortLabel: Record<SortMode, string> = {
+    newest: "Новые",
+    oldest: "Старые",
+    alpha: "А–Я",
   };
 
   return (
-    <div className="allchats">
-      <div className="allchats-head">
-        <button className="allchats-back" onClick={onBack}>
-          <ArrowLeft size={18} /> Все чаты
+    <div className="ac-page">
+      {/* ── Header ── */}
+      <div className="ac-head">
+        <button className="ac-back" onClick={onBack} title="Назад">
+          <ArrowLeft size={18} weight="bold" />
         </button>
-        <div className="allchats-search">
-          <MagnifyingGlass size={15} />
+        <div className="ac-head-titles">
+          <h2 className="ac-head-title">Все чаты</h2>
+          <span className="ac-head-count">{sessions.length}</span>
+        </div>
+        <div className="ac-search">
+          <MagnifyingGlass size={14} className="ac-search-icon" />
           <input
-            placeholder="Поиск чатов…"
+            ref={searchRef}
+            placeholder="Поиск по чатам…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            autoFocus
           />
+          {query && (
+            <button className="ac-search-clear" onClick={() => setQuery("")}>
+              <X size={12} weight="bold" />
+            </button>
+          )}
+        </div>
+        <div className="ac-head-actions">
+          <button className="ac-toolbar-btn" onClick={cycleSortMode} title="Сортировка">
+            {sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
+            <span>{sortLabel[sort]}</span>
+          </button>
+          {selectMode ? (
+            <button className="ac-toolbar-btn ac-toolbar-btn--active" onClick={handleExitSelect}>
+              <X size={14} weight="bold" />
+              <span>Отмена</span>
+            </button>
+          ) : (
+            <button className="ac-toolbar-btn" onClick={() => setSelectMode(true)}>
+              <Check size={14} weight="bold" />
+              <span>Выбрать</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {selected.size > 0 && (
-        <div className="allchats-bulk">
-          <span>Выбрано: {selected.size}</span>
-          <button onClick={handleBulkDelete}><Trash /> Удалить выбранные</button>
+      {/* ── Bulk bar (visible only in select mode with selections) ── */}
+      {selectMode && (
+        <div className="ac-bulk-bar">
+          <label className="ac-bulk-check">
+            <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+            <span>{allSelected ? "Снять всё" : "Выбрать всё"}</span>
+          </label>
+          {selected.size > 0 && (
+            <div className="ac-bulk-right">
+              <span className="ac-bulk-count">{selected.size} выбрано</span>
+              <button className="ac-bulk-del" onClick={handleBulkDelete}>
+                <Trash size={14} weight="bold" />
+                Удалить
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="allchats-body">
-        <label className="allchats-select-all">
-          <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} />
-          <span>Выбрать все</span>
-          <span className="allchats-count">{filtered.length}</span>
-        </label>
-
-        {filtered.map((s) => (
-          <div key={s.id} className="allchats-row">
-            <input
-              type="checkbox"
-              className="allchats-cb"
-              checked={selected.has(s.id)}
-              onChange={() => toggleSelect(s.id)}
-            />
-            <AllChatsItem
-              session={s}
-              active={s.id === activeId}
-              onSelect={() => { onSwitch(s.id); }}
-              onDelete={() => onDelete(s.id)}
-              onRename={(title) => onRename(s.id, title)}
-            />
+      {/* ── Grid ── */}
+      <div className="ac-scroll">
+        {filtered.length === 0 ? (
+          <div className="ac-empty">
+            <div className="ac-empty-icon"><Chats size={40} weight="duotone" /></div>
+            <p className="ac-empty-title">Ничего не найдено</p>
+            <p className="ac-empty-sub">Попробуй другой запрос или создай новый чат</p>
           </div>
-        ))}
+        ) : (
+          <>
+            {pinned.length > 0 && (
+              <section className="ac-section">
+                <div className="ac-section-label">
+                  <PushPin size={11} weight="fill" />
+                  Закреплённые
+                </div>
+                <div className="ac-grid">
+                  {pinned.map((s) => (
+                    <ChatCard
+                      key={s.id}
+                      session={s}
+                      active={s.id === activeId}
+                      selectMode={selectMode}
+                      selected={selected.has(s.id)}
+                      onToggleSelect={() => toggleSelect(s.id)}
+                      onSelect={() => { onSwitch(s.id); onBack(); }}
+                      onDelete={() => onDelete(s.id)}
+                      onRename={(t) => onRename(s.id, t)}
+                      onPin={() => onPin(s.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        {filtered.length === 0 && (
-          <div className="allchats-empty">Нет чатов</div>
+            {unpinned.length > 0 && (
+              <section className="ac-section">
+                {pinned.length > 0 && (
+                  <div className="ac-section-label">Остальные</div>
+                )}
+                <div className="ac-grid">
+                  {unpinned.map((s) => (
+                    <ChatCard
+                      key={s.id}
+                      session={s}
+                      active={s.id === activeId}
+                      selectMode={selectMode}
+                      selected={selected.has(s.id)}
+                      onToggleSelect={() => toggleSelect(s.id)}
+                      onSelect={() => { onSwitch(s.id); onBack(); }}
+                      onDelete={() => onDelete(s.id)}
+                      onRename={(t) => onRename(s.id, t)}
+                      onPin={() => onPin(s.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-/* ── Item ─────────────────────────────────── */
+/* ── Context Menu ─────────────────────────────────────────────────────────── */
 
-function AllChatsItem({
-  session, active, onSelect, onDelete, onRename,
-}: {
+interface CardMenuProps {
+  x: number;
+  y: number;
+  pinned: boolean;
+  onPin: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}
+
+function CardMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: CardMenuProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="ctx-menu" style={{ position: "fixed", top: y, left: x, zIndex: 9999 }}>
+      <button className="ctx-item" onClick={() => { onPin(); onClose(); }}>
+        <PushPin weight={pinned ? "fill" : "regular"} />
+        {pinned ? "Открепить" : "Закрепить"}
+      </button>
+      <button className="ctx-item" onClick={() => { onRename(); onClose(); }}>
+        <PencilSimple />
+        Переименовать
+      </button>
+      <div className="ctx-divider" />
+      <button className="ctx-item ctx-item--danger" onClick={() => { onDelete(); onClose(); }}>
+        <Trash />
+        Удалить
+      </button>
+    </div>
+  );
+}
+
+/* ── Chat Card ────────────────────────────────────────────────────────────── */
+
+interface ChatCardProps {
   session: ChatSession;
   active: boolean;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   onSelect: () => void;
   onDelete: () => void;
   onRename: (title: string) => void;
-}) {
-  const [hovered, setHovered] = useState(false);
+  onPin: () => void;
+}
+
+function ChatCard({
+  session, active, selectMode, selected, onToggleSelect, onSelect, onDelete, onRename, onPin,
+}: ChatCardProps) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
-  const handleStartEdit = (e: React.MouseEvent) => {
+  const msgCount = useMemo(() => getMessageCount(session.root ?? []), [session.root]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleClick = useCallback(() => {
+    if (editing) return;
+    if (selectMode) { onToggleSelect(); return; }
+    onSelect();
+  }, [editing, selectMode, onToggleSelect, onSelect]);
+
+  const handleStartEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setEditTitle(session.title);
     setEditing(true);
-  };
+  }, [session.title]);
 
-  const handleSave = (e?: React.MouseEvent | React.KeyboardEvent) => {
+  const handleSave = useCallback((e?: React.MouseEvent | React.KeyboardEvent) => {
     e?.stopPropagation();
-    const trimmed = editTitle.trim();
-    if (trimmed) onRename(trimmed);
+    const t = editTitle.trim();
+    if (t && t !== session.title) onRename(t);
     setEditing(false);
-  };
+  }, [editTitle, session.title, onRename]);
 
-  const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditing(false);
-  };
-
-  const handleKey = (e: React.KeyboardEvent) => {
+  const handleKey = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSave(e);
     if (e.key === "Escape") setEditing(false);
-  };
-
-  const hasActions = editing || hovered || active;
+  }, [handleSave]);
 
   return (
-    <div
-      className={`allchats-item${active ? " active" : ""}`}
-      onClick={editing ? undefined : onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {editing ? (
-        <input
-          className="allchats-edit"
-          value={editTitle}
-          onChange={(e) => setEditTitle(e.target.value)}
-          onKeyDown={handleKey}
-          onBlur={() => setEditing(false)}
-          autoFocus
-          onClick={(e) => e.stopPropagation()}
-        />
-      ) : (
-        <span className="allchats-title">{session.title}</span>
-      )}
+    <>
+      <div
+        className={[
+          "ac-card",
+          active ? "ac-card--active" : "",
+          selected ? "ac-card--selected" : "",
+        ].filter(Boolean).join(" ")}
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+      >
+        {/* Top row */}
+        <div className="ac-card-top">
+          {selectMode && (
+            <input
+              type="checkbox"
+              className="ac-card-check"
+              checked={selected}
+              onChange={onToggleSelect}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          <div className="ac-card-badges">
+            {active && <span className="ac-badge ac-badge--active">Текущий</span>}
+            {session.pinned && <span className="ac-badge ac-badge--pin"><PushPin size={9} weight="fill" /></span>}
+          </div>
+          {!selectMode && !editing && (
+            <div className="ac-card-actions" onClick={(e) => e.stopPropagation()}>
+              <button className="ac-card-btn" onClick={handleStartEdit} title="Переименовать">
+                <PencilSimple size={13} />
+              </button>
+              <button className="ac-card-btn ac-card-btn--del" onClick={() => onDelete()} title="Удалить">
+                <Trash size={13} />
+              </button>
+            </div>
+          )}
+        </div>
 
-      {editing ? (
-        <span className="allchats-actions">
-          <button className="allchats-act" onClick={handleSave} title="Сохранить"><Check /></button>
-          <button className="allchats-act" onClick={handleCancel} title="Отмена"><X /></button>
-        </span>
-      ) : hasActions ? (
-        <span className="allchats-actions">
-          <button className="allchats-act" onClick={handleStartEdit} title="Переименовать"><PencilSimple /></button>
-          <button
-            className="allchats-act allchats-act--del"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            title="Удалить"
-          ><Trash /></button>
-        </span>
-      ) : null}
-    </div>
+        {/* Title */}
+        <div className="ac-card-body">
+          {editing ? (
+            <div className="ac-card-edit-wrap" onClick={(e) => e.stopPropagation()}>
+              <input
+                className="ac-card-edit"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={handleKey}
+                onBlur={() => setEditing(false)}
+                autoFocus
+              />
+              <div className="ac-card-edit-actions">
+                <button className="ac-card-btn ac-card-btn--ok" onMouseDown={(e) => { e.preventDefault(); handleSave(e); }}>
+                  <Check size={13} weight="bold" />
+                </button>
+                <button className="ac-card-btn" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(false); }}>
+                  <X size={13} weight="bold" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="ac-card-title">{session.title}</p>
+          )}
+        </div>
+
+        {/* Meta */}
+        <div className="ac-card-meta">
+          <span className="ac-card-meta-item">
+            {msgCount > 0 ? `${msgCount} сообщ.` : "Пустой"}
+          </span>
+          <span className="ac-card-meta-sep" />
+          <span className="ac-card-meta-item ac-card-meta-date">
+            {formatDate(session.createdAt)}
+            <span className="ac-card-meta-time">{formatTime(session.createdAt)}</span>
+          </span>
+        </div>
+      </div>
+
+      {menu && (
+        <CardMenu
+          x={menu.x}
+          y={menu.y}
+          pinned={!!session.pinned}
+          onPin={onPin}
+          onRename={() => { setEditTitle(session.title); setEditing(true); }}
+          onDelete={onDelete}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </>
   );
 }

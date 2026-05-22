@@ -12,6 +12,7 @@ from api.models_routes import router as models_router
 from api.settings import router as settings_router
 from api.skills import router as skills_router
 from api.wsl import router as wsl_router
+from api.offline import router as offline_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(chat_router)
@@ -22,3 +23,4 @@ api_router.include_router(settings_router)
 api_router.include_router(models_router)
 api_router.include_router(health_router)
 api_router.include_router(wsl_router)
+api_router.include_router(offline_router)
