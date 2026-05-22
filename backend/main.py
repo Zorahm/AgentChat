@@ -296,6 +296,11 @@ DEFAULT_PROVIDERS: list[ProviderConfig] = [
         name="OpenCode",
         api_base="https://opencode.ai/zen/go/v1",
     ),
+    ProviderConfig(
+        id="ollama",
+        name="Ollama (Оффлайн)",
+        api_base="http://127.0.0.1:11434",
+    ),
 ]
 
 def _resolve_env_api_key(provider_id: str) -> str | None:

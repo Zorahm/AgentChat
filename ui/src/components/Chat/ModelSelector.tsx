@@ -59,6 +59,7 @@ function modelBadge(m: ModelItem): string | null {
     return null;
 }
 
+
 export function ModelSelector({
   models, model, onChange,
   thinkingEnabled, onThinkingToggle,
@@ -78,46 +79,87 @@ export function ModelSelector({
 
   const currentName = models.find((m) => m.id === model)?.name ?? model;
   const groups = groupModels(models);
+  const apiGroups = groups.filter((g) => g.provider !== "ollama" && g.provider !== "lmstudio");
+  const offlineGroups = groups.filter((g) => g.provider === "ollama" || g.provider === "lmstudio");
 
   return (
     <div className="ms-wrap" ref={wrapRef}>
-      <button
-        className="ms-pill"
-        onClick={() => setOpen((v) => !v)}
-        title={model}
-      >
-        <span className="ms-pill-dot" />
-        <span className="ms-pill-name">{currentName}</span>
-        <span className="ms-pill-chev"><CaretDown /></span>
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <button
+          className="ms-pill"
+          onClick={() => setOpen((v) => !v)}
+          title={model}
+        >
+          <span className="ms-pill-dot" />
+          <span className="ms-pill-name">{currentName}</span>
+          <span className="ms-pill-chev"><CaretDown /></span>
+        </button>
+
+      </div>
 
       {open && (
         <div className="ms-dropdown">
-          {groups.map((g) => (
-            <div key={g.provider} className="ms-group">
-              <div className="ms-group-label">{g.label}</div>
-              {g.items.map((m) => (
-                <div
-                  key={m.id}
-                  className={`ms-item${m.id === model ? " ms-item--sel" : ""}`}
-                  onClick={() => { onChange(m.id); setOpen(false); }}
-                >
-                  <span className="ms-item-ck">
-                    {m.id === model ? <Check /> : ""}
-                  </span>
-                  <span className="ms-item-info">
-                    <span className="ms-item-name">
-                      {m.name ?? m.id}
-                      {modelBadge(m) && (
-                        <span className="ms-item-badge">{modelBadge(m)}</span>
-                      )}
-                    </span>
-                    <span className="ms-item-id">{m.id}</span>
-                  </span>
+          {apiGroups.length > 0 && (
+            <>
+              <div className="ms-category-label" style={{ padding: "8px 12px", fontSize: 11, fontWeight: 600, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: 0.5 }}>API Модели</div>
+              {apiGroups.map((g) => (
+                <div key={g.provider} className="ms-group">
+                  <div className="ms-group-label">{g.label}</div>
+                  {g.items.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`ms-item${m.id === model ? " ms-item--sel" : ""}`}
+                      onClick={() => { onChange(m.id); setOpen(false); }}
+                    >
+                      <span className="ms-item-ck">
+                        {m.id === model ? <Check /> : ""}
+                      </span>
+                      <span className="ms-item-info">
+                        <span className="ms-item-name">
+                          {m.name ?? m.id}
+                          {modelBadge(m) && (
+                            <span className="ms-item-badge">{modelBadge(m)}</span>
+                          )}
+                        </span>
+                        <span className="ms-item-id">{m.id}</span>
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ))}
-            </div>
-          ))}
+            </>
+          )}
+
+          {offlineGroups.length > 0 && (
+            <>
+              <div className="ms-category-label" style={{ padding: "8px 12px", fontSize: 11, fontWeight: 600, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: 0.5, borderTop: "1px solid var(--line)", marginTop: 4, paddingTop: 12 }}>Оффлайн Модели</div>
+              {offlineGroups.map((g) => (
+                <div key={g.provider} className="ms-group">
+                  <div className="ms-group-label">{g.label}</div>
+                  {g.items.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`ms-item${m.id === model ? " ms-item--sel" : ""}`}
+                      onClick={() => { onChange(m.id); setOpen(false); }}
+                    >
+                      <span className="ms-item-ck">
+                        {m.id === model ? <Check /> : ""}
+                      </span>
+                      <span className="ms-item-info">
+                        <span className="ms-item-name">
+                          {m.name ?? m.id}
+                          {modelBadge(m) && (
+                            <span className="ms-item-badge">{modelBadge(m)}</span>
+                          )}
+                        </span>
+                        <span className="ms-item-id">{m.id}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
 
           <div className="ms-foot">
             <div className="ms-toggle">
