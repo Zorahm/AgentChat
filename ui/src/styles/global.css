@@ -161,3 +161,31 @@ html, body {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+
+/* ── Global drag-and-drop overlay ─────────────────────────────────────── */
+.gdz {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.2);
+  pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  animation: gdz-bg 0.15s ease both;
+}
+@keyframes gdz-bg {
+  from { background: rgba(0,0,0,0); }
+}
+.gdz-card {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 32px 52px;
+  background: var(--surface);
+  border: 1.5px dashed var(--line-2);
+  border-radius: 18px;
+  color: var(--muted);
+  font-size: 15px; font-weight: 500;
+  box-shadow: 0 8px 40px -8px rgba(0,0,0,.2);
+  animation: gdz-card 0.18s cubic-bezier(.22,.68,0,1.2) both;
+}
+@keyframes gdz-card {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}

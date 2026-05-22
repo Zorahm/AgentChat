@@ -8,6 +8,8 @@
  */
 
 import { API_BASE } from "./apiBase";
+import { ReactRenderer } from "@tiptap/react";
+import { MentionPopup, type MentionItemData } from "../components/Chat/MentionPopup";
 
 export interface MentionDeps {
   onAttachFile: () => void;
@@ -18,19 +20,12 @@ interface SkillEntry {
   description: string;
 }
 
-interface BaseItem {
-  key: string;
-  label: string;
-  desc: string;
-  icon: string;
-}
-
-interface ActionItem extends BaseItem {
+interface ActionItem extends MentionItemData {
   kind: "action";
   action: "attach-file";
 }
 
-interface SkillItem extends BaseItem {
+interface SkillItem extends MentionItemData {
   kind: "skill";
   skillName: string;
 }
@@ -43,7 +38,8 @@ const ACTION_FILE: ActionItem = {
   action: "attach-file",
   label: "Файл",
   desc: "Прикрепить файл с диска",
-  icon: "📄",
+  type: "file",
+  kbd: "",
 };
 
 // ── Skills cache ───────────────────────────────────────────────────────────
@@ -89,7 +85,7 @@ function buildItems(query: string, skills: SkillEntry[]): Item[] {
         skillName: s.name,
         label: s.name,
         desc: s.description || "Скилл",
-        icon: "🧩",
+        type: "skill",
       });
     }
   }
@@ -97,75 +93,7 @@ function buildItems(query: string, skills: SkillEntry[]): Item[] {
   return items;
 }
 
-// ── Popup rendering ────────────────────────────────────────────────────────
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function renderHtml(items: Item[], selectedIndex: number): string {
-  if (items.length === 0) {
-    return '<div class="mp-empty">Ничего не найдено</div>';
-  }
-  let html = "";
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]!;
-    const active = i === selectedIndex ? " active" : "";
-    // Action items get a short hint as a sub-line (the action is self-describing).
-    // Skill items show only the name in the row — full description lives in the tooltip.
-    const sub =
-      item.kind === "action"
-        ? `<span class="mp-item-sub">${escapeHtml(item.desc)}</span>`
-        : "";
-    html +=
-      `<div class="mp-item${active}" data-idx="${i}">` +
-      `<span class="mp-item-ic">${item.icon}</span>` +
-      `<span class="mp-item-info">` +
-      `<span class="mp-item-label">${escapeHtml(item.label)}</span>` +
-      sub +
-      `</span>` +
-      `</div>`;
-  }
-  return html;
-}
-
-function positionTooltip(
-  tooltip: HTMLElement,
-  popup: HTMLElement,
-  activeRow: HTMLElement | null,
-) {
-  if (!activeRow) {
-    tooltip.style.display = "none";
-    return;
-  }
-  tooltip.style.display = "block";
-  const pad = 8;
-  const rowRect = activeRow.getBoundingClientRect();
-  const popupRect = popup.getBoundingClientRect();
-  const tw = tooltip.offsetWidth || 280;
-  const th = tooltip.offsetHeight || 80;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  // Default: right of popup, vertically centered on the active row.
-  let left = popupRect.right + 8;
-  let top = rowRect.top + rowRect.height / 2 - th / 2;
-
-  // If no room on the right, flip to the left of the popup.
-  if (left + tw + pad > vw) {
-    left = popupRect.left - tw - 8;
-    if (left < pad) left = pad;
-  }
-  if (top + th + pad > vh) top = Math.max(pad, vh - th - pad);
-  if (top < pad) top = pad;
-
-  tooltip.style.left = `${Math.round(left)}px`;
-  tooltip.style.top = `${Math.round(top)}px`;
-}
+// ── Popup rendering via ReactRenderer ──────────────────────────────────────
 
 function positionPopup(popup: HTMLElement, anchor: DOMRect | null) {
   const pad = 8;
@@ -179,7 +107,6 @@ function positionPopup(popup: HTMLElement, anchor: DOMRect | null) {
 
   if (left + pw + pad > vw) left = Math.max(pad, vw - pw - pad);
   if (top + ph + pad > vh && anchor) {
-    // flip above the caret if there's more room up there
     const above = anchor.top - ph - 4;
     top = above >= pad ? above : Math.max(pad, vh - ph - pad);
   }
@@ -189,8 +116,6 @@ function positionPopup(popup: HTMLElement, anchor: DOMRect | null) {
 
 // ── TipTap Suggestion config ───────────────────────────────────────────────
 
-// The TipTap suggestion types are awkward to import from `@tiptap/suggestion`
-// here without dragging in the whole package; use `any` at the seam.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildMentionSuggestion(deps: MentionDeps): any {
   return {
@@ -202,24 +127,19 @@ export function buildMentionSuggestion(deps: MentionDeps): any {
       return buildItems(query, skills);
     },
 
-    // The Mention extension's command callback inserts the chip via its own
-    // `command(item)` from props. We override insertion semantics: action
-    // items invoke the callback instead of inserting; skill items insert a
-    // chip whose label is "skill:NAME" so submitted text contains "@skill:NAME".
     command: ({
       editor,
       range,
       props,
     }: {
-      editor: { chain: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      editor: { chain: () => any };
       range: { from: number; to: number };
       props: Item;
     }) => {
       if (props.kind === "action" && props.action === "attach-file") {
-        // Drop the typed @query so the input is clean before we open the picker.
         editor
           .chain()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .focus()
           .deleteRange(range)
           .run();
@@ -242,129 +162,54 @@ export function buildMentionSuggestion(deps: MentionDeps): any {
     },
 
     render: () => {
-      let popup: HTMLDivElement | null = null;
-      let tooltip: HTMLDivElement | null = null;
-      let currentItems: Item[] = [];
-      let selectedIndex = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let renderer: ReactRenderer<any> | null = null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let currentProps: any = null;
-
-      const commit = (idx: number) => {
-        const item = currentItems[idx];
-        if (!item || !currentProps) return;
-        currentProps.command(item);
-      };
-
-      const refreshTooltip = () => {
-        if (!popup || !tooltip) return;
-        const item = currentItems[selectedIndex];
-        if (!item || !item.desc) {
-          tooltip.style.display = "none";
-          return;
-        }
-        tooltip.textContent = item.desc;
-        const activeRow = popup.querySelector<HTMLElement>(".mp-item.active");
-        positionTooltip(tooltip, popup, activeRow);
-      };
-
-      const updateActive = () => {
-        if (!popup) return;
-        popup.querySelectorAll<HTMLElement>(".mp-item").forEach((el, i) => {
-          el.classList.toggle("active", i === selectedIndex);
-        });
-        refreshTooltip();
-      };
-
-      const rebuild = (items: Item[]) => {
-        currentItems = items;
-        if (selectedIndex >= items.length) selectedIndex = 0;
-        if (!popup) return;
-        popup.innerHTML = renderHtml(items, selectedIndex);
-        wireMouseHandlers();
-        refreshTooltip();
-      };
-
-      const wireMouseHandlers = () => {
-        if (!popup) return;
-        popup.querySelectorAll<HTMLElement>(".mp-item").forEach((el) => {
-          el.addEventListener("mouseenter", () => {
-            const idx = Number(el.dataset.idx ?? "-1");
-            if (idx >= 0 && idx !== selectedIndex) {
-              selectedIndex = idx;
-              updateActive();
-            }
-          });
-          el.addEventListener("mousedown", (e) => {
-            // mousedown (not click) so we beat the editor's blur handling.
-            e.preventDefault();
-            const idx = Number(el.dataset.idx ?? "-1");
-            if (idx >= 0) commit(idx);
-          });
-        });
-      };
 
       return {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onStart(props: any) {
           currentProps = props;
-          popup = document.createElement("div");
-          popup.className = "mp-pop";
+
+          renderer = new ReactRenderer(MentionPopup, {
+            props,
+            editor: props.editor,
+          });
+
+          const popup = renderer.element as HTMLElement;
           popup.style.position = "fixed";
+          popup.style.zIndex = "200";
           document.body.appendChild(popup);
 
-          tooltip = document.createElement("div");
-          tooltip.className = "mp-tooltip";
-          tooltip.style.position = "fixed";
-          tooltip.style.display = "none";
-          document.body.appendChild(tooltip);
-
-          rebuild(props.items ?? []);
           positionPopup(popup, props.clientRect?.() ?? null);
-          refreshTooltip();
         },
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onUpdate(props: any) {
           currentProps = props;
-          rebuild(props.items ?? []);
-          if (popup) {
-            positionPopup(popup, props.clientRect?.() ?? null);
-            refreshTooltip();
+          renderer?.updateProps(props);
+
+          if (renderer) {
+            positionPopup(
+              renderer.element as HTMLElement,
+              props.clientRect?.() ?? null,
+            );
           }
         },
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onKeyDown(props: any) {
-          const e = props.event as KeyboardEvent;
-          if (e.key === "ArrowDown") {
-            selectedIndex = Math.min(selectedIndex + 1, currentItems.length - 1);
-            updateActive();
-            return true;
-          }
-          if (e.key === "ArrowUp") {
-            selectedIndex = Math.max(selectedIndex - 1, 0);
-            updateActive();
-            return true;
-          }
-          if (e.key === "Enter" || e.key === "Tab") {
-            if (currentItems.length === 0) return true;
-            commit(selectedIndex);
-            return true;
-          }
-          if (e.key === "Escape") {
-            return true;
+          if (renderer?.ref) {
+            return renderer.ref.onKeyDown(props);
           }
           return false;
         },
 
         onExit() {
-          popup?.remove();
-          tooltip?.remove();
-          popup = null;
-          tooltip = null;
-          currentItems = [];
+          renderer?.destroy();
+          renderer = null;
           currentProps = null;
-          selectedIndex = 0;
         },
       };
     },

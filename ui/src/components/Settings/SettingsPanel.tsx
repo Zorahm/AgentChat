@@ -1,7 +1,7 @@
 /** Settings panel — v2: provider cards with models, paths. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Key, Cpu, Folder, Command, Info, Sliders, Sun, Moon, Monitor, Books, Plus, MagnifyingGlass, CaretDown, Trash, DotsThree } from "@phosphor-icons/react";
+import { Key, Cpu, Folder, Command, Info, Sliders, Sun, Moon, Monitor, Books, Plus, MagnifyingGlass, CaretDown, Trash, DotsThree, LinkSimple } from "@phosphor-icons/react";
 import { Atom, Lightning, Desktop, Brain, Code, User, GithubLogo, Globe, ArrowClockwise, CheckCircle, WarningCircle, Terminal, XCircle } from "@phosphor-icons/react";
 import { Markdown } from "../Markdown/Markdown";
 import { API_BASE, setBackendUrl } from "../../utils/apiBase";
@@ -33,7 +33,9 @@ interface ShellStatus {
   node: string | null;
   python: string | null;
   npm: string | null;
+  pandoc: string | null;
   docx: boolean;
+  dns_ok: boolean;
   powershell_available: boolean;
   active_shell: "wsl" | "powershell";
   shell_preference: "auto" | "wsl" | "powershell";
@@ -555,7 +557,7 @@ function ShellSection({
 }) {
   const [status, setStatus] = useState<ShellStatus | null>(null);
   const [loading, setLoading] = useState(false);
-  const [installing, setInstalling] = useState<null | "distro" | "deps">(null);
+  const [installing, setInstalling] = useState<null | "distro" | "deps" | "dns">(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -590,6 +592,21 @@ function ShellSection({
       const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
       const data = await r.json();
       setMessage(data.output ?? (r.ok ? "Готово" : "Ошибка"));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+    } finally {
+      setInstalling(null);
+      reload();
+    }
+  };
+
+  const fixDns = async () => {
+    setInstalling("dns");
+    setMessage(null);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/fix-dns`, { method: "POST" });
+      const data = await r.json();
+      setMessage(data.output ?? (r.ok ? "DNS починен — WSL перезапущен" : "Ошибка"));
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Сеть недоступна");
     } finally {
@@ -637,6 +654,8 @@ function ShellSection({
                         status.node ? "node ✓" : "node ✗",
                         status.python ? "python3 ✓" : "python3 ✗",
                         status.npm ? "npm ✓" : "npm ✗",
+                        status.pandoc ? "pandoc ✓" : "pandoc ✗",
+                        status.dns_ok ? "DNS ✓" : "DNS ✗",
                       ].join(" · ")
                     : "",
                 ].filter(Boolean)}
@@ -709,10 +728,20 @@ function ShellSection({
                 className="st2-btn"
                 onClick={installDeps}
                 disabled={installing !== null || !status?.distro_running}
-                title="Ставит nodejs, python3, npm и docx внутри WSL"
+                title="Ставит nodejs, python3, npm, pandoc и docx внутри WSL. Сам чинит DNS, если он сломан."
               >
-                {installing === "deps" ? "Установка…" : "Установить Node + Python"}
+                {installing === "deps" ? "Установка…" : "Установить Node + Python + pandoc"}
               </button>
+              {status?.distro_running && !status.dns_ok && (
+                <button
+                  className="st2-btn"
+                  onClick={fixDns}
+                  disabled={installing !== null}
+                  title="Прописывает Cloudflare/Google DNS в /etc/resolv.conf и блокирует автогенерацию через /etc/wsl.conf, затем wsl --shutdown"
+                >
+                  {installing === "dns" ? "Чиню…" : "Починить DNS"}
+                </button>
+              )}
               <button
                 className="st2-btn st2-btn--ghost"
                 onClick={reload}
@@ -1073,7 +1102,7 @@ function SkillsTab() {
 
         <div className="st2-sk-install">
           <div className={`st2-sk-input${valid ? " detected" : ""}`}>
-            <span className="lead">🔗</span>
+            <span className="lead"><LinkSimple size={14} weight="bold" /></span>
             <input
               ref={inputRef}
               type="text"

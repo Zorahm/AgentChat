@@ -25,7 +25,9 @@ interface WSLStatus {
   node: string | null;
   python: string | null;
   npm: string | null;
+  pandoc: string | null;
   docx: boolean;
+  dns_ok: boolean;
 }
 
 interface OnboardingWizardProps {
@@ -194,6 +196,23 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
+  const fixDns = async () => {
+    setWslBusy("dns");
+    setWslLog("Чиню DNS внутри WSL (resolv.conf + wsl.conf), перезапускаю дистрибутив…");
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/fix-dns`, { method: "POST" });
+      const d = await r.json();
+      setWslLog(d.output ?? "");
+      if (!d.success) setError("Не удалось починить DNS — см. лог");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Сетевая ошибка");
+    } finally {
+      setWslBusy(null);
+      await refreshWsl();
+    }
+  };
+
   const installAnthropicSkills = async () => {
     setSkillsInstalling(true);
     setError(null);
@@ -343,7 +362,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             <h3>WSL (Windows Subsystem for Linux)</h3>
             <p className="ob-sub">
               Bash-инструмент агента работает внутри WSL. Нужны: Ubuntu (или другой дистрибутив),
-              Node.js, Python 3, npm-пакет <code>docx</code>. Остальные пакеты модель установит при необходимости.
+              Node.js, Python 3, <code>pandoc</code> (для чтения .docx/.odt/.rtf) и npm-пакет <code>docx</code> (для генерации).
+              Остальные пакеты модель установит при необходимости.
             </p>
 
             {wsl === null ? (
@@ -356,7 +376,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <WSLRow label="Node.js" ok={!!wsl.node} value={wsl.node ?? "не установлен"} />
                 <WSLRow label="Python 3" ok={!!wsl.python} value={wsl.python ?? "не установлен"} />
                 <WSLRow label="npm" ok={!!wsl.npm} value={wsl.npm ?? "не установлен"} />
+                <WSLRow label="pandoc" ok={!!wsl.pandoc} value={wsl.pandoc ?? "не установлен"} />
                 <WSLRow label="docx (npm -g)" ok={wsl.docx} value={wsl.docx ? "установлен" : "нет"} />
+                <WSLRow label="DNS" ok={wsl.dns_ok} value={wsl.dns_ok ? "работает" : "сломан (apt/pip упадут)"} />
               </div>
             )}
 
@@ -366,9 +388,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   {wslBusy === "distro" ? "Запуск…" : "Установить WSL + Ubuntu"}
                 </button>
               )}
-              {wsl && wsl.distro_running && (!wsl.node || !wsl.python || !wsl.npm || !wsl.docx) && (
+              {wsl && wsl.distro_running && !wsl.dns_ok && (
+                <button className="ob-btn" onClick={fixDns} disabled={wslBusy !== null}>
+                  {wslBusy === "dns" ? "Чиню…" : "Починить DNS в WSL"}
+                </button>
+              )}
+              {wsl && wsl.distro_running && (!wsl.node || !wsl.python || !wsl.npm || !wsl.pandoc || !wsl.docx) && (
                 <button className="ob-btn" onClick={installDeps} disabled={wslBusy !== null}>
-                  {wslBusy === "deps" ? "Установка…" : "Установить Node + Python + docx"}
+                  {wslBusy === "deps" ? "Установка…" : "Установить Node + Python + pandoc + docx"}
                 </button>
               )}
               <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>

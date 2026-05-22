@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+import litellm
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -45,11 +46,30 @@ def _sse_event(event_type: str, data: dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {payload}\n\n"
 
 
-def _format_user_content(text: str, attachments: list[AttachmentInfo] | None) -> str | list[dict[str, Any]]:
+def _model_supports_vision(model: str) -> bool:
+    """Best-effort check via LiteLLM's capability registry.
+
+    Unknown providers / proxy aliases raise — treat any exception as
+    "unknown, assume no vision" so we degrade safely instead of crashing
+    the request with an unsupported image_url block."""
+    try:
+        return bool(litellm.supports_vision(model=model))
+    except Exception:
+        return False
+
+
+def _format_user_content(
+    text: str,
+    attachments: list[AttachmentInfo] | None,
+    *,
+    vision: bool,
+) -> str | list[dict[str, Any]]:
     """Build the user message content with attachment info inline.
 
     Returns a plain string for text-only messages, or a vision-format list
-    when images are attached.
+    when images are attached AND the model supports vision. For non-vision
+    models, images are still mentioned by path so the model can move,
+    embed, or transform the file via bash / python — it just can't *see* it.
     """
     if not attachments:
         return text
@@ -66,13 +86,21 @@ def _format_user_content(text: str, attachments: list[AttachmentInfo] | None) ->
         summary_parts.append(f"{a.name} ({sz})")
     header = "📎 " + ", ".join(summary_parts)
 
-    if images:
-        # Vision format — content as array
+    use_vision = vision and any(img.data_url for img in images)
+
+    if use_vision:
         text_parts: list[str] = [header]
         for tf in text_files:
             text_parts.append(f"\n--- {tf.name} ---\n{tf.content}")
         for bf in binary_files:
             text_parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
+        for img in images:
+            if img.path:
+                text_parts.append(
+                    f"\nИзображение «{img.name}» сохранено: {img.path}\n"
+                    "(можно прочитать/обработать через bash_tool — convert, "
+                    "ffmpeg, python+PIL и т.п.)"
+                )
         text_parts.append(f"\n---\n{text}")
 
         content_blocks: list[dict[str, Any]] = [
@@ -86,12 +114,24 @@ def _format_user_content(text: str, attachments: list[AttachmentInfo] | None) ->
                 })
         return content_blocks
 
-    # Plain text with file contents inline
+    # No vision (model can't see images, or there are no images) — plain text
+    # with file paths. Model can still operate on images by path.
     parts: list[str] = [header]
     for tf in text_files:
         parts.append(f"\n--- {tf.name} ---\n{tf.content}")
     for bf in binary_files:
         parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
+    for img in images:
+        if img.path:
+            note = (
+                "(модель без vision — содержимое картинки не видно, но файл "
+                "доступен: можно перемещать, копировать, встраивать в .docx/.pdf, "
+                "конвертировать через convert/ffmpeg/PIL, читать метаданные через "
+                "`identify` или `exiftool`)"
+                if not vision
+                else "(используй bash_tool для обработки)"
+            )
+            parts.append(f"\nИзображение «{img.name}»: {img.path}\n{note}")
     parts.append(f"\n---\n{text}")
     return "\n".join(parts)
 
@@ -196,7 +236,11 @@ async def chat(
     for msg in history:
         agent.messages.append({"role": msg.role, "content": msg.content})
 
-    user_content = _format_user_content(new_message, body.attachments)
+    user_content = _format_user_content(
+        new_message,
+        body.attachments,
+        vision=_model_supports_vision(lite_model),
+    )
 
     async def event_stream() -> Any:
         try:

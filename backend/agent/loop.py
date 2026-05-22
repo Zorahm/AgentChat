@@ -19,6 +19,89 @@ from llm.client import LLMClient
 from tools.registry import ToolRegistry
 
 
+_MATH_RENDERING_ADDENDUM = """## Math rendering
+This chat renders LaTeX via KaTeX. Use `$...$` for inline math and `$$...$$`
+for display equations on their own line. Prefer display (`$$`) for anything
+wider than a few symbols — it scrolls horizontally on narrow screens, while
+inline math does not wrap.
+
+Examples:
+  Inline: The gradient $\\nabla f$ vanishes at extrema.
+  Block:  $$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
+
+Use a plain `$` for currency (e.g. "$50") — the renderer ignores it when
+followed by a digit. Escape with `\\$` if context is ambiguous."""
+
+
+_FILE_READING_ADDENDUM = """## Reading attached files
+When the user attaches a binary file, the message includes its absolute path
+(`Файл доступен по пути: ...`). Use `bash_tool` to extract content — do not
+parse archives by hand (no zipfile / no XML scraping) unless every tool below
+has failed.
+
+Pick the tool by extension:
+  .docx .odt .rtf .epub .html .md → `pandoc "<path>" -t plain` (or `-t markdown`
+                                     to preserve structure)
+  .doc                            → `pandoc` works if the file is well-formed;
+                                     otherwise `antiword` or `catdoc`
+  .pdf                            → `pdftotext "<path>" -` (layout: add `-layout`)
+  .xlsx .ods                      → `python3 -c "import openpyxl; ..."` or
+                                     `ssconvert "<path>" /dev/stdout -T Gnumeric_stf:stf_csv`
+  .csv .tsv .txt .log .json .yaml → `cat` / `head` / `jq` directly
+  .pptx                           → `pandoc` (best-effort) or unzip + read slide XML
+
+Pandoc is preinstalled in WSL. If a command says "command not found", install
+it once with `apt-get install -y --no-install-recommends <pkg>` before retrying.
+Never claim a file is unreadable until at least one extractor has been tried.
+
+If `apt-get`, `pip`, or `npm` fail with hostname errors ("Could not resolve
+host", "Temporary failure in name resolution") — this is a known WSL DNS
+breakage. Do NOT try to patch `/etc/resolv.conf` yourself; it is bind-mounted
+and your edits will be reverted on next launch. Stop and tell the user:
+"DNS в WSL сломан. Открой Settings → Shell или Onboarding и нажми кнопку
+«Починить DNS» — она прописывает Cloudflare/Google nameservers и
+перезапускает дистрибутив." Then wait for them to fix it before continuing."""
+
+
+_ARTIFACTS_ADDENDUM = """## Delivering files to the user
+The chat UI has a side panel that renders files when you emit an artifact
+tag. The tag is the ONLY way to surface a file to the user as a viewable
+card — bare text mentioning a path will not open anything.
+
+Workflow: write the file with `bash_tool` (or the `<file>` block / write_file
+tool), then emit a self-closing artifact tag on its own line:
+
+  <artifact type="file" path="/absolute/path/to/file.ext" label="Short title" />
+
+Renderable extensions get inline preview in the panel:
+  - Images: .png .jpg .jpeg .gif .webp .svg
+  - Docs:   .md .html .pdf .json .csv
+  - Office: .docx .xlsx .pptx (download hint only)
+
+Use this whenever you produce something for the user to look at or download:
+generated charts (matplotlib `savefig` to PNG, then artifact), reports,
+diagrams, audio/video, exported spreadsheets. Always save into the chat's
+working directory (`pwd` at the start of a turn gives you the chat sandbox)
+so the path is stable and viewable. Do NOT base64 image data into chat text
+— emit the artifact tag instead.
+
+### Images you can't see
+If the user attaches an image and the message says `(модель без vision …)`,
+your model has no vision capability — you do NOT see pixel content. That
+does NOT mean you can't help. You still have the absolute path and full
+filesystem access, so you can:
+  - Move / rename / copy the file (`mv`, `cp`)
+  - Embed it into a generated document (`python-docx` add_picture, ReportLab
+    drawImage, pandoc with `![](path)` markdown)
+  - Convert / resize / re-encode (`convert`, `ffmpeg`, PIL)
+  - Read metadata (`identify -verbose`, `exiftool`, PIL `Image.open(...).info`)
+  - Combine images into PDF / collage / GIF
+  - Re-emit as artifact after processing
+Never refuse the task just because you can't see the image — ask the user
+to describe the content if that's what's blocking you, and otherwise do
+whatever file-level work was requested."""
+
+
 async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
     """Write file to disk from a completed <file> tag event. Mutates event in-place.
 
@@ -382,6 +465,12 @@ class AgentLoop:
         prompt = self.config.system_prompt
         if self._manifest_text:
             prompt = f"{prompt}\n\n{self._manifest_text}"
+        addenda = (
+            f"{_MATH_RENDERING_ADDENDUM}\n\n"
+            f"{_FILE_READING_ADDENDUM}\n\n"
+            f"{_ARTIFACTS_ADDENDUM}"
+        )
+        prompt = f"{prompt}\n\n{addenda}" if prompt else addenda
         if prompt:
             result.append({"role": "system", "content": prompt})
         result.extend(self.messages)

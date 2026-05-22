@@ -178,7 +178,7 @@ Date: {now}
 By default this chat runs in a sandbox confined to the chat folder:
 - bash is confined to the chat folder (bwrap cage in WSL; soft cwd-only in PowerShell)
 - write operations (write_file, <file>, <edit>) are restricted to the chat folder
-- **read_file is restricted to the chat folder too** — you CANNOT read `/etc/passwd`, `~/.ssh/*`, `C:\Users\…`, AppData, or any other system / user path. Attempts will return a sandbox error.
+- **read_file is restricted to the chat folder too** — you CANNOT read `/etc/passwd`, `~/.ssh/*`, `C:/Users/…`, AppData, or any other system / user path. Attempts will return a sandbox error.
 - If the user wants you to read a file from somewhere else on their disk, they must attach it through the @-menu in the chat input. The attachment lands in `./uploads/` under the chat folder, and only THEN you can read it via read_file or bash_tool.
 
 The user can disable all sandbox checks in Settings → "Unrestricted mode".
@@ -621,15 +621,22 @@ def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and state."""
 
     AGENTS_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    USER_AGENTS_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
     # --- stateful singletons ---
-    # Reader scans the app's local dir first (skills installed via our UI), then
-    # the user-global ~/.agents/skills/ (shared with other agent systems). On a
-    # name collision the local one wins, which mirrors how shells resolve PATH.
-    reader = AgentSkillsReader([AGENTS_SKILLS_DIR, USER_AGENTS_SKILLS_DIR])
+    # All new installs land in ~/.agents/skills/ — the shared Agent Skills 2.0
+    # convention path — so dev/bundle/Claude-Code-CLI all see the same set.
+    # AGENTS_SKILLS_DIR stays as a "legacy" scan path so skills installed by
+    # older builds (which wrote to APPDATA) keep showing up until uninstalled.
+    reader = AgentSkillsReader([USER_AGENTS_SKILLS_DIR, AGENTS_SKILLS_DIR])
     reader.rebuild()
 
-    installer = GitHubSkillInstaller(AGENTS_SKILLS_DIR, reader)
+    installer = GitHubSkillInstaller(
+        USER_AGENTS_SKILLS_DIR, reader, legacy_dirs=[AGENTS_SKILLS_DIR]
+    )
+    # Pre-marker builds wrote into APPDATA; backfill markers so DELETE accepts
+    # them now that the check is marker-based, not path-based.
+    installer.backfill_legacy_markers()
     models_fetcher = ModelsFetcher()
     settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
     chat_store = ChatStore(CHAT_DB_FILE)

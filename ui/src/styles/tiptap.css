@@ -6,8 +6,8 @@
   overflow-y: auto;
   padding: 10px 12px 8px;
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.55;
   font-family: var(--font-body);
   border: none;
   outline: none;
@@ -15,38 +15,82 @@
   background: transparent;
   transition: background .15s;
 }
+/* ProseMirror wraps content in <p> with default browser margins; strip them
+ * so the cursor sits flush against the editor padding edge — otherwise the
+ * caret would be offset by ~1em and miss the overlaid placeholder text. */
+.tiptap-editor p {
+  margin: 0;
+}
 .tiptap-editor.drag-over { background: var(--accent-soft); }
 
-.tiptap-editor p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  color: var(--muted);
+.tiptap-wrap {
+  position: relative;
+}
+.tiptap-ph {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  padding: 10px 12px 8px;
+  color: var(--faint);
+  font-size: 16px; line-height: 1.55;
+  font-family: var(--font-body);
   pointer-events: none;
-  float: left;
-  height: 0;
+  user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .tiptap-editor:focus { outline: none; }
 
+/* ── Inline mention chip (React NodeView) ────────────────────────────── */
+
 .mention-chip {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 4px;
   background: var(--accent-soft); color: var(--accent);
-  padding: 2px 8px 2px 6px; border-radius: 6px;
+  padding: 1px 7px 1px 4px; border-radius: 6px;
   font-size: 13.5px; font-weight: 500;
   margin: 0 1px; cursor: default;
   font-family: var(--font-body);
+  vertical-align: 1px;
+  white-space: nowrap;
 }
 
-.mention-dropdown,
+.mention-chip--skill {
+  background: var(--skill-bg); color: var(--skill-fg);
+}
+
+.mention-chip--url {
+  background: var(--url-bg); color: var(--url-fg);
+}
+
+.mention-chip-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.mention-chip-ic svg { display: block; width: 16px; height: 16px; }
+
+/* ── Mention popup ───────────────────────────────────────────────────── */
+
 .mp-pop {
   position: fixed; z-index: 200;
-  width: 260px;
+  width: 280px;
   max-height: 360px;
   overflow-y: auto;
   padding: 4px;
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: 0 10px 30px -10px rgba(20,20,18,.18), 0 0 0 1px var(--line);
+  box-shadow: 0 14px 36px -12px rgba(20,20,18,.18), 0 0 0 1px var(--line);
+}
+
+.mp-head {
+  padding: 8px 10px 4px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--faint);
+  letter-spacing: 1.2px; text-transform: uppercase;
+  font-weight: 500;
 }
 
 .mp-empty {
@@ -57,11 +101,61 @@
   font-style: italic;
 }
 
+.mp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  position: relative;
+}
+.mp-item:hover { background: var(--hover); }
+.mp-item.active {
+  background: var(--hover);
+}
+.mp-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.mp-item-ic {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+  color: var(--muted);
+}
+
+.mp-item-info { flex: 1; min-width: 0; line-height: 1.3; }
+
+.mp-item-label {
+  font-weight: 500; font-size: 13px; color: var(--ink);
+}
+
 .mp-item-sub {
   display: block;
   color: var(--faint);
   font-size: 11.5px;
   margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-item-kbd {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: auto;
 }
 
 .mp-tooltip {
@@ -79,40 +173,3 @@
   white-space: normal;
   word-break: break-word;
 }
-
-.mp-head {
-  padding: 6px 10px;
-  font-family: var(--font-mono); font-size: 10px; color: var(--faint);
-  letter-spacing: 1px; text-transform: uppercase;
-}
-
-.mp-item,
-.mention-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.mp-item:hover,
-.mention-item:hover { background: var(--hover); }
-.mp-item.active,
-.mention-item.active { background: var(--hover); }
-
-.mp-item-ic,
-.mention-item-label::before {
-  width: 18px; height: 18px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; flex-shrink: 0;
-  color: var(--faint);
-}
-
-.mp-item-info { flex: 1; min-width: 0; line-height: 1.25; }
-
-.mp-item-label,
-.mention-item-label {
-  font-weight: 500; font-size: 13px; color: var(--ink);
-}
-
-.mp-item.active .mp-item-label,
-.mention-item.active .mention-item-label { color: var(--ink); }

@@ -11,12 +11,13 @@ import { FilesPanel } from "./components/Artifacts/FilesPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
 import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
+import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
 
 const PANEL_MIN = 280;
-const PANEL_MAX = 860;
-const PANEL_DEFAULT = 400;
+const PANEL_MAX = 1500;
+const PANEL_DEFAULT = 600;
 
 export function App() {
   const chats = useChats();
@@ -37,6 +38,12 @@ export function App() {
   const panelWidthRef = useRef(panelWidth);
 
   const panelOpen = generalPanelOpen || openFilePath !== null;
+
+  // Close artifact panel when switching chats
+  useEffect(() => {
+    setOpenFilePath(null);
+    setGeneralPanelOpen(false);
+  }, [chats.activeId]);
 
   // Listen for "Open" clicks on artifact cards in chat
   useEffect(() => {
@@ -211,6 +218,7 @@ export function App() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <GlobalDropZone />
       {onboardingDone === false && (
         <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
       )}
@@ -259,6 +267,7 @@ export function App() {
         )}
         {openFilePath && (
           <ArtifactsSidePanel
+            key={`${chats.activeId}||${openFilePath}`}
             messages={chats.messages}
             liveFiles={chats.liveFiles}
             openFilePath={openFilePath}

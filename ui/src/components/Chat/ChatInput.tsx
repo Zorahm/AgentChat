@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, X, Plus } from "@phosphor-icons/react";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText } from "../../utils/mentions";
+import { MentionNodeView } from "./MentionNodeView";
 import { API_BASE } from "../../utils/apiBase";
 
 interface ChatInputProps {
@@ -68,9 +69,12 @@ export function ChatInput({
     const text = extractText(editorRef.current.getJSON());
     if ((!text.trim() && pendingFiles.length === 0) || disabled) return;
 
-    // Upload any non-text non-image files
+    // Upload everything that isn't already on disk. Text files (.txt/.md) are
+    // skipped because their `content` is read inline. Images go through too —
+    // the dataUrl is for vision blocks, but the file itself must also live in
+    // chats/<slug>/uploads/ so the model can re-read or transform it via bash.
     const needUpload = pendingFiles.filter(
-      (pf) => !pf.content && !pf.dataUrl && !pf.uploading
+      (pf) => !pf.content && !pf.uploading && !pf.uploadedPath
     );
     const finalFiles = [...pendingFiles];
 
@@ -127,10 +131,16 @@ export function ChatInput({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
 
+  const CustomMention = Mention.extend({
+    addNodeView() {
+      return ReactNodeViewRenderer(MentionNodeView);
+    },
+  });
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false, blockquote: false }),
-      Mention.configure({
+      CustomMention.configure({
         HTMLAttributes: { class: "mention-chip" },
         suggestion: mentionSuggestion,
       }),
@@ -266,7 +276,18 @@ export function ChatInput({
     [processFiles],
   );
 
-  /* ── drag & drop ───────────────────────────── */
+  /* ── global file drop (outside tiptap) ───────── */
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const files = (e as CustomEvent<FileList>).detail;
+      if (files?.length) processFiles(files);
+    };
+    window.addEventListener("global-files-drop", handler);
+    return () => window.removeEventListener("global-files-drop", handler);
+  }, [processFiles]);
+
+  /* ── drag & drop (tiptap-local) ─────────────── */
 
   useEffect(() => {
     if (!editor) return;
@@ -314,26 +335,53 @@ export function ChatInput({
 
   return (
     <div className="composer">
-      {/* File chips */}
-      {pendingFiles.length > 0 && (
-        <div className="attach-chips">
-          {pendingFiles.map((pf) => (
-            <div key={pf.id} className={`attach-chip${pf.error ? " attach-chip--err" : ""}${pf.uploading ? " attach-chip--up" : ""}`}>
-              <span className="attach-chip-ic">{fileIcon(pf.name, pf.type)}</span>
-              <span className="attach-chip-name">{pf.name}</span>
-              <span className="attach-chip-size">{fmtSize(pf.size)}</span>
-              <span className="attach-chip-type">{fileType(pf.name, pf.type)}</span>
-              {pf.uploading
-                ? <span className="attach-chip-spin">⟳</span>
-                : <button className="attach-chip-x" onClick={() => removeFile(pf.id)} title="Remove">✕</button>
-              }
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="composer-box">
-        <EditorContent editor={editor} />
+        {pendingFiles.length > 0 && (
+          <div className="ca-grid">
+            {pendingFiles.map((pf) => {
+              const isImage = pf.type.startsWith("image/");
+              const ext = pf.name.includes(".")
+                ? pf.name.split(".").pop()!.toUpperCase().slice(0, 5)
+                : "FILE";
+              const lineCount = pf.content != null ? pf.content.split("\n").length : null;
+              const errStyle = pf.error
+                ? { borderColor: "var(--err-line)", background: "var(--err-soft)" }
+                : undefined;
+
+              if (isImage && pf.dataUrl) {
+                return (
+                  <div key={pf.id} className={`ca-card-img${pf.uploading ? " ca-card--up" : ""}`}>
+                    <img src={pf.dataUrl} alt={pf.name} />
+                    <button className="ca-x" onClick={() => removeFile(pf.id)} title="Remove">×</button>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={pf.id}
+                  className={`ca-card${pf.uploading ? " ca-card--up" : ""}${pf.error ? " ca-card--err" : ""}`}
+                  style={errStyle}
+                >
+                  <div className="ca-name">{pf.name}</div>
+                  <div className="ca-meta">
+                    {pf.error ? pf.error : lineCount != null ? `${lineCount} lines` : fmtSize(pf.size)}
+                  </div>
+                  <div className="ca-badge">{ext}</div>
+                  {pf.uploading
+                    ? <span className="ca-spin">⟳</span>
+                    : <button className="ca-x" onClick={() => removeFile(pf.id)} title="Remove">×</button>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="tiptap-wrap">
+          <EditorContent editor={editor} />
+          {textLen === 0 && <div className="tiptap-ph">{placeholder}</div>}
+        </div>
 
         <div className="composer-bar">
           <div className="composer-left">

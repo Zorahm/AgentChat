@@ -1,7 +1,6 @@
-/** Artifact card — unified art-link design. */
+/** Artifact card — Claude-style file card. */
 
-import { ArrowRight } from "@phosphor-icons/react";
-import { fileExtIcon } from "../../utils/toolIcons";
+import { File } from "@phosphor-icons/react";
 import type { Artifact } from "../../types/artifact";
 
 interface ArtifactCardProps {
@@ -12,24 +11,28 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
   if (artifact.type === "tool") return null;
 
   const path = artifact.path ?? "";
-  const ext = path.split(".").pop()?.toUpperCase() ?? "?";
-  const name = artifact.label ?? path.split("/").pop() ?? path;
-  const dir = path.includes("/") ? path.split("/").slice(0, -1).join("/") : "";
+  const ext = path.split(".").pop()?.toUpperCase() ?? "";
+  const name = artifact.label ?? path.split(/[/\\]/).pop() ?? path;
 
-  const handleOpen = () => {
+  const handleOpen = (e: React.MouseEvent) => {
+    e.preventDefault();
     if (artifact.path) {
       window.dispatchEvent(new CustomEvent("open-artifact", { detail: artifact.path }));
     }
   };
 
   return (
-    <a className="art-link" onClick={handleOpen}>
-      <span className="art-link-ic">{fileExtIcon(ext.toLowerCase())}</span>
-      <div className="art-link-info">
-        <span className="art-link-name">{name}</span>
-        <span className="art-link-meta">{dir || path}</span>
+    <div className="art-card" onClick={handleOpen}>
+      <div className="art-card-icon">
+        <File weight="regular" />
       </div>
-      <span className="art-link-open">Открыть <span className="art-link-arrow"><ArrowRight /></span></span>
-    </a>
+      <div className="art-card-info">
+        <span className="art-card-name">{name}</span>
+        {ext && <span className="art-card-ext">{ext}</span>}
+      </div>
+      <button className="art-card-btn" onClick={handleOpen}>
+        Открыть
+      </button>
+    </div>
   );
 }

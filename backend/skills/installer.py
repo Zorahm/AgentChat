@@ -1,4 +1,11 @@
-"""Skills 2.0 installer — downloads from GitHub into .agents/skills/."""
+"""Skills 2.0 installer — downloads from GitHub into ~/.agents/skills/.
+
+Drops a ``.agentchat-installed`` marker file at the root of every install so
+the uninstall endpoint can tell apart skills WE put on disk from skills the
+user (or other agent systems like Claude Code) have placed in the shared
+``~/.agents/skills/`` tree. Without the marker, DELETE refuses to touch the
+folder.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +21,8 @@ from skills.reader import AgentSkillsReader, SkillEntry
 
 
 _SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_\-\.]*$", re.IGNORECASE)
+
+MARKER_NAME = ".agentchat-installed"
 
 
 def _is_subpath(child: Path, parent: Path) -> bool:
@@ -34,10 +43,68 @@ def _safe_member_path(member: str) -> bool:
     return ".." not in parts
 
 
+def _has_marker_above(skill_path: Path, root: Path) -> bool:
+    """True iff a ``.agentchat-installed`` file exists at skill_path or any
+    parent up to *root* (inclusive). Used to decide if DELETE may proceed.
+    """
+    try:
+        skill_r = skill_path.resolve()
+        root_r = root.resolve()
+        skill_r.relative_to(root_r)
+    except (ValueError, OSError):
+        return False
+    cur = skill_r
+    while True:
+        if (cur / MARKER_NAME).is_file():
+            return True
+        if cur == root_r:
+            return False
+        cur = cur.parent
+
+
 class GitHubSkillInstaller:
-    def __init__(self, skills_dir: Path, reader: AgentSkillsReader) -> None:
+    def __init__(
+        self,
+        skills_dir: Path,
+        reader: AgentSkillsReader,
+        legacy_dirs: list[Path] | None = None,
+    ) -> None:
         self.skills_dir = skills_dir
         self._reader = reader
+        # Older versions installed under APPDATA; we still let users uninstall
+        # those via the UI. New installs all go to ``skills_dir`` (user-global).
+        self.legacy_dirs: list[Path] = list(legacy_dirs or [])
+
+    @staticmethod
+    def _write_marker(dest: Path, source: str) -> None:
+        try:
+            (dest / MARKER_NAME).write_text(
+                f"installed-by=agentchat\nsource={source}\n", encoding="utf-8"
+            )
+        except OSError:
+            pass  # marker is best-effort; install itself already succeeded
+
+    def is_installed_by_us(self, skill_path: Path) -> bool:
+        """True iff *skill_path* lives under one of our install roots AND has
+        a marker file at or above it. Lets the API tell our installs apart
+        from sibling skills planted by Claude Code et al.
+        """
+        roots = [self.skills_dir, *self.legacy_dirs]
+        return any(_has_marker_above(skill_path, r) for r in roots)
+
+    def backfill_legacy_markers(self) -> None:
+        """Mark every top-level dir under ``legacy_dirs`` as ours.
+
+        Pre-marker builds wrote into APPDATA, which nothing else touches —
+        so everything already there must be ours. Stamp markers so the new
+        DELETE check accepts them.
+        """
+        for root in self.legacy_dirs:
+            if not root.is_dir():
+                continue
+            for child in root.iterdir():
+                if child.is_dir() and not (child / MARKER_NAME).is_file():
+                    self._write_marker(child, source=f"legacy:{child.name}")
 
     def install(self, source: str) -> list[SkillEntry]:
         """Install one or more skills from a GitHub 'owner/repo' string.
@@ -53,6 +120,14 @@ class GitHubSkillInstaller:
         owner, repo = parts[0], parts[1]
         dest = self.skills_dir / repo
 
+        # Refuse to clobber a directory we didn't install — would otherwise
+        # silently overwrite a skill the user (or another agent system) placed
+        # in ~/.agents/skills/ by hand.
+        if dest.exists() and not _has_marker_above(dest, self.skills_dir):
+            raise ValueError(
+                f"'{repo}' already exists at {dest} and wasn't installed by AgentChat. "
+                f"Remove it manually if you really want to replace it."
+            )
         if dest.exists():
             shutil.rmtree(dest)
 
@@ -81,6 +156,7 @@ class GitHubSkillInstaller:
             shutil.rmtree(dest, ignore_errors=True)
             raise ValueError(f"'{source}' contains no SKILL.md — not a valid Skills 2.0 package")
 
+        self._write_marker(dest, source=source)
         self._reader.rebuild()
 
         # Collect every skill whose dir lives under the freshly-installed repo
@@ -102,6 +178,11 @@ class GitHubSkillInstaller:
             raise ValueError(f"Unsafe archive name: '{filename}'")
 
         dest = self.skills_dir / stem
+        if dest.exists() and not _has_marker_above(dest, self.skills_dir):
+            raise ValueError(
+                f"'{stem}' already exists at {dest} and wasn't installed by AgentChat. "
+                f"Remove it manually if you really want to replace it."
+            )
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
@@ -129,6 +210,7 @@ class GitHubSkillInstaller:
             shutil.rmtree(dest, ignore_errors=True)
             raise ValueError(f"'{filename}' contains no SKILL.md — not a valid Skills 2.0 package")
 
+        self._write_marker(dest, source=filename)
         self._reader.rebuild()
         installed: list[SkillEntry] = [
             e for e in self._reader.list_skills() if _is_subpath(e.path, dest)

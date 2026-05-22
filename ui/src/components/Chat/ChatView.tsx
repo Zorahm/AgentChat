@@ -1,12 +1,13 @@
 /** Chat column — header + scrolled message list + composer. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, Sparkle } from "@phosphor-icons/react";
+import { FolderOpen } from "@phosphor-icons/react";
 import type { AgentChatState } from "../../hooks/useAgentChat";
 import { ChatInput } from "./ChatInput";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, AttachmentInfo, ChatNode } from "../../types/chat";
 import { API_BASE } from "../../utils/apiBase";
+import { pickGreeting } from "../../utils/greetings";
 
 export interface ModelItem {
   id: string;
@@ -31,37 +32,39 @@ interface ChatViewProps {
   onThinkingToggle: () => void;
 }
 
-function getTimeGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour >= 6 && hour < 12) return "Доброе утро";
-  if (hour >= 12 && hour < 18) return "Добрый день";
-  if (hour >= 18 && hour < 22) return "Добрый вечер";
-  return "Доброй ночи";
-}
-
-const QUICK_CHIPS = [
-  "Напиши bash-скрипт",
-  "Объясни этот код",
-  "Найди баг",
-  "Создай файл",
-];
-
+/** Animates `text` character-by-character. `done` derives from displayed
+ * length so we don't need a separate state slot — the previous two-effect
+ * implementation deadlocked on text changes because effect 2 read a stale
+ * `done=true` after effect 1 reset it, and the last setState in a batch
+ * wins, leaving `done` stuck true and the typewriter silent. */
 function useTypewriter(text: string, speed = 45): { displayed: string; done: boolean } {
   const [displayed, setDisplayed] = useState("");
-  const [done, setDone] = useState(false);
+
   useEffect(() => {
     setDisplayed("");
-    setDone(false);
-  }, [text]);
-  useEffect(() => {
-    if (done || displayed.length >= text.length) { setDone(true); return; }
-    const t = setTimeout(
-      () => setDisplayed(text.slice(0, displayed.length + 1)),
-      speed + Math.random() * 20,
-    );
-    return () => clearTimeout(t);
-  }, [displayed, done, text, speed]);
-  return { displayed, done };
+    if (!text) return;
+
+    let cancelled = false;
+    let i = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = () => {
+      if (cancelled) return;
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i < text.length) {
+        timer = setTimeout(tick, speed + Math.random() * 20);
+      }
+    };
+    timer = setTimeout(tick, speed);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [text, speed]);
+
+  return { displayed, done: displayed.length >= text.length };
 }
 
 export function ChatView({
@@ -79,12 +82,9 @@ export function ChatView({
       .catch(() => {});
   }, []);
 
-  const welcomePhrase = useMemo(() => {
-    if (userName) return `${getTimeGreeting()}, ${userName}`;
-    return getTimeGreeting();
-  }, [userName]);
-  const { displayed, done: typingDone } = useTypewriter(welcomePhrase);
-  const [fillText, setFillText] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const greeting = useMemo(() => pickGreeting(userName || undefined), [userName]);
+  const { displayed, done: typingDone } = useTypewriter(revealed ? greeting : "");
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -131,19 +131,14 @@ export function ChatView({
 
       {isEmpty ? (
         <div className="chat-welcome">
-          <div className="chat-welcome-logo">
-            <Sparkle weight="duotone" />
-          </div>
-          <div className="chat-welcome-title">
-            {displayed}
-            {!typingDone && <span className="chat-welcome-cursor" aria-hidden>|</span>}
-          </div>
-          <div className="chat-welcome-chips">
-            {QUICK_CHIPS.map((chip) => (
-              <button key={chip} className="chat-welcome-chip" onClick={() => setFillText(chip)}>
-                {chip}
-              </button>
-            ))}
+          <div className="chat-welcome-hgroup">
+            <div className="chat-welcome-logo" onClick={() => setRevealed(true)}>
+              <img src="/ghost.svg" alt="" />
+            </div>
+            <div className="chat-welcome-title">
+              {displayed}
+              {revealed && !typingDone && <span className="chat-welcome-cursor" aria-hidden>|</span>}
+            </div>
           </div>
           <div className="chat-welcome-input">
             <ChatInput
@@ -156,9 +151,7 @@ export function ChatView({
               onModelChange={onModelChange}
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
-              placeholder="Чем я могу помочь?"
-              fillText={fillText ?? undefined}
-              onFillTextConsumed={() => setFillText(null)}
+              placeholder="How can I help you?"
               dirSlug={dirSlug}
             />
           </div>

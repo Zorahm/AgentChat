@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp } from "@phosphor-icons/react";
-import { Brain, Spinner, CheckCircle } from "@phosphor-icons/react";
+import { Brain, Spinner, CheckCircle, CaretDoubleDown } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
+import { API_BASE } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import { ToolCallBlock } from "../ToolCalls/ToolCallBlock";
@@ -28,7 +29,7 @@ interface MessageBubbleProps {
 }
 
 function MarkdownContent({ text }: { text: string }) {
-  return <Markdown text={text} className="msg-markdown" breaks={true} />;
+  return <Markdown text={text} className="msg-markdown" breaks={true} math={true} />;
 }
 
 export function MessageBubble({
@@ -36,6 +37,8 @@ export function MessageBubble({
   variantCount = 0, variantIndex = 0, nodeId, onSwitchVariant,
 }: MessageBubbleProps) {
   if (message.role === "user") {
+    const [expanded, setExpanded] = useState(false);
+    const MAX_LINES = 8;
     const hasAttachments = (message.attachments?.length ?? 0) > 0;
     const legacyHtml = !message.displayHtml &&
       (message.content.startsWith("<p>") || message.content.startsWith("<div>"))
@@ -45,27 +48,66 @@ export function MessageBubble({
     const copyText = legacyHtml
       ? message.content.replace(/<[^>]+>/g, "").trim()
       : message.content;
+    const textContent = renderHtml
+      ? renderHtml.replace(/<[^>]+>/g, "").trim()
+      : message.content;
+    const lineCount = textContent.split("\n").length;
+    const isLong = lineCount > MAX_LINES;
     return (
       <div className="msg msg-user">
-        {hasAttachments && (
-          <div className="msg-attach-chips">
-            {message.attachments!.map((a) => (
-              <div key={a.name} className="msg-attach-chip">
-                <span className="msg-attach-chip-ic">{fileIcon(a.name, a.mime_type)}</span>
-                <span className="msg-attach-chip-name">{a.name}</span>
-                <span className="msg-attach-chip-size">{fmtSize(a.size)}</span>
-                <span className="msg-attach-chip-type">{fileType(a.name, a.mime_type)}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {hasAttachments && (() => {
+          const images = message.attachments!.filter((a) => a.mime_type.startsWith("image/"));
+          const files = message.attachments!.filter((a) => !a.mime_type.startsWith("image/"));
+          return (
+            <>
+              {images.length > 0 && (
+                <div className="msg-img-row">
+                  {images.map((a) => {
+                    const src = a.data_url
+                      ?? (a.path ? `${API_BASE}/files/serve?path=${encodeURIComponent(a.path)}` : null);
+                    return src ? (
+                      <div key={a.name} className="msg-img-thumb">
+                        <img src={src} alt={a.name} />
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              )}
+              {files.length > 0 && (
+                <div className="msg-file-chips">
+                  {files.map((a) => {
+                    const ext = a.name.includes(".")
+                      ? a.name.split(".").pop()!.toUpperCase().slice(0, 5)
+                      : "FILE";
+                    return (
+                      <div key={a.name} className="msg-file-chip">
+                        <div className="msg-file-chip-info">
+                          <div className="msg-file-chip-name">{a.name}</div>
+                          <div className="msg-file-chip-meta">{fmtSize(a.size)}</div>
+                        </div>
+                        <span className="msg-file-chip-badge">{ext}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
         {renderHtml ? (
           <div
-            className="msg-user-bubble"
+            className={`msg-user-bubble${isLong && !expanded ? " msg-user-bubble--collapsed" : ""}`}
             dangerouslySetInnerHTML={{ __html: renderHtml }}
           />
         ) : (
-          <div className="msg-user-bubble msg-user-bubble--plain">{message.content}</div>
+          <div className="msg-user-bubble msg-user-bubble--plain">
+            {message.content}
+          </div>
+        )}
+        {isLong && (
+          <button className="msg-expand-btn" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? <CaretUp size={12} /> : <CaretDoubleDown size={12} />}
+          </button>
         )}
         <div className="msg-user-time">{formatTime(message.timestamp)}</div>
         <MsgActions content={copyText} compact />
@@ -391,21 +433,32 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const lang = getLang(path);
   const isWriting = !!liveFile && !liveFile.done;
-  const hasContent = !!(liveFile && liveFile.content.length > 0);
+  // Inline preview shows ONLY while actively writing. As soon as the write
+  // completes, the panel collapses to just the filename badge — the full file
+  // is one click away in the artifacts side panel.
+  const showLivePreview = isWriting && !!liveFile && liveFile.content.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
+  const lastScrollTop = useRef(0);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !isWriting) return;
+    if (!el || !showLivePreview) return;
     if (stickBottom.current) {
       el.scrollTop = el.scrollHeight;
+      lastScrollTop.current = el.scrollTop;
     }
-  }, [liveFile?.content, isWriting]);
+  }, [liveFile?.content, showLivePreview]);
 
+  // Distinguish user scrolls from programmatic scrolls: programmatic ones
+  // come right after we set scrollTop in the effect, so they match
+  // lastScrollTop. Anything else is the user.
   const handleStreamScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+    const programmatic = el.scrollTop === lastScrollTop.current;
+    lastScrollTop.current = el.scrollTop;
+    if (programmatic) return;
     stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   };
 
@@ -428,8 +481,8 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
           {call.status === "error" && <span className="tc-write-err">ошибка</span>}
         </div>
 
-        {hasContent && (
-          <div className={`live-code-block${isWriting ? " live-code-block--writing" : ""}`}>
+        {showLivePreview && (
+          <div className="live-code-block live-code-block--writing">
             {ext && <div className="live-code-lang">{ext}</div>}
             <div className="live-code-scroll" ref={scrollRef} onScroll={handleStreamScroll}>
               <SyntaxHighlighter

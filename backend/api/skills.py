@@ -74,18 +74,17 @@ async def uninstall_skill(request: Request, name: str) -> dict[str, str]:
     if entry is None:
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
 
-    # Only allow removing skills inside the app's own install dir. Skills
-    # discovered in the shared ~/.agents/skills/ tree are managed by the user
-    # (or another agent system) and must not be silently deleted.
-    install_root = installer.skills_dir.resolve()
-    try:
-        entry.path.resolve().relative_to(install_root)
-    except ValueError:
+    # Only allow removing skills that carry our ``.agentchat-installed`` marker
+    # — either on the skill dir itself or on a parent (collection root). Skills
+    # planted in ~/.agents/skills/ by the user or by other agent systems
+    # (Claude Code, etc.) have no marker and stay untouched.
+    if not installer.is_installed_by_us(entry.path):
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Skill '{name}' lives outside this app's install dir "
-                f"({install_root}) and cannot be removed from here."
+                f"Skill '{name}' was not installed by AgentChat and cannot be "
+                f"removed from here. Delete its folder manually if you really "
+                f"want it gone."
             ),
         )
 

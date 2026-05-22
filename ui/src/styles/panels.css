@@ -24,47 +24,62 @@
 
 /* ── Panel header ──────────────────────────────────────────────────────── */
 .ap-head {
-  height: 52px; border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; padding: 0 18px; gap: 12px; flex-shrink: 0;
-}
-.ap-title {
-  flex: 1; font-size: 13.5px; font-weight: 500;
-  display: flex; align-items: center; gap: 8px; min-width: 0;
-}
-.ap-title-ic {
-  width: 22px; height: 22px; border-radius: 5px;
-  background: var(--accent-soft); color: var(--accent);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-  flex-shrink: 0;
-}
-.ap-title > div { min-width: 0; }
-.ap-title > div span { display: block; font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ap-title > div small { display: block; color: var(--faint); font-family: var(--font-mono); font-size: 11px; }
-.ap-close {
-  color: var(--muted); cursor: pointer; font-size: 16px;
-  width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.ap-close:hover { background: var(--hover); color: var(--ink); }
-
-/* ── Panel footer ──────────────────────────────────────────────────────── */
-.ap-foot {
-  padding: 10px 18px; border-top: 1px solid var(--line);
+  height: 46px; border-bottom: 1px solid var(--line);
   display: flex; align-items: center; justify-content: space-between;
-  background: var(--surface-2); font-family: var(--font-mono);
-  font-size: 11px; color: var(--faint); flex-shrink: 0;
+  padding: 0 10px 0 6px; gap: 8px; flex-shrink: 0;
+  background: var(--surface);
 }
-.ap-foot-meta { }
-.ap-foot-actions { display: flex; gap: 4px; }
-.ap-foot-actions button {
-  background: none; border: none; cursor: pointer; color: var(--muted);
-  padding: 4px 8px; border-radius: 5px;
-  font-family: var(--font-body); font-size: 12px;
+
+.ap-head-left {
+  display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1;
+}
+
+.ap-tab-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s;
+}
+.ap-tab-btn:hover { background: var(--hover); color: var(--ink-2); }
+.ap-tab-btn.active {
+  background: var(--surface-2); color: var(--ink);
+  border-color: var(--line-2);
+}
+
+.ap-head-name {
+  font-size: 13px; font-weight: 500; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; margin-left: 6px;
+}
+.ap-head-ext { color: var(--muted); font-weight: 400; }
+
+.ap-head-right {
+  display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+}
+
+/* Copy button (download removed — artifacts are copy-only) */
+.ap-copy-btn {
   display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--line-2); border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  font-family: var(--font-body);
 }
-.ap-foot-actions button:hover { background: var(--hover); color: var(--ink); }
-.ap-foot-actions button:disabled { opacity: .4; cursor: default; }
+.ap-copy-btn:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.ap-copy-btn:disabled { opacity: .4; cursor: default; }
+
+/* Icon-only buttons (refresh, close) */
+.ap-icon-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: none;
+  background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s;
+}
+.ap-icon-btn:hover { background: var(--hover); color: var(--ink); }
+.ap-icon-btn:disabled { opacity: .4; cursor: default; }
+.ap-icon-btn--close:hover { color: var(--err); }
 
 .art-panel-placeholder {
   flex: 1; display: flex; align-items: center; justify-content: center;
@@ -86,21 +101,6 @@
 }
 .art-file-tab.active { background: var(--surface); color: var(--ink); }
 
-/* mode tabs (Render / Code / Edit) */
-.art-view-tabs {
-  display: flex; align-items: center; height: 52px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  padding: 0 14px; flex-shrink: 0; gap: 0;
-}
-.art-view-tab {
-  padding: 10px 14px; font-size: 13px; font-weight: 500;
-  color: var(--muted); border: none; background: none; cursor: pointer;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
-.art-view-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
-.art-view-tab:not(:disabled):not(.active):hover { color: var(--ink); }
-.art-view-tab:disabled { opacity: .38; cursor: default; }
 
 .art-live-badge {
   font-family: var(--font-mono); font-size: 10px; color: var(--running);
@@ -124,6 +124,17 @@
 .art-content {
   flex: 1; min-height: 0; overflow: hidden;
   display: flex; flex-direction: column;
+}
+
+.art-writing-placeholder {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 10px; color: var(--muted); font-size: 13px;
+  font-family: var(--font-body);
+}
+.art-writing-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--running, #c79a3d);
+  animation: pulse 1.2s ease-in-out infinite;
 }
 
 .art-state {

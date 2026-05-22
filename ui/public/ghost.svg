@@ -1,0 +1,86 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+
+  <style>
+    .ghost {
+      animation: float 4s ease-in-out infinite;
+      transform-origin: center;
+    }
+
+    .eye-left {
+      animation: blinkLeft 5s infinite;
+      transform-origin: center;
+    }
+
+    .eye-right {
+      animation: blinkRight 4.3s infinite;
+      transform-origin: center;
+    }
+
+    @keyframes float {
+      0%, 100% {
+        transform: translateY(0px);
+      }
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    @keyframes blinkLeft {
+      0%, 46%, 50%, 100% {
+        transform: scaleY(1);
+      }
+      48% {
+        transform: scaleY(0.08);
+      }
+    }
+
+    @keyframes blinkRight {
+      0%, 61%, 65%, 100% {
+        transform: scaleY(1);
+      }
+      63% {
+        transform: scaleY(0.08);
+      }
+    }
+  </style>
+
+  <g class="ghost">
+
+    <path
+      d="
+      M80 124
+      C80 82 108 58 142 58
+      C182 58 200 88 200 124
+      V176
+
+      C192 168 184 168 176 176
+      C168 184 156 184 148 176
+      C140 168 128 168 120 176
+      C112 184 100 184 92 176
+      C84 168 80 168 80 176
+      Z"
+      fill="#ECE5DA"
+    />
+
+    <circle
+      class="eye-left"
+      cx="110"
+      cy="120"
+      r="16"
+      fill="#6B4F3A"
+    />
+
+    <circle
+      class="eye-right"
+      cx="154"
+      cy="134"
+      r="16"
+      fill="#1A1A1A"
+    />
+
+    <circle cx="104" cy="114" r="4" fill="white" opacity="0.9"/>
+    <circle cx="148" cy="128" r="4" fill="white" opacity="0.9"/>
+
+  </g>
+
+</svg>

@@ -4,7 +4,7 @@
  * the host stylesheets (chat.css, settings-v2.css). */
 
 .md {
-  font-size: 14.5px;
+  font-size: 16px;
   line-height: 1.65;
   color: var(--ink);
 }
@@ -123,4 +123,45 @@
   height: auto;
   border-radius: 8px;
   margin: 8px 0;
+}
+
+/* LaTeX / KaTeX
+ * Inline math (.math-inline) flows with the surrounding text. Block math
+ * (.math-block) becomes its own line and scrolls horizontally when the
+ * formula is wider than the viewport — critical on mobile, where a long
+ * \int or matrix would otherwise blow up layout. */
+.md .math-inline {
+  display: inline;
+}
+.md .math-block {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 10px 0;
+  padding: 4px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.md .math-block .katex-display {
+  margin: 0;
+  padding: 0 2px;
+}
+.md .katex { font-size: 1.2em; }
+.md .katex-display > .katex { font-size: 1.25em; white-space: nowrap; }
+
+/* KaTeX renders parse errors as a span with this class — make them visible
+ * but not alarming, so a stray `$` in prose doesn't shout at the user. */
+.md .katex-error {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+@media (max-width: 640px) {
+  .md { font-size: 15px; }
+  .md .katex { font-size: 1.1em; }
+  .md .katex-display > .katex { font-size: 1.15em; }
+  .md .math-block { margin: 8px -4px; padding: 4px; }
 }

@@ -42,17 +42,29 @@
   background: var(--user-bg); color: #fff;
   padding: 11px 16px;
   border-radius: 18px 18px 4px 18px;
-  font-size: 14.5px; line-height: 1.5;
+  font-size: 16px; line-height: 1.55;
 }
 .msg-user-bubble strong, .msg-user-bubble b { font-weight: 600; }
 .msg-user-bubble em, .msg-user-bubble i { font-style: italic; }
 .msg-user-bubble p { margin: 0; }
 .msg-user-bubble p + p { margin-top: 8px; }
 .msg-user-bubble--plain { white-space: pre-wrap; word-break: break-word; }
+.msg-user-bubble--collapsed {
+  max-height: calc(1.5em * 8);
+  overflow: hidden;
+  position: relative;
+}
+.msg-user-bubble--collapsed::after {
+  content: "";
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--user-bg));
+  pointer-events: none;
+}
 .msg-assistant {
   align-self: center; align-items: stretch;
   max-width: 720px; width: 100%;
-  font-size: 14.5px; color: var(--ink);
+  font-size: 16px; color: var(--ink);
 }
 
 /* ── Message action buttons (copy / retry) ────────────────────────── */
@@ -113,175 +125,128 @@
   color: var(--muted);
 }
 
+/* ── User message expand/collapse ──────────────────────────── */
+.msg-expand-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-body); font-size: 12px; font-weight: 500;
+  color: var(--accent); padding: 4px 8px; margin-top: 4px;
+  border-radius: 6px; align-self: flex-start;
+  transition: background .15s;
+}
+.msg-expand-btn:hover { background: var(--accent-soft); }
+.msg-expand-btn svg { display: block; }
+
 /* ── Markdown: typography lives in styles/markdown.css under .md ──────── */
 
 /* error message */
 .msg-error { color: var(--err); font-size: 13px; padding: 10px 14px;
   background: var(--err-soft); border: 1px solid var(--err-line); border-radius: var(--radius); }
 
-/* ── Composer attachment chips — Moonlit-style cards (light theme) ────── */
-.attach-chips {
+/* ── Composer attachment cards ────────────────────────────────────────── */
+.ca-grid {
   display: flex; flex-wrap: wrap; gap: 10px;
-  padding: 0 28px 10px;
+  padding: 12px 12px 4px;
 }
 
-.attach-chip {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    "ic   name x"
-    "ic   size .";
-  column-gap: 12px;
-  row-gap: 2px;
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: 14px;
-  padding: 10px 12px 12px 12px;
-  min-width: 180px;
-  max-width: 260px;
-  transition: background .15s, border-color .15s;
+.ca-card {
+  position: relative; width: 152px;
+  padding: 12px 12px 11px;
+  background: var(--bg); border: 1px solid var(--line-2);
+  border-radius: 10px; cursor: default; transition: opacity .15s;
 }
-.attach-chip:hover { background: var(--surface-2); border-color: rgba(20,20,18,.18); }
-.attach-chip--err { border-color: var(--err-line); background: var(--err-soft); }
-.attach-chip--up { opacity: .6; }
+.ca-card--up { opacity: .55; }
+.ca-card--err { border-color: var(--err-line); background: var(--err-soft); }
 
-.attach-chip-ic {
-  grid-area: ic;
-  font-size: 20px; line-height: 1;
-  flex-shrink: 0;
-  align-self: center;
-}
-
-.attach-chip-name {
-  grid-area: name;
+.ca-name {
+  font-size: 13px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13px; font-weight: 500;
-  letter-spacing: -0.1px;
-  color: var(--ink);
-  min-width: 0;
-  padding-right: 40px;
+  padding-right: 18px;
+}
+.ca-meta {
+  font-size: 11.5px; color: var(--muted);
+  margin-top: 4px; font-family: var(--font-mono);
+}
+.ca-badge {
+  display: inline-block; margin-top: 12px;
+  border: 1px solid var(--line-2); border-radius: 100px;
+  padding: 2px 9px; font-size: 10px; font-weight: 600;
+  color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase;
 }
 
-.attach-chip-size {
-  grid-area: size;
-  font-family: var(--font-mono);
-  font-size: 10px; color: var(--faint);
-  flex-shrink: 0;
+.ca-card-img {
+  position: relative; width: 152px; height: 120px;
+  border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--line-2); background: var(--surface-2);
+  flex-shrink: 0; transition: opacity .15s;
 }
+.ca-card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ca-card-img.ca-card--up { opacity: .55; }
 
-.attach-chip-type {
-  position: absolute;
-  right: 10px; bottom: 8px;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.6px;
-  padding: 2px 7px;
-  border: 1px solid var(--line-2);
-  border-radius: 100px;
-  color: var(--muted);
-  background: var(--surface-2);
-  text-transform: uppercase;
-  line-height: 1.3;
+.ca-x {
+  position: absolute; top: 6px; right: 6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(0,0,0,.45); color: #fff;
+  border: none; cursor: pointer; font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
 }
+.ca-card:hover .ca-x,
+.ca-card-img:hover .ca-x { opacity: 1; }
+.ca-x:hover { background: rgba(200,40,40,.8); }
 
-.attach-chip-spin {
-  grid-area: x;
-  font-size: 12px; animation: spin .8s linear infinite; flex-shrink: 0;
+.ca-spin {
+  position: absolute; top: 6px; right: 6px;
+  font-size: 13px; color: var(--muted);
+  animation: ca-spin .8s linear infinite;
 }
+@keyframes ca-spin { to { transform: rotate(360deg); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.attach-chip-x {
-  grid-area: x;
-  width: 20px; height: 20px; border-radius: 6px; border: none;
-  background: transparent; color: var(--muted); cursor: pointer;
-  font-size: 11px; display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0; padding: 0;
-  align-self: start;
-  margin-top: -2px;
-  transition: background .15s, color .15s;
+/* ── Message image thumbnails ─────────────────────────────────────────── */
+.msg-img-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  justify-content: flex-end; margin-bottom: 6px;
 }
-.attach-chip-x:hover { background: var(--hover); color: var(--err); }
-
-/* ── Message attachment chips — Moonlit-style cards ─────────────────────── */
-.msg-attach-chips {
-  display: flex; flex-wrap: wrap; gap: 10px;
-  justify-content: flex-end;
-  margin-bottom: 6px;
+.msg-img-thumb {
+  width: 175px; height: 130px;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04); flex-shrink: 0;
 }
+.msg-img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-.msg-attach-chip {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    "ic   name"
-    "ic   size";
-  column-gap: 12px;
-  row-gap: 2px;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 14px;
-  padding: 12px 14px 14px 14px;
-  min-width: 180px;
-  max-width: 280px;
-  color: #e8e3db;
-  transition: background .15s, border-color .15s;
+/* ── Message file chips ────────────────────────────────────────────────── */
+.msg-file-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: flex-end; margin-bottom: 6px;
 }
-
-.msg-attach-chip:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.15);
+.msg-file-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 10px; max-width: 260px; min-width: 140px;
 }
-
-.msg-attach-chip-ic {
-  grid-area: ic;
-  font-size: 22px;
-  line-height: 1;
-  flex-shrink: 0;
-  align-self: center;
-}
-
-.msg-attach-chip-name {
-  grid-area: name;
+.msg-file-chip-info { flex: 1; min-width: 0; }
+.msg-file-chip-name {
+  font-size: 13px; font-weight: 500; color: #e8e3db;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13px; font-weight: 500;
-  letter-spacing: -0.1px;
-  min-width: 0;
-  padding-right: 40px; /* leave room for type badge */
 }
-
-.msg-attach-chip-size {
-  grid-area: size;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  flex-shrink: 0;
+.msg-file-chip-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  color: rgba(255,255,255,.45); margin-top: 2px;
 }
-
-.msg-attach-chip-type {
-  position: absolute;
-  right: 10px;
-  bottom: 9px;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.6px;
-  padding: 2px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 100px;
-  color: rgba(255, 255, 255, 0.65);
-  background: rgba(255, 255, 255, 0.04);
-  text-transform: uppercase;
-  line-height: 1.3;
+.msg-file-chip-badge {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 100px;
+  border: 1px solid rgba(255,255,255,.15);
+  color: rgba(255,255,255,.55); flex-shrink: 0;
 }
 
 /* ── Composer ──────────────────────────────────────────────────────────── */
 .composer {
-  padding: 14px 28px 22px; flex-shrink: 0;
+  padding: 14px 16px 22px; flex-shrink: 0;
   background: var(--bg);
 }
 .composer-box {
@@ -296,7 +261,7 @@
 .composer-input {
   padding: 14px 16px 8px;
   min-height: 60px;
-  font-size: 14.5px; line-height: 1.5; color: var(--ink);
+  font-size: 16px; line-height: 1.55; color: var(--ink);
   font-family: var(--font-body);
   border: none; outline: none; width: 100%; background: transparent; resize: none;
 }
@@ -305,17 +270,17 @@
 .composer-bar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px 10px 12px;
-  border-top: 1px solid var(--line);
 }
 .composer-left { display: flex; gap: 2px; align-items: center; }
 .composer-right { display: flex; align-items: center; gap: 6px; }
 .composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-left: 6px; }
 
 .icon-btn {
-  width: 30px; height: 30px; border-radius: 7px; border: none; background: transparent;
+  width: 32px; height: 32px; border-radius: 7px; border: none; background: transparent;
   color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; cursor: pointer;
+  font-size: 15px; cursor: pointer;
 }
+.icon-btn svg { width: 18px; height: 18px; }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
 
 .send-btn {
@@ -352,49 +317,35 @@
   gap: 24px; padding: 40px 20px; max-width: 620px; width: 100%;
 }
 
-/* logo */
-.chat-welcome-logo {
-  width: 58px; height: 58px; border-radius: 16px;
-  background: var(--accent-soft); color: var(--accent);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 24px -4px color-mix(in srgb, var(--accent) 30%, transparent);
-  animation: wlc-in 0.4s cubic-bezier(.22,.68,0,1.2) both,
-             wlc-float 4s ease-in-out 0.6s infinite;
+/* ghost + text side by side */
+.chat-welcome-hgroup {
+  display: flex; align-items: center; gap: 16px;
+  animation: wlc-in 0.4s 0.1s cubic-bezier(.22,.68,0,1.2) both;
 }
-.chat-welcome-logo svg { width: 28px; height: 28px; }
+
+/* logo — ghost */
+.chat-welcome-logo {
+  width: 80px; height: 80px;
+  flex-shrink: 0;
+  animation: wlc-float 4s ease-in-out 1s infinite;
+  margin-top: -4px;
+  cursor: pointer;
+}
+.chat-welcome-logo img {
+  width: 100%; height: 100%;
+  display: block;
+}
 
 /* title */
 .chat-welcome-title {
   font-family: var(--font-hand); font-size: 32px;
   color: var(--ink); letter-spacing: -.4px;
-  text-align: center; font-weight: 400; min-height: 1.2em;
-  animation: wlc-in 0.4s 0.1s cubic-bezier(.22,.68,0,1.2) both;
+  text-align: left; font-weight: 400; min-height: 1.2em;
 }
 .chat-welcome-cursor {
   display: inline-block; margin-left: 2px;
   color: var(--accent); font-weight: 300;
   animation: wlc-cursor 0.8s step-start infinite;
-}
-
-/* chips */
-.chat-welcome-chips {
-  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
-  animation: wlc-in 0.4s 0.22s cubic-bezier(.22,.68,0,1.2) both;
-}
-.chat-welcome-chip {
-  padding: 6px 14px; border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border, #e0dbd4));
-  background: var(--accent-soft); color: var(--ink-soft);
-  font-size: 13px; cursor: pointer; transition: all 0.15s;
-  font-family: inherit; white-space: nowrap;
-}
-.chat-welcome-chip:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--accent-soft));
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* input */
@@ -413,6 +364,14 @@
   min-height: 100px;
   max-height: 280px;
   overflow-y: auto;
+  padding: 20px 22px 16px;
+  font-size: 17px;
+}
+/* Placeholder must mirror the editor's own padding + font-size in welcome
+ * mode, otherwise the absolutely-positioned overlay sits at the wrap's edge
+ * (10px/16px base) while the caret sits at the welcome edge (20px/17px) and
+ * they drift apart vertically. */
+.chat--welcome .tiptap-ph {
   padding: 20px 22px 16px;
   font-size: 17px;
 }

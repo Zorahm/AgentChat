@@ -1,11 +1,26 @@
 /** Artifact view sub-components — RenderView, CodeView, CsvTable. */
 
+import { useState, useEffect } from "react";
 import { marked } from "marked";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Artifact } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { API_BASE } from "../../utils/apiBase";
+
+function useDarkMode(): boolean {
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "dark",
+  );
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return isDark;
+}
 
 export function RenderView({
   artifact,
@@ -129,6 +144,8 @@ export function CodeView({
   content: string | null;
   loading: boolean;
 }) {
+  const isDark = useDarkMode();
+
   if (loading) return <div className="art-state">Loading…</div>;
   if (content === null) {
     return (
@@ -140,26 +157,29 @@ export function CodeView({
   }
 
   const lang = getLang(artifact.path ?? "");
+  const hlStyle = isDark ? vscDarkPlus : vs;
+  const bgColor = isDark ? "#1e1e1e" : "#ffffff";
+  const lineNumColor = isDark ? "#5a5a5a" : "#b0aaa0";
 
   return (
     <div className="art-code-wrap">
       <SyntaxHighlighter
         language={lang}
-        style={vs}
+        style={hlStyle}
         showLineNumbers
         customStyle={{
           margin: 0,
           padding: "14px 0",
-          background: "#fff",
+          background: bgColor,
           fontSize: "13px",
           lineHeight: "1.65",
           height: "100%",
           overflow: "auto",
           borderRadius: 0,
         }}
-        lineNumberStyle={{ color: "#b0aaa0", minWidth: "36px" }}
+        lineNumberStyle={{ color: lineNumColor, minWidth: "36px" }}
       >
-        {content}
+        {content.trim()}
       </SyntaxHighlighter>
     </div>
   );
