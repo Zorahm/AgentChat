@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useChats } from "./hooks/useChats";
 import type { AgentChatState } from "./hooks/useAgentChat";
 import { Sidebar } from "./components/Sidebar";
-import { useAvatar } from "./hooks/useAvatar";
 import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
@@ -33,7 +32,6 @@ export function App() {
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
-  const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
   const [theme, setTheme] = useState("system");
   const [wslWarning, setWslWarning] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
@@ -170,22 +168,6 @@ export function App() {
     chats.sendMessage(text, model, attachments, html);
   };
 
-  const handleSignOut = useCallback(async (deleteChats: boolean) => {
-    clearAvatar();
-    setUserName("");
-    if (deleteChats) {
-      for (const s of chats.sessions) chats.deleteChat(s.id);
-    }
-    try {
-      await fetch(`${API_BASE}/settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_name: "", onboarding_completed: false }),
-      });
-    } catch { /* offline — state already reset locally */ }
-    setOnboardingDone(false);
-  }, [clearAvatar, chats]);
-
   const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats") => {
     if (v === "skills") {
       setSettingsTab("skills");
@@ -251,17 +233,14 @@ export function App() {
           onSwitch={chats.switchChat}
           onDelete={chats.deleteChat}
           onRename={chats.renameChat}
-          onPin={chats.pinChat}
           activeView={view}
           onNavigate={handleNavigate}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((v) => !v)}
           userName={userName}
-          avatarUrl={avatarUrl}
         />
 
         <ChatView
-          activeId={chats.activeId}
           state={chatState}
           chatTitle={shortTitle}
           dirSlug={chats.activeDirSlug}
@@ -299,34 +278,20 @@ export function App() {
       </div>
 
       {view === "allchats" && (
-        <div className="ac-modal-overlay" onClick={() => handleNavigate("chat")}>
-          <div className="ac-modal-content" onClick={e => e.stopPropagation()}>
-            <AllChatsPage
-              sessions={chats.sessions}
-              activeId={chats.activeId}
-              onSwitch={chats.switchChat}
-              onDelete={chats.deleteChat}
-              onRename={chats.renameChat}
-              onPin={chats.pinChat}
-              onBack={() => handleNavigate("chat")}
-            />
-          </div>
+        <div className="page-overlay">
+          <AllChatsPage
+            sessions={chats.sessions}
+            activeId={chats.activeId}
+            onSwitch={chats.switchChat}
+            onDelete={chats.deleteChat}
+            onRename={chats.renameChat}
+            onBack={() => handleNavigate("chat")}
+          />
         </div>
       )}
       {view === "settings" && (
         <div className="page-overlay">
-          <SettingsPanel
-            onClose={() => handleNavigate("chat")}
-            initialTab={settingsTab}
-            avatarUrl={avatarUrl}
-            setAvatarFromFile={setAvatarFromFile}
-            clearAvatar={clearAvatar}
-            onSignOut={handleSignOut}
-            onStartGhostChat={() => {
-              handleNavigate("chat");
-              chats.startGhostChat();
-            }}
-          />
+          <SettingsPanel onClose={() => handleNavigate("chat")} initialTab={settingsTab} />
         </div>
       )}
       {wslWarning && (

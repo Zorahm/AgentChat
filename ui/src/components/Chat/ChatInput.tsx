@@ -418,6 +418,9 @@ export function ChatInput({
           </div>
         </div>
       </div>
+      <div className="composer-hint">
+        <kbd>Enter</kbd> — отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> — новая строка
+      </div>
     </div>
   );
 }

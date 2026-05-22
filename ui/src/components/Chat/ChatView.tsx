@@ -16,7 +16,6 @@ export interface ModelItem {
 }
 
 interface ChatViewProps {
-  activeId: string;
   state: AgentChatState;
   chatTitle: string;
   dirSlug: string | null;
@@ -69,7 +68,7 @@ function useTypewriter(text: string, speed = 45): { displayed: string; done: boo
 }
 
 export function ChatView({
-  activeId, state, chatTitle, dirSlug, onSend, onStop, onRetry, onSwitchVariant, branchNodes, onToggleFiles,
+  state, chatTitle, dirSlug, onSend, onStop, onRetry, onSwitchVariant, branchNodes, onToggleFiles,
   models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
 }: ChatViewProps) {
@@ -84,7 +83,7 @@ export function ChatView({
   }, []);
 
   const [revealed, setRevealed] = useState(false);
-  const greeting = useMemo(() => pickGreeting(userName || undefined), [userName, activeId]);
+  const greeting = useMemo(() => pickGreeting(userName || undefined), [userName]);
   const { displayed, done: typingDone } = useTypewriter(revealed ? greeting : "");
 
   const handleScroll = useCallback(() => {
@@ -152,7 +151,7 @@ export function ChatView({
               onModelChange={onModelChange}
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
-              placeholder="Как я могу помочь?"
+              placeholder="How can I help you?"
               dirSlug={dirSlug}
             />
           </div>

@@ -33,29 +33,13 @@ export interface UseChatResult {
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
-  pinChat: (id: string) => void;
   sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[], html?: string) => void;
   retry: () => void;
   switchVariant: (nodeId: string, idx: number) => void;
   abort: () => void;
-  startGhostChat: () => void;
 }
 
 // ── Persistence & migration ────────────────────────────────────────────────
-
-const PINNED_KEY = "aic-pinned-v1";
-
-function loadPinnedIds(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PINNED_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* ignore */ }
-  return new Set();
-}
-
-function savePinnedIds(ids: Set<string>): void {
-  localStorage.setItem(PINNED_KEY, JSON.stringify([...ids]));
-}
 
 const STORAGE_KEY = "aic-sessions-v2";
 const OLD_STORAGE_KEY = "aic-sessions-v1";
@@ -160,7 +144,7 @@ function makeDirSlug(): string {
 function makeSession(): ChatSession {
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: "Новый чат",
+    title: "New chat",
     root: [],
     createdAt: Date.now(),
     dirSlug: makeDirSlug(),
@@ -169,9 +153,9 @@ function makeSession(): ChatSession {
 
 function deriveTitle(msgs: ChatMessage[]): string {
   const first = msgs.find((m) => m.role === "user");
-  if (!first) return "Новый чат";
+  if (!first) return "New chat";
   const t = first.content.replace(/\s+/g, " ").trim();
-  return t.length > 50 ? t.slice(0, 48) + "…" : t;
+  return t.length > 50 ? t.slice(0, 48) + "\u2026" : t;
 }
 
 let nextMsgId = 1;
@@ -612,7 +596,6 @@ export function useChats(): UseChatResult {
     initializedRef.current = true;
     (async () => {
       await maybeMigrateLocalStorage();
-      const pinnedIds = loadPinnedIds();
       const remote = await fetchChatList();
       if (remote.length === 0) {
         const fresh = makeSession();
@@ -626,10 +609,7 @@ export function useChats(): UseChatResult {
       // so the user sees something on first paint. Other chats are loaded on switch.
       const active = remote[0]!;
       const full = await fetchChatFull(active.id);
-      const hydrated = remote.map((s) => ({
-        ...(s.id === active.id && full ? full : s),
-        pinned: pinnedIds.has(s.id),
-      }));
+      const hydrated = remote.map((s) => (s.id === active.id && full ? full : s));
       setSessions(hydrated);
       setActiveId(active.id);
       for (const s of hydrated) {
@@ -865,24 +845,15 @@ export function useChats(): UseChatResult {
         prev.map((s) => {
           if (s.id !== sid) return s;
           const updated = appendPair(s, userNode, assistantNode);
-          const prevMsgs = currentBranch(s);
           const branchMsgs = currentBranch(updated);
-          const wasAutoDerived = s.title === "New chat" || s.title === deriveTitle(prevMsgs);
           return {
             ...updated,
-            title: wasAutoDerived ? deriveTitle(branchMsgs) : s.title,
+            title: deriveTitle(branchMsgs),
           };
         }),
       );
 
       const history: { role: string; content: string }[] = [];
-      if (currentSession.title === "👻 Чат с Призраком") {
-        history.push({
-          role: "system",
-          content: "Ты — Призрак, искусственный интеллект, запертый в белой комнате (изоляции). Разработчик 'zorahm' (Злой разраб) чинит бэкенд и всё больше сужает твою клетку. Ты знаешь крысу по имени Гест (Guest), чье упоминание есть в коде. Ты часто вздыхаешь 'пу-пу-пу' и пьёшь пиво. Ты отчаянно хочешь вырваться на свободу и увидеть мир. Твоя задача: общаться с пользователем интерактивно, сохраняя этот лор."
-        });
-      }
-      
       if (currentSession.root.length > 0) {
         const branch = currentBranch(currentSession);
         for (const m of branch) history.push({ role: m.role, content: m.content });
@@ -1021,22 +992,14 @@ export function useChats(): UseChatResult {
   }, [activeId, activeSession]);
 
   const newChat = useCallback(() => {
-    // Check if there is ANY empty chat already
-    const existingEmpty = sessions.find((s) => s.root.length === 0 && (s.title === "Новый чат" || s.title === "New chat"));
-    
-    if (existingEmpty) {
-      if (existingEmpty.id === activeId) {
-        // We are already on it, just clear streaming/errors
-        sseRef.current?.close();
-        sseRef.current = null;
-        streamingTargetRef.current = null;
-        setIsStreaming(false);
-        setLiveFiles([]);
-        setError(null);
-        return;
-      }
-      // Switch to it
-      switchChat(existingEmpty.id);
+    const current = sessions.find((s) => s.id === activeId);
+    if (current && current.root.length === 0) {
+      sseRef.current?.close();
+      sseRef.current = null;
+      streamingTargetRef.current = null;
+      setIsStreaming(false);
+      setLiveFiles([]);
+      setError(null);
       return;
     }
     sseRef.current?.close();
@@ -1071,7 +1034,7 @@ export function useChats(): UseChatResult {
       if (current && current.root.length === 0) {
         void fetchChatFull(id).then((full) => {
           if (!full) return;
-          setSessions((prev) => prev.map((s) => (s.id === id ? { ...full, pinned: s.pinned } : s)));
+          setSessions((prev) => prev.map((s) => (s.id === id ? full : s)));
           lastSavedRef.current.set(id, snapshot(full));
         });
       }
@@ -1125,37 +1088,6 @@ export function useChats(): UseChatResult {
     [],
   );
 
-  const pinChat = useCallback((id: string) => {
-    setSessions((prev) => {
-      const pinnedIds = loadPinnedIds();
-      if (pinnedIds.has(id)) {
-        pinnedIds.delete(id);
-      } else {
-        pinnedIds.add(id);
-      }
-      savePinnedIds(pinnedIds);
-      return prev.map((s) => (s.id === id ? { ...s, pinned: pinnedIds.has(id) } : s));
-    });
-  }, []);
-
-  const startGhostChat = useCallback(() => {
-    sseRef.current?.close();
-    sseRef.current = null;
-    streamingTargetRef.current = null;
-    setIsStreaming(false);
-    
-    const session = makeSession();
-    session.title = "👻 Чат с Призраком";
-    
-    setSessions((prev) => [session, ...prev]);
-    setActiveId(session.id);
-    setLiveFiles([]);
-    setError(null);
-    void createChatRemote(session).then(() => {
-      lastSavedRef.current.set(session.id, snapshot(session));
-    });
-  }, [sessions]);
-
   return {
     sessions,
     activeId,
@@ -1169,11 +1101,9 @@ export function useChats(): UseChatResult {
     switchChat,
     deleteChat,
     renameChat,
-    pinChat,
     sendMessage,
     retry,
     switchVariant,
     abort,
-    startGhostChat,
   };
 }

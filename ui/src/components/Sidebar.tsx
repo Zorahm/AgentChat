@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen } from "@phosphor-icons/react";
+import { useState, useMemo } from "react";
+import { Trash, PencilSimple, Check, X, Books, Plus, Gear } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
-import { GhostChat } from "./GhostChat";
 
 interface SidebarProps {
   sessions: ChatSession[];
@@ -10,269 +9,61 @@ interface SidebarProps {
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
-  onPin: (id: string) => void;
   activeView: "chat" | "skills" | "settings" | "allchats";
   onNavigate: (view: "chat" | "skills" | "settings" | "allchats") => void;
   collapsed: boolean;
   onToggle: () => void;
   userName: string;
-  avatarUrl: string | null;
 }
 
 const RECENT_LIMIT = 15;
 
 export function Sidebar({
-  sessions, activeId, onNew, onSwitch, onDelete, onRename, onPin,
-  activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
+  sessions, activeId, onNew, onSwitch, onDelete, onRename,
+  activeView, onNavigate, collapsed, onToggle, userName,
 }: SidebarProps) {
-  const [orderIds, setOrderIds] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem("aic-chat-order-v1");
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return [];
-  });
+  const sorted = useMemo(
+    () => [...sessions].sort((a, b) => b.createdAt - a.createdAt),
+    [sessions],
+  );
 
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [pendingDrop, setPendingDrop] = useState<{
-    draggedId: string;
-    targetId: string;
-    type: "pin" | "unpin";
-  } | null>(null);
-
-  // ── Easter egg ─────────────────────────────────────────────────────────────
-  const [isPatched, setIsPatched] = useState(() => localStorage.getItem("aic-ghost-patched-v1") === "1");
-  const [logoDetached, setLogoDetached] = useState(false);
-  const [ghostOpen, setGhostOpen] = useState(false);
-  const logoClickTimesRef = useRef<number[]>([]);
-
-  const handleLogoClick = useCallback(() => {
-    if (isPatched || logoDetached) return;
-    const now = Date.now();
-    logoClickTimesRef.current = [...logoClickTimesRef.current, now].filter(t => now - t < 2500);
-    if (logoClickTimesRef.current.length >= 7) {
-      logoClickTimesRef.current = [];
-      setLogoDetached(true);
-    }
-  }, [isPatched, logoDetached]);
-
-  const handleGhostClose = useCallback(() => {
-    setGhostOpen(false);
-    setLogoDetached(false);
-    localStorage.setItem("aic-ghost-patched-v1", "1");
-    setIsPatched(true);
-  }, []);
-
-  const saveOrder = useCallback((newOrder: string[]) => {
-    setOrderIds(newOrder);
-    localStorage.setItem("aic-chat-order-v1", JSON.stringify(newOrder));
-  }, []);
-
-  const pinned = useMemo(() => {
-    const p = sessions.filter(s => s.pinned);
-    p.sort((a, b) => {
-      const idxA = orderIds.indexOf(a.id);
-      const idxB = orderIds.indexOf(b.id);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return b.createdAt - a.createdAt;
-    });
-    return p;
-  }, [sessions, orderIds]);
-
-  const recent = useMemo(() => {
-    const r = sessions.filter(s => !s.pinned);
-    r.sort((a, b) => {
-      const idxA = orderIds.indexOf(a.id);
-      const idxB = orderIds.indexOf(b.id);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return b.createdAt - a.createdAt;
-    });
-    return r.slice(0, RECENT_LIMIT);
-  }, [sessions, orderIds]);
-
-  const allDisplayed = useMemo(() => [...pinned, ...recent], [pinned, recent]);
-
-  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
-    setDraggedId(id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent, id: string) => {
-    e.preventDefault();
-    if (id !== dragOverId) setDragOverId(id);
-  }, [dragOverId]);
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDragOverId(null);
-  }, []);
-
-  const executeDrop = useCallback((dragId: string, tgtId: string, togglePin: boolean) => {
-    let currentOrder = [...orderIds];
-    const allIds = allDisplayed.map(s => s.id);
-    for (const id of allIds) {
-      if (!currentOrder.includes(id)) currentOrder.push(id);
-    }
-    const draggedIdx = currentOrder.indexOf(dragId);
-    const targetIdx = currentOrder.indexOf(tgtId);
-
-    if (draggedIdx !== -1 && targetIdx !== -1) {
-      const newOrder = [...currentOrder];
-      const [removed] = newOrder.splice(draggedIdx, 1);
-      if (removed !== undefined) {
-        newOrder.splice(targetIdx, 0, removed);
-        saveOrder(newOrder);
-      }
-      
-      if (togglePin) {
-         onPin(dragId);
-      }
-    }
-  }, [orderIds, allDisplayed, saveOrder, onPin]);
-
-  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    setDragOverId(null);
-    if (!draggedId || draggedId === targetId) return;
-
-    let currentOrder = [...orderIds];
-    const allIds = allDisplayed.map(s => s.id);
-    
-    for (const id of allIds) {
-      if (!currentOrder.includes(id)) currentOrder.push(id);
-    }
-    
-    const draggedIdx = currentOrder.indexOf(draggedId);
-    const targetIdx = currentOrder.indexOf(targetId);
-    
-    if (draggedIdx !== -1 && targetIdx !== -1) {
-      const draggedSession = sessions.find(s => s.id === draggedId);
-      const targetSession = sessions.find(s => s.id === targetId);
-      
-      if (draggedSession && targetSession && draggedSession.pinned !== targetSession.pinned) {
-         if (draggedSession.pinned && !targetSession.pinned) {
-            setPendingDrop({ draggedId, targetId, type: "unpin" });
-            return;
-         } else if (!draggedSession.pinned && targetSession.pinned) {
-            setPendingDrop({ draggedId, targetId, type: "pin" });
-            return;
-         }
-      }
-
-      executeDrop(draggedId, targetId, false);
-    }
-  }, [draggedId, orderIds, allDisplayed, sessions, executeDrop]);
+  const recent = sorted.slice(0, RECENT_LIMIT);
 
   if (collapsed) {
-    const hasPinned = pinned.length > 0;
-    const hasRecent = recent.length > 0;
-
     return (
       <aside className="sidebar sidebar--collapsed">
-        {/* Toggle */}
-        <button className="sb-col-toggle" onClick={onToggle} title="Развернуть">
+        <button className="sb-icon-btn" onClick={onToggle} title="Expand sidebar">
           ☰
         </button>
-
-        {/* New chat */}
-        <button className="sb-col-new" onClick={onNew} title="Новый чат">
-          <Plus weight="bold" size={15} />
+        <button className="sb-icon-btn" onClick={onNew} title="New chat">
+          <Plus />
         </button>
-
-        {/* Search */}
-        <button className="sb-col-search" onClick={() => onNavigate("allchats")} title="Поиск по чатам">
-          <MagnifyingGlass size={15} weight="bold" />
-        </button>
-
-        {/* Chat chips */}
-        <div className="sb-col-list">
-          {hasPinned && (
-            <div className="sb-col-chips">
-              {pinned.map((s) => (
-                <ChatChip
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeId}
-                  isDragOver={dragOverId === s.id}
-                  onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
-                  onDragStart={(e) => handleDragStart(e, s.id)}
-                  onDragOver={(e) => handleDragOver(e, s.id)}
-                  onDrop={(e) => handleDrop(e, s.id)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-            </div>
-          )}
-
-          {hasPinned && hasRecent && <div className="sb-col-divider" />}
-
-          {hasRecent && (
-            <div className="sb-col-chips">
-              {recent.slice(0, 8).map((s) => (
-                <ChatChip
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeId}
-                  isDragOver={dragOverId === s.id}
-                  onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
-                  onDragStart={(e) => handleDragStart(e, s.id)}
-                  onDragOver={(e) => handleDragOver(e, s.id)}
-                  onDrop={(e) => handleDrop(e, s.id)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-            </div>
-          )}
+        <div className="sb-collapsed-dots">
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className={`sb-collapsed-dot${s.id === activeId ? " active" : ""}`}
+              onClick={() => { onSwitch(s.id); onNavigate("chat"); }}
+              title={s.title}
+            />
+          ))}
         </div>
-
-        {/* Bottom nav */}
-        <nav className="sb-col-foot">
+        <nav className="sb-foot-collapsed">
           <button
-            className={`sb-col-btn${activeView === "skills" ? " sb-col-btn--active" : ""}`}
+            className={`sb-icon-btn${activeView === "skills" ? " active" : ""}`}
             onClick={() => onNavigate("skills")}
-            title="Скиллы"
+            title="Skills"
           >
-            <Books size={16} />
+            <Books />
           </button>
           <button
-            className={`sb-col-btn${activeView === "settings" ? " sb-col-btn--active" : ""}`}
+            className={`sb-icon-btn${activeView === "settings" ? " active" : ""}`}
             onClick={() => onNavigate("settings")}
-            title="Настройки"
+            title="Settings"
           >
-            <Gear size={16} />
-          </button>
-          <button
-            className="sb-col-avatar"
-            onClick={() => onNavigate("settings")}
-            title={userName || "Профиль"}
-          >
-            <AvatarCircle url={avatarUrl} name={userName} size={26} />
+            <Gear />
           </button>
         </nav>
-
-        {pendingDrop && (
-          <ConfirmDialog
-            title={pendingDrop.type === "unpin" ? "Открепить чат?" : "Закрепить чат?"}
-            message={
-               pendingDrop.type === "unpin" 
-                 ? "Вы перетащили закреплённый чат в список недавних. Вы уверены, что хотите открепить его?" 
-                 : "Вы перетащили недавний чат в закреплённые. Вы уверены, что хотите закрепить его?"
-            }
-            onConfirm={() => {
-               executeDrop(pendingDrop.draggedId, pendingDrop.targetId, true);
-               setPendingDrop(null);
-            }}
-            onCancel={() => {
-               setPendingDrop(null);
-            }}
-          />
-        )}
       </aside>
     );
   }
@@ -281,423 +72,136 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sb-top">
         <div className="sb-logo">
-          <div
-            className={`sb-logo-wrap${logoDetached ? " sb-logo--detached" : ""}${isPatched ? " sb-logo--patched" : ""}`}
-            onClick={handleLogoClick}
-            style={{ cursor: isPatched || logoDetached ? "default" : "pointer" }}
-            title={isPatched ? "" : undefined}
-          >
-            <img className="sb-logo-mark" src="/dots.svg" alt="AgentChat" />
-            {isPatched && <span className="sb-logo-patch" aria-hidden>🩹</span>}
-          </div>
+          <img className="sb-logo-mark" src="/dots.svg" alt="AgentChat" />
           <span>AgentChat</span>
-          {logoDetached && !isPatched && (
-            <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title="Призрак ждёт...">
-              +
-            </button>
-          )}
         </div>
         <button className="sb-icon-btn sb-hamburger" onClick={onToggle}>☰</button>
       </div>
 
       <div className="sb-body">
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <button className="sb-new-chat" onClick={onNew} style={{ flex: 1, marginBottom: 0 }}>
-            <span>+ Новый чат</span>
-          </button>
-
-          <button
-            className="sb-col-search"
-            style={{ marginBottom: 0, width: '38px', height: '38px' }}
-            onClick={() => onNavigate("allchats")}
-            title="Поиск"
-          >
-            <MagnifyingGlass size={16} weight="bold" />
-          </button>
-        </div>
+        <button className="sb-new-chat" onClick={onNew}>
+          <span>+ New chat</span>
+          <span className="sb-kbd">⌘N</span>
+        </button>
         <button className="sb-skills-btn" onClick={() => onNavigate("skills")}>
           <Books />
           <span>Навыки</span>
         </button>
-        <button className="sb-skills-btn sb-files-btn" disabled title="Скоро">
-          <FolderOpen />
-          <span>Файлы</span>
-          <span className="sb-soon-badge">Скоро</span>
-        </button>
 
-        <div className="sb-section-header">
-          <span className="sb-section-label">Недавние</span>
+        <div className="sb-recent-header">
+          <span className="sb-recent-label">Последние</span>
+          <button className="sb-view-all-btn" onClick={() => onNavigate("allchats")}>
+            View All
+          </button>
         </div>
 
         <div className="sb-list">
-          {allDisplayed.map((s) => (
+          {recent.map((s) => (
             <ChatItem
               key={s.id}
               session={s}
               active={s.id === activeId}
-              isDragOver={s.id === dragOverId}
               onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
               onDelete={() => onDelete(s.id)}
               onRename={(title) => onRename(s.id, title)}
-              onPin={() => onPin(s.id)}
-              onDragStart={(e) => handleDragStart(e, s.id)}
-              onDragOver={(e) => handleDragOver(e, s.id)}
-              onDrop={(e) => handleDrop(e, s.id)}
-              onDragEnd={handleDragEnd}
             />
           ))}
         </div>
-
-
       </div>
 
       <div className="sb-foot">
         <div className="sb-user" onClick={() => onNavigate("settings")}>
-          <AvatarCircle url={avatarUrl} name={userName} size={30} />
-          <div className="sb-user-info">
-            <span className="sb-user-name">{userName || "Пользователь"}</span>
-            <span className="sb-user-hint">Настройки</span>
+          <div className="sb-avatar">{userName ? userName[0]!.toUpperCase() : "A"}</div>
+          <div className="sb-user-name">
+            {userName || "Пользователь"}
           </div>
           <span className="sb-user-gear"><Gear /></span>
         </div>
       </div>
-
-      {pendingDrop && (
-        <ConfirmDialog
-          title={pendingDrop.type === "unpin" ? "Открепить чат?" : "Закрепить чат?"}
-          message={
-             pendingDrop.type === "unpin"
-               ? "Вы перетащили закреплённый чат в список недавних. Вы уверены, что хотите открепить его?"
-               : "Вы перетащили недавний чат в закреплённые. Вы уверены, что хотите закрепить его?"
-          }
-          onConfirm={() => {
-             executeDrop(pendingDrop.draggedId, pendingDrop.targetId, true);
-             setPendingDrop(null);
-          }}
-          onCancel={() => {
-             setPendingDrop(null);
-          }}
-        />
-      )}
-
-      {ghostOpen && <GhostChat onClose={handleGhostClose} />}
     </aside>
   );
 }
 
-/* ── Context Menu ───────────────────────────────────────────────────────── */
-
-interface ContextMenuProps {
-  x: number;
-  y: number;
-  pinned: boolean;
-  onPin: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}
-
-function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: ContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose]);
-
-  // Adjust so menu doesn't go off screen
-  const style: React.CSSProperties = {
-    position: "fixed",
-    top: y,
-    left: x,
-    zIndex: 9999,
-  };
-
-  return (
-    <div ref={ref} className="ctx-menu" style={style}>
-      <button
-        className="ctx-item"
-        onClick={() => { onPin(); onClose(); }}
-      >
-        <PushPin weight={pinned ? "fill" : "regular"} />
-        {pinned ? "Открепить" : "Закрепить"}
-      </button>
-      <button
-        className="ctx-item"
-        onClick={() => { onRename(); onClose(); }}
-      >
-        <PencilSimple />
-        Переименовать
-      </button>
-      <div className="ctx-divider" />
-      <button
-        className="ctx-item ctx-item--danger"
-        onClick={() => { onDelete(); onClose(); }}
-      >
-        <Trash />
-        Удалить
-      </button>
-    </div>
-  );
-}
-
-/* ── Confirm Dialog ─────────────────────────────────────────────────────── */
-
-function ConfirmDialog({
-  title,
-  message,
-  onConfirm,
-  onCancel,
-}: {
-  title: string;
-  message: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") onConfirm();
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onCancel, onConfirm]);
-
-  return (
-    <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-        <button className="confirm-close" onClick={onCancel}>
-          <X weight="bold" />
-        </button>
-        <h3 className="confirm-title">{title}</h3>
-        <p className="confirm-message">{message}</p>
-        <div className="confirm-actions">
-          <button className="confirm-btn confirm-btn--cancel" onClick={onCancel}>
-            Отмена
-          </button>
-          <button className="confirm-btn confirm-btn--confirm" onClick={onConfirm}>
-            Да
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Chat Item ──────────────────────────────────────────────────────────── */
+/* ── Chat Item ──────────────────────────────────────── */
 
 function ChatItem({
   session,
   active,
-  isDragOver,
   onSelect,
   onDelete,
   onRename,
-  onPin,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
 }: {
   session: ChatSession;
   active: boolean;
-  isDragOver?: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onRename: (title: string) => void;
-  onPin: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent) => void;
-  onDragEnd: (e: React.DragEvent) => void;
 }) {
+  const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [isPinning, setIsPinning] = useState(false);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY });
-  }, []);
-
-  const handlePin = useCallback(() => {
-    setIsPinning(true);
-    setTimeout(() => {
-      onPin();
-      setIsPinning(false);
-    }, 220);
-  }, [onPin]);
-
-  const handleStartEdit = useCallback(() => {
     setEditTitle(session.title);
     setEditing(true);
-  }, [session.title]);
+  };
 
-  const handleSave = useCallback((e?: React.MouseEvent | React.KeyboardEvent) => {
+  const handleSave = (e?: React.MouseEvent | React.KeyboardEvent) => {
     e?.stopPropagation();
     const trimmed = editTitle.trim();
     if (trimmed) onRename(trimmed);
     setEditing(false);
-  }, [editTitle, onRename]);
+  };
 
-  const handleKey = useCallback((e: React.KeyboardEvent) => {
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditing(false);
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSave(e);
     if (e.key === "Escape") setEditing(false);
-  }, [handleSave]);
+  };
 
-  return (
-    <>
-      <div
-        className={`sb-chat-item${active ? " active" : ""}${session.pinned ? " is-pinned" : ""}${isPinning ? " is-pinning" : ""}${isDragOver ? " is-drag-over" : ""}`}
-        onClick={editing ? undefined : onSelect}
-        onContextMenu={handleContextMenu}
-        draggable={!editing}
-        onDragStart={!editing ? onDragStart : undefined}
-        onDragOver={!editing ? onDragOver : undefined}
-        onDrop={!editing ? onDrop : undefined}
-        onDragEnd={!editing ? onDragEnd : undefined}
-      >
-        {editing ? (
-          <>
-            <input
-              className="sb-chat-edit"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={handleKey}
-              onBlur={() => setEditing(false)}
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
-            <span className="sb-chat-actions">
-              <button
-                className="sb-act-btn"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSave(e);
-                }}
-                title="Сохранить"
-              >
-                <Check />
-              </button>
-              <button
-                className="sb-act-btn"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setEditing(false);
-                }}
-                title="Отмена"
-              >
-                <X />
-              </button>
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="sb-chat-title">{session.title}</span>
-            <button
-              className={`sb-pin-btn${session.pinned ? " sb-pin-btn--active" : ""}`}
-              onClick={(e) => { e.stopPropagation(); handlePin(); }}
-              title={session.pinned ? "Открепить" : "Закрепить"}
-            >
-              <PushPin weight={session.pinned ? "fill" : "regular"} />
-            </button>
-          </>
-        )}
-      </div>
+  const hasActions = editing || hovered || active;
 
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          pinned={!!session.pinned}
-          onPin={handlePin}
-          onRename={handleStartEdit}
-          onDelete={onDelete}
-          onClose={() => setMenu(null)}
-        />
-      )}
-    </>
-  );
-}
-
-/* ── ChatChip (collapsed mode) ──────────────────────────────────────────── */
-
-const CHIP_COLORS = [
-  "sb-chip--a", "sb-chip--b", "sb-chip--c",
-  "sb-chip--d", "sb-chip--e", "sb-chip--f",
-];
-
-function getChipColor(title: string): string {
-  let h = 0;
-  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) | 0;
-  return CHIP_COLORS[Math.abs(h) % CHIP_COLORS.length]!;
-}
-
-function ChatChip({
-  session, active, isDragOver, onSelect,
-  onDragStart, onDragOver, onDrop, onDragEnd
-}: {
-  session: ChatSession;
-  active: boolean;
-  isDragOver?: boolean;
-  onSelect: () => void;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
-}) {
-  const initial = (session.title[0] ?? "?").toUpperCase();
-  const color = getChipColor(session.title);
-  
-  let className = `sb-chip ${color}`;
-  if (active) className += " sb-chip--active";
-  if (session.pinned) className += " sb-chip--pinned";
-  if (isDragOver) className += " sb-chip--drag-over";
-
-  return (
-    <button
-      className={className}
-      onClick={onSelect}
-      title={session.title}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
-    >
-      {initial}
-    </button>
-  );
-}
-
-/* ── AvatarCircle ───────────────────────────────────────────────────────── */
-
-export function AvatarCircle({ url, name, size = 30 }: {
-  url: string | null;
-  name: string;
-  size?: number;
-}) {
-  const letter = name ? name[0]!.toUpperCase() : "?";
   return (
     <div
-      className="sb-avatar"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className={`sb-chat-item${active ? " active" : ""}${hasActions ? " has-actions" : ""}`}
+      onClick={editing ? undefined : onSelect}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {url
-        ? <img src={url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : letter
-      }
+      {editing ? (
+        <input
+          className="sb-chat-edit"
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onKeyDown={handleKey}
+          onBlur={() => setEditing(false)}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="sb-chat-title">{session.title}</span>
+      )}
+
+      {editing ? (
+        <span className="sb-chat-actions">
+          <button className="sb-act-btn" onClick={handleSave} title="Сохранить"><Check /></button>
+          <button className="sb-act-btn" onClick={handleCancel} title="Отмена"><X /></button>
+        </span>
+      ) : (hovered || active) ? (
+        <span className="sb-chat-actions">
+          <button className="sb-act-btn" onClick={handleStartEdit} title="Переименовать"><PencilSimple /></button>
+          <button
+            className="sb-act-btn sb-act-btn--del"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            title="Удалить"
+          ><Trash /></button>
+        </span>
+      ) : null}
     </div>
   );
 }
