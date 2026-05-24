@@ -41,11 +41,15 @@ from api.schemas.settings import (
     SettingsUpdate,
 )
 from llm.models_fetcher import ModelsFetcher, looks_thinking
+from mcp_integration import MCPManager
+from mcp_integration.config import MCPServerConfig, MCPServerUpdate
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
 from tools.bash_tool import BashTool
+from tools.edit_file import EditFileTool
 from tools.read_file import ReadFileTool
+from tools.read_photo import ReadPhotoTool
 from tools.read_skill import ReadSkillTool
 from tools.registry import ToolRegistry
 from tools.write_file import WriteFileTool
@@ -64,13 +68,14 @@ else:
     BASE_DIR = Path(__file__).resolve().parent
     AGENTS_DIR = BASE_DIR.parent / ".agents"
 
-AGENTS_SKILLS_DIR = AGENTS_DIR / "skills"
 SETTINGS_FILE = AGENTS_DIR / "settings.json"
 CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
-# Cross-agent shared skills location per the Agent Skills convention:
-# ~/.agents/skills/ — read-only from this app's perspective (we don't install or
-# delete here, but we DO surface them to the model).
-USER_AGENTS_SKILLS_DIR = Path.home() / ".agents" / "skills"
+# Cross-agent shared locations per the Agent Skills convention.
+USER_AGENTS_DIR = Path.home() / ".agents"
+USER_AGENTS_SKILLS_DIR = USER_AGENTS_DIR / "skills"
+# Backwards-compatible name used by older code paths; always points at the
+# canonical user-global skills directory, never at app-local/AppData storage.
+AGENTS_SKILLS_DIR = USER_AGENTS_SKILLS_DIR
 
 USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
 USER_HOME = os.path.expanduser("~")
@@ -126,6 +131,12 @@ def get_blocked_read_prefixes() -> tuple[str, ...]:
         blocks.append(_wsl_form(win))
     return tuple(blocks)
 
+
+def get_allowed_read_prefixes() -> tuple[str, ...]:
+    """Paths the model may read even in restricted mode."""
+    return (str(USER_AGENTS_DIR), _wsl_form(USER_AGENTS_DIR))
+
+
 def build_system_prompt(user_name: str = "", shell: str = "wsl") -> str:
     """Build the system prompt with fresh date on every call.
 
@@ -170,7 +181,7 @@ Date: {now}
 ## Tools
 
 {bash_desc}
-- read_file — read a file from the local filesystem
+- read_file — read a file from the local filesystem. For large files, use offset (1-based line number) and limit (max lines) to read in chunks instead of loading the entire file at once.
 - read_skill — read detailed instructions for an installed skill
 
 ## Sandbox & uploads
@@ -178,7 +189,7 @@ Date: {now}
 By default this chat runs in a sandbox confined to the chat folder:
 - bash is confined to the chat folder (bwrap cage in WSL; soft cwd-only in PowerShell)
 - write operations (write_file, <file>, <edit>) are restricted to the chat folder
-- **read_file is restricted to the chat folder too** — you CANNOT read `/etc/passwd`, `~/.ssh/*`, `C:/Users/…`, AppData, or any other system / user path. Attempts will return a sandbox error.
+- **read_file is restricted to the chat folder plus `~/.agents/`** — you CANNOT read `/etc/passwd`, `~/.ssh/*`, AppData, or any other system / user path. Attempts will return a sandbox error.
 - If the user wants you to read a file from somewhere else on their disk, they must attach it through the @-menu in the chat input. The attachment lands in `./uploads/` under the chat folder, and only THEN you can read it via read_file or bash_tool.
 
 The user can disable all sandbox checks in Settings → "Unrestricted mode".
@@ -188,8 +199,11 @@ User-attached files (images, documents, archives) are saved into `./uploads/` re
 When a task matches a skill description, call read_skill first to get the workflow. Read each skill at most ONCE per conversation — if you have already read it, do not call read_skill again for the same skill. Use what you already know.
 
 **Package installation rules:**
-- Install Node packages with `npm install` — NEVER use apt, apt-get, brew, or any system package manager
-- Install Python packages with `pip install`
+- Install Node packages with `npm install <pkg>` — NEVER use the `-g` flag, and NEVER use
+  apt, apt-get, brew, or any system package manager
+- Install Python packages with `pip install`. In WSL sandbox mode, pip is routed to a
+  chat-local `.venv`, and `--user` is ignored so Debian/Ubuntu PEP 668 never writes to
+  system Python.
 - Assume Node.js, Python, and common runtimes are already available — do not check or install them
 
 ## Writing files
@@ -293,7 +307,7 @@ DEFAULT_PROVIDERS: list[ProviderConfig] = [
     ),
     ProviderConfig(
         id="opencode",
-        name="OpenCode",
+        name="OpenCode Go",
         api_base="https://opencode.ai/zen/go/v1",
     ),
 ]
@@ -338,11 +352,12 @@ class SettingsStore:
         settings_path: Path | None = None,
     ) -> None:
         self._providers: dict[str, ProviderConfig] = {}
+        self._mcp_servers: dict[str, MCPServerConfig] = {}
         self._fetcher = fetcher
         self._settings_path = settings_path
         self._default_model = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
         self._temperature = 0.7
-        self._max_iterations = 10
+        self._max_iterations = 50
         self._user_name = ""
         self._theme = "system"
         self._onboarding_completed = False
@@ -434,6 +449,20 @@ class SettingsStore:
                         existing.api_base = saved.api_base
                     existing.enabled = saved.enabled
 
+        mcp_block = data.get("mcp", {})
+        if isinstance(mcp_block, dict):
+            raw_servers = mcp_block.get("servers", [])
+            if isinstance(raw_servers, list):
+                for raw_s in raw_servers:
+                    if not isinstance(raw_s, dict) or "id" not in raw_s:
+                        continue
+                    try:
+                        server = MCPServerConfig.model_validate(raw_s)
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[settings] skipping malformed mcp server {raw_s!r}: {exc}")
+                        continue
+                    self._mcp_servers[server.id] = server
+
     def _save(self) -> None:
         """Atomically persist current state to settings.json."""
         if self._settings_path is None:
@@ -453,6 +482,12 @@ class SettingsStore:
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
             ],
+            "mcp": {
+                "servers": [
+                    s.model_dump()
+                    for s in sorted(self._mcp_servers.values(), key=lambda x: x.id)
+                ],
+            },
         }
         try:
             self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -489,6 +524,7 @@ class SettingsStore:
             onboarding_completed=self._onboarding_completed,
             unrestricted_mode=self._unrestricted_mode,
             shell_preference=self._shell_preference,
+            mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -557,6 +593,50 @@ class SettingsStore:
     def list_providers(self) -> list[ProviderConfig]:
         return [p.model_copy() for p in self._providers.values()]
 
+    # ------------------------------------------------------------------
+    # mcp servers
+    # ------------------------------------------------------------------
+
+    def list_mcp_servers(self) -> list[MCPServerConfig]:
+        return [s.model_copy(deep=True) for s in sorted(self._mcp_servers.values(), key=lambda x: x.id)]
+
+    def get_mcp_server(self, server_id: str) -> MCPServerConfig | None:
+        s = self._mcp_servers.get(server_id)
+        return s.model_copy(deep=True) if s is not None else None
+
+    def add_mcp_server(self, cfg: MCPServerConfig) -> MCPServerConfig:
+        if cfg.id in self._mcp_servers:
+            raise ValueError(f"MCP server '{cfg.id}' already exists")
+        self._mcp_servers[cfg.id] = cfg.model_copy(deep=True)
+        self._save()
+        return cfg.model_copy(deep=True)
+
+    def update_mcp_server(
+        self, server_id: str, patch: MCPServerUpdate
+    ) -> MCPServerConfig:
+        existing = self._mcp_servers.get(server_id)
+        if existing is None:
+            raise ValueError(f"Unknown MCP server: {server_id}")
+        if patch.name is not None:
+            existing.name = patch.name
+        if patch.enabled is not None:
+            existing.enabled = patch.enabled
+        if patch.config is not None:
+            existing.config = patch.config
+        self._save()
+        return existing.model_copy(deep=True)
+
+    def remove_mcp_server(self, server_id: str) -> None:
+        if server_id not in self._mcp_servers:
+            raise ValueError(f"Unknown MCP server: {server_id}")
+        del self._mcp_servers[server_id]
+        self._save()
+
+    def upsert_mcp_server(self, cfg: MCPServerConfig) -> None:
+        """Insert or replace — used by the bulk import endpoint."""
+        self._mcp_servers[cfg.id] = cfg.model_copy(deep=True)
+        self._save()
+
     def get_provider(self, model: str) -> ProviderConfig | None:
         """Resolve a provider by model string (prefix before /)."""
         if "/" in model:
@@ -620,23 +700,16 @@ class SettingsStore:
 def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and state."""
 
-    AGENTS_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     USER_AGENTS_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
     # --- stateful singletons ---
-    # All new installs land in ~/.agents/skills/ — the shared Agent Skills 2.0
-    # convention path — so dev/bundle/Claude-Code-CLI all see the same set.
-    # AGENTS_SKILLS_DIR stays as a "legacy" scan path so skills installed by
-    # older builds (which wrote to APPDATA) keep showing up until uninstalled.
-    reader = AgentSkillsReader([USER_AGENTS_SKILLS_DIR, AGENTS_SKILLS_DIR])
+    # All installs and scans use ~/.agents/skills/ — the shared Agent Skills
+    # convention path — so dev, PyInstaller, terminal, and other agents see
+    # the same set.
+    reader = AgentSkillsReader(USER_AGENTS_SKILLS_DIR)
     reader.rebuild()
 
-    installer = GitHubSkillInstaller(
-        USER_AGENTS_SKILLS_DIR, reader, legacy_dirs=[AGENTS_SKILLS_DIR]
-    )
-    # Pre-marker builds wrote into APPDATA; backfill markers so DELETE accepts
-    # them now that the check is marker-based, not path-based.
-    installer.backfill_legacy_markers()
+    installer = GitHubSkillInstaller(USER_AGENTS_SKILLS_DIR, reader)
     models_fetcher = ModelsFetcher()
     settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
     chat_store = ChatStore(CHAT_DB_FILE)
@@ -645,12 +718,21 @@ def create_app() -> FastAPI:
     registry = ToolRegistry()
     registry.register(BashTool(user_name=USER_NAME, user_home=WSL_USER_HOME))
     registry.register(ReadFileTool())
+    registry.register(ReadPhotoTool())
     registry.register(WriteFileTool())
+    registry.register(EditFileTool())
     registry.register(ReadSkillTool(reader))
+
+    # --- MCP manager (lazy-spawn supervisor for external MCP servers) ---
+    mcp_manager = MCPManager()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
-        yield
+        await mcp_manager.start()
+        try:
+            yield
+        finally:
+            await mcp_manager.shutdown()
 
     app = FastAPI(
         title="AgentChat",
@@ -685,6 +767,7 @@ def create_app() -> FastAPI:
     app.state.chat_store = chat_store
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
+    app.state.mcp_manager = mcp_manager
     app.state.system_prompt_factory: Callable[[], str] = lambda: build_system_prompt(
         user_name=settings_store.user_name,
         shell=resolve_active_shell(settings_store.shell_preference),

@@ -26,6 +26,8 @@ interface WSLStatus {
   python: string | null;
   npm: string | null;
   pandoc: string | null;
+  libreoffice: string | null;
+  poppler: boolean;
   docx: boolean;
   dns_ok: boolean;
 }
@@ -161,50 +163,77 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
-  // ── Step 3: WSL ──
-  const installDistro = async () => {
-    setWslBusy("distro");
+  // ── Step 3: WSL — single button installs distro + libraries ──
+
+  const appendLog = (line: string) => setWslLog((prev) => (prev ? prev + "\n" + line : line));
+
+  /** Poll /wsl/status until distro_running is true, or give up. */
+  const pollDistroReady = async (timeoutMs = 600000): Promise<WSLStatus | null> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        const r = await fetch(`${API_BASE}/wsl/status`);
+        if (r.ok) {
+          const s = (await r.json()) as WSLStatus;
+          setWsl(s);
+          if (s.distro_running) return s;
+        }
+      } catch {
+        /* keep polling */
+      }
+    }
+    return null;
+  };
+
+  /** Single-click flow: ensure WSL+Ubuntu installed, then libraries. */
+  const installAll = async () => {
+    setWslBusy("all");
     setWslLog("");
     setError(null);
     try {
-      const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
-      const d = await r.json();
-      setWslLog(d.output ?? "");
-      if (!d.success) setError("Не удалось запустить установку дистрибутива");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Сетевая ошибка");
-    } finally {
-      setWslBusy(null);
-      setTimeout(refreshWsl, 1000);
-    }
-  };
+      let current = wsl;
+      if (!current || !current.wsl_installed || !current.distro_running) {
+        if (!current || !current.wsl_installed || !current.default_distro) {
+          appendLog("Запускаю установку WSL + Ubuntu (потребуется UAC)…");
+          const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
+          const d = await r.json();
+          if (d.output) appendLog(d.output);
+          if (!d.success) throw new Error("Не удалось запустить установку WSL");
+        }
+        appendLog("Жду готовности дистрибутива (первый запуск может занять до 10 минут)…");
+        const ready = await pollDistroReady();
+        if (!ready) throw new Error("WSL не запустился за 10 минут — попробуй вручную через PowerShell");
+        current = ready;
+      }
 
-  const installDeps = async () => {
-    setWslBusy("deps");
-    setWslLog("Идёт установка пакетов в WSL (apt + npm). Это может занять несколько минут…");
-    setError(null);
-    try {
+      appendLog("Устанавливаю Node, Python, pandoc, LibreOffice, poppler-utils, docx…");
       const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
       const d = await r.json();
-      setWslLog(d.output ?? "");
-      if (!d.success) setError("Не удалось установить пакеты");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Сетевая ошибка");
-    } finally {
-      setWslBusy(null);
-      await refreshWsl();
-    }
-  };
+      if (!r.ok || !d.success) throw new Error(d.output ?? "Не удалось запустить установку");
 
-  const fixDns = async () => {
-    setWslBusy("dns");
-    setWslLog("Чиню DNS внутри WSL (resolv.conf + wsl.conf), перезапускаю дистрибутив…");
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/wsl/fix-dns`, { method: "POST" });
-      const d = await r.json();
-      setWslLog(d.output ?? "");
-      if (!d.success) setError("Не удалось починить DNS — см. лог");
+      // Poll the background install task — backend updates _install_log as apt progresses.
+      let lastLog = "";
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        try {
+          const s = await fetch(`${API_BASE}/wsl/install-deps/status`);
+          if (!s.ok) continue;
+          const p = await s.json() as { running: boolean; log: string; error: string | null };
+          if (p.log && p.log !== lastLog) {
+            lastLog = p.log;
+            setWslLog(p.log);
+          }
+          if (!p.running) {
+            if (p.error) throw new Error(p.error);
+            break;
+          }
+        } catch (err) {
+          if (err instanceof Error && err.message) throw err;
+          /* transient network error — keep polling */
+        }
+      }
+      appendLog("✓ Готово");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Сетевая ошибка");
     } finally {
@@ -359,49 +388,47 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
         {step === 3 && (
           <div className="ob-body">
-            <h3>WSL (Windows Subsystem for Linux)</h3>
+            <h3>WSL и системные библиотеки</h3>
             <p className="ob-sub">
-              Bash-инструмент агента работает внутри WSL. Нужны: Ubuntu (или другой дистрибутив),
-              Node.js, Python 3, <code>pandoc</code> (для чтения .docx/.odt/.rtf) и npm-пакет <code>docx</code> (для генерации).
-              Остальные пакеты модель установит при необходимости.
+              Bash-инструмент агента работает внутри WSL. Один клик ставит Ubuntu и весь набор
+              библиотек для офисных форматов: Node.js, Python 3, <code>pandoc</code>,
+              <code> LibreOffice</code>, <code>poppler-utils</code> и npm-пакет <code>docx</code>.
             </p>
 
             {wsl === null ? (
               <p className="ob-sub2">Проверяю состояние WSL…</p>
             ) : (
               <div className="ob-wsl-grid">
-                <WSLRow label="WSL установлен" ok={wsl.wsl_installed} value={wsl.wsl_installed ? "да" : "нет"} />
-                <WSLRow label="Дистрибутив" ok={!!wsl.default_distro} value={wsl.default_distro ?? "не найден"} />
-                <WSLRow label="Дистрибутив запускается" ok={wsl.distro_running} value={wsl.distro_running ? "да" : "нет"} />
-                <WSLRow label="Node.js" ok={!!wsl.node} value={wsl.node ?? "не установлен"} />
-                <WSLRow label="Python 3" ok={!!wsl.python} value={wsl.python ?? "не установлен"} />
-                <WSLRow label="npm" ok={!!wsl.npm} value={wsl.npm ?? "не установлен"} />
-                <WSLRow label="pandoc" ok={!!wsl.pandoc} value={wsl.pandoc ?? "не установлен"} />
-                <WSLRow label="docx (npm -g)" ok={wsl.docx} value={wsl.docx ? "установлен" : "нет"} />
-                <WSLRow label="DNS" ok={wsl.dns_ok} value={wsl.dns_ok ? "работает" : "сломан (apt/pip упадут)"} />
+                <WSLRow label="WSL + дистрибутив" ok={wsl.wsl_installed && wsl.distro_running}
+                  value={wsl.distro_running ? (wsl.default_distro ?? "запущен") : wsl.wsl_installed ? "не запускается" : "не установлен"} />
+                <WSLRow label="Node.js" ok={!!wsl.node} value={wsl.node ?? "—"} />
+                <WSLRow label="Python 3" ok={!!wsl.python} value={wsl.python ?? "—"} />
+                <WSLRow label="pandoc" ok={!!wsl.pandoc} value={wsl.pandoc ?? "—"} />
+                <WSLRow label="LibreOffice" ok={!!wsl.libreoffice} value={wsl.libreoffice ?? "—"} />
+                <WSLRow label="poppler-utils" ok={wsl.poppler} value={wsl.poppler ? "установлен" : "—"} />
+                <WSLRow label="docx (npm -g)" ok={wsl.docx} value={wsl.docx ? "установлен" : "—"} />
+                <WSLRow label="DNS" ok={wsl.dns_ok} value={wsl.dns_ok ? "работает" : "сломан (починю при установке)"} />
               </div>
             )}
 
-            <div className="ob-wsl-actions">
-              {wsl && (!wsl.wsl_installed || !wsl.default_distro) && (
-                <button className="ob-btn" onClick={installDistro} disabled={wslBusy !== null}>
-                  {wslBusy === "distro" ? "Запуск…" : "Установить WSL + Ubuntu"}
-                </button>
-              )}
-              {wsl && wsl.distro_running && !wsl.dns_ok && (
-                <button className="ob-btn" onClick={fixDns} disabled={wslBusy !== null}>
-                  {wslBusy === "dns" ? "Чиню…" : "Починить DNS в WSL"}
-                </button>
-              )}
-              {wsl && wsl.distro_running && (!wsl.node || !wsl.python || !wsl.npm || !wsl.pandoc || !wsl.docx) && (
-                <button className="ob-btn" onClick={installDeps} disabled={wslBusy !== null}>
-                  {wslBusy === "deps" ? "Установка…" : "Установить Node + Python + pandoc + docx"}
-                </button>
-              )}
-              <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>
-                Проверить ещё раз
-              </button>
-            </div>
+            {(() => {
+              if (!wsl) return null;
+              const allOk = wsl.wsl_installed && wsl.distro_running && !!wsl.node && !!wsl.python
+                && !!wsl.npm && !!wsl.pandoc && !!wsl.libreoffice && wsl.poppler && wsl.docx;
+              return (
+                <div className="ob-wsl-actions">
+                  {!allOk && (
+                    <button className="ob-btn" onClick={installAll} disabled={wslBusy !== null}>
+                      {wslBusy === "all" ? "Установка…" : "Установить WSL"}
+                    </button>
+                  )}
+                  {allOk && <span className="ob-success">Всё на месте.</span>}
+                  <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>
+                    Проверить ещё раз
+                  </button>
+                </div>
+              );
+            })()}
 
             {wslLog && (
               <pre className="ob-log">{wslLog}</pre>
@@ -409,7 +436,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
               <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>Назад</button>
-              <button className="ob-btn" onClick={() => setStep(4)}>Далее</button>
+              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null}>Далее</button>
             </div>
           </div>
         )}

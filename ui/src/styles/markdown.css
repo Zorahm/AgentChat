@@ -1,167 +1,482 @@
-/** Shared markdown typography. Apply class `md` to any rendered markdown
- * container — chat messages, SKILL.md, future README panels — to get the
- * same look. Container chrome (background, border, max-height) stays in
- * the host stylesheets (chat.css, settings-v2.css). */
+/**
+ * Markdown typography — Editorial-Tech style.
+ * Apply .md on any rendered markdown container.
+ * Apply .md--compact for chat messages (tighter rhythm).
+ */
+
+/* ── Wrapper ──────────────────────────────────────────────────────────── */
 
 .md {
-  font-size: 16px;
+  --md-inline-bg: var(--accent-soft);
+  --md-inline-fg: var(--accent);
+
+  font-family: var(--font-body);
+  font-size: 15.5px;
   line-height: 1.65;
   color: var(--ink);
+  text-rendering: optimizeLegibility;
+  text-wrap: pretty;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
 }
 
-.md > div:first-child > :first-child,
 .md > :first-child { margin-top: 0; }
-.md > div:last-child > :last-child,
-.md > :last-child { margin-bottom: 0; }
+.md > :last-child  { margin-bottom: 0; }
 
-/* paragraphs and inline */
-.md p { margin: 0 0 10px; line-height: 1.65; color: var(--ink); }
-.md strong { font-weight: 600; color: var(--ink); }
-.md em { font-style: italic; color: var(--muted); }
-.md del { text-decoration: line-through; color: var(--muted); }
+/* ── Paragraphs ───────────────────────────────────────────────────────── */
 
-/* headings */
+.md p { margin: 0 0 1em; }
+.md p + p { margin-top: 0; }
+
+/* ── Headings ──────────────────────────────────────────────────────────── */
+
 .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
-  font-family: var(--font-hand);
-  font-weight: 400;
-  margin: 18px 0 8px;
-  line-height: 1.25;
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--ink);
-  letter-spacing: -.2px;
+  line-height: 1.2;
+  margin: 1.8em 0 0.6em;
 }
-.md h1 { font-size: 26px; letter-spacing: -.4px; }
-.md h2 { font-size: 21px; letter-spacing: -.3px; }
-.md h3 { font-size: 17px; }
-.md h4 { font-size: 15px; }
-.md h5, .md h6 { font-size: 14px; }
+.md > h1:first-child,
+.md > h2:first-child,
+.md > h3:first-child { margin-top: 0; }
 
-/* lists */
-.md ul, .md ol { padding-left: 22px; margin: 0 0 10px; color: var(--ink-2); }
-.md li { margin-bottom: 4px; line-height: 1.6; }
-.md li > p { margin: 0; }
-.md ul.contains-task-list { list-style: none; padding-left: 0; }
-.md ul.contains-task-list li { display: flex; align-items: flex-start; gap: 6px; }
-.md input[type="checkbox"] {
-  margin-right: 6px; accent-color: var(--accent);
-  width: 16px; height: 16px; vertical-align: middle;
+.md h1 {
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  margin-top: 0;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 28px;
 }
 
-/* links */
-.md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.md a:hover { opacity: .8; }
+.md h2 {
+  font-size: 24px;
+  margin-top: 1.6em;
+}
+.md h2 + * { margin-top: 0; }
 
-/* blockquote */
-.md blockquote {
-  border-left: 3px solid var(--line-2);
-  padding: 6px 0 6px 16px;
+.md h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-top: 1.6em;
+}
+.md h3 + * { margin-top: 0; }
+
+.md h4 {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--muted);
-  margin: 10px 0;
-  font-style: italic;
-  background: var(--surface-2);
-  border-radius: 0 8px 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: var(--font-mono);
+  margin-top: 1.4em;
+  margin-bottom: 0.4em;
+}
+.md h4 + * { margin-top: 0; }
+
+.md h5, .md h6 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
-/* inline code */
-.md code {
+/* ── Inline ─────────────────────────────────────────────────────────────── */
+
+.md strong { font-weight: 600; color: var(--ink); }
+.md blockquote strong { color: inherit; }
+
+.md em {
+  font-family: var(--font-hand);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.06em;
+  letter-spacing: 0.005em;
+}
+
+.md a {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-2);
+  padding-bottom: 1px;
+  transition: border-color .15s, color .15s;
+}
+.md a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.md a > code { border-bottom: none; }
+
+.md del { color: var(--faint); text-decoration: line-through; }
+.md ins {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-2);
+}
+.md mark {
+  background: var(--accent-soft);
+  color: var(--running);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.md abbr[title] {
+  cursor: help;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 2px;
+}
+
+/* ── Inline code ─────────────────────────────────────────────────────── */
+
+.md :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  background: var(--md-inline-bg);
+  color: var(--md-inline-fg);
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+
+/* ── Lists ─────────────────────────────────────────────────────────────── */
+
+.md ul, .md ol {
+  margin: 0 0 1em;
+  padding-left: 0;
+}
+.md li { margin-bottom: 0.35em; }
+
+/* unordered — custom dot bullet */
+.md ul { list-style: none; }
+.md ul > li {
+  position: relative;
+  padding-left: 1.6em;
+}
+.md ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.5em;
+  top: 0.72em;
+  width: 4px;
+  height: 4px;
+  background: var(--faint);
+  border-radius: 99px;
+}
+.md ul ul > li::before {
+  background: transparent;
+  border: 1px solid var(--faint);
+  width: 3px;
+  height: 3px;
+}
+
+/* ordered — mono leading-zero numbers */
+.md ol {
+  list-style: none;
+  counter-reset: md-ol;
+}
+.md ol > li {
+  position: relative;
+  padding-left: 2em;
+  counter-increment: md-ol;
+}
+.md ol > li::before {
+  content: counter(md-ol, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--accent-2);
+  font-weight: 500;
+  padding-top: 0.32em;
+}
+
+/* nested lists */
+.md li > ul, .md li > ol { margin: 0.35em 0 0.4em; }
+
+/* task list (GFM) */
+.md ul.contains-task-list,
+.md ul li.task-list-item {
+  list-style: none;
+  padding-left: 0;
+}
+.md ul li.task-list-item::before { display: none; }
+.md input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  background: var(--surface-2);
+  margin-right: 10px;
+  vertical-align: -2px;
+  cursor: default;
+  position: relative;
+  flex-shrink: 0;
+}
+.md input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.md input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  border: solid var(--on-ink);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* ── Blockquote ─────────────────────────────────────────────────────────── */
+
+.md blockquote {
+  margin: 1.4em 0;
+  padding: 4px 0 4px 24px;
+  border-left: 1px solid var(--line-2);
+  font-family: var(--font-hand);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--muted);
+  letter-spacing: 0.005em;
+}
+.md blockquote > :first-child { margin-top: 0; }
+.md blockquote > :last-child  { margin-bottom: 0; }
+.md blockquote p { color: inherit; }
+.md blockquote em { font-family: inherit; font-style: normal; }
+.md blockquote strong {
+  font-family: var(--font-body);
+  font-style: normal;
   color: var(--ink);
 }
 
-/* fallback fenced code (when CodeBlockView isn't used — rare) */
+/* ── Horizontal Rule ────────────────────────────────────────────────────── */
+
+.md hr {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+  margin: 2.4em 0;
+}
+.md hr + * { margin-top: 0; }
+
+/* ── Code blocks (raw <pre> — fallback for non-extracted blocks) ──────────── */
+
 .md pre {
+  margin: 1.4em 0;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  padding: 12px 14px;
-  margin: 10px 0;
-  overflow-x: auto;
-  border-radius: var(--radius);
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  position: relative;
 }
 .md pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
+  display: block;
+  padding: 18px 22px;
+  overflow-x: auto;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  font-size: inherit;
+  white-space: pre;
+  border-radius: 0;
+}
+.md pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-2);
+  z-index: 1;
 }
 
-/* tables — the gap that triggered all of this */
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
 .md table {
-  border-collapse: collapse;
   width: 100%;
-  margin: 10px 0 14px;
-  font-size: 13.5px;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
   display: block;
   overflow-x: auto;
 }
-.md thead { background: var(--surface-2); }
-.md th, .md td {
-  border: 1px solid var(--line);
-  padding: 7px 11px;
+.md thead { background: transparent; }
+.md th {
   text-align: left;
-  vertical-align: top;
-  line-height: 1.5;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 500;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
 }
-.md th { font-weight: 600; color: var(--ink); }
-.md td { color: var(--ink-2); }
-.md tbody tr:nth-child(even) td { background: var(--surface-2); }
-
-/* horizontal rule */
-.md hr {
-  border: none;
-  border-top: 1px solid var(--line);
-  margin: 16px 0;
+.md td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: baseline;
 }
+.md td:first-child, .md th:first-child { padding-left: 0; }
+.md td:last-child,  .md th:last-child  { padding-right: 0; }
+.md tbody tr:last-child td { border-bottom: 1px solid var(--line-2); }
+.md td code { font-size: 12px; }
 
-/* images */
+/* ── Images ─────────────────────────────────────────────────────────────── */
+
 .md img {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 8px 0;
+  border: 1px solid var(--line);
+  display: block;
+  margin: 1.4em 0;
+}
+.md figure { margin: 1.6em 0; }
+.md figcaption {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 8px;
 }
 
-/* LaTeX / KaTeX
- * Inline math (.math-inline) flows with the surrounding text. Block math
- * (.math-block) becomes its own line and scrolls horizontally when the
- * formula is wider than the viewport — critical on mobile, where a long
- * \int or matrix would otherwise blow up layout. */
-.md .math-inline {
-  display: inline;
+/* ── Kbd ────────────────────────────────────────────────────────────────── */
+
+.md kbd {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  padding: 1px 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--ink);
+  vertical-align: 1px;
 }
+
+/* ── Details / Summary ──────────────────────────────────────────────────── */
+
+.md details {
+  margin: 1.2em 0;
+  padding: 12px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.md details[open] { padding-bottom: 16px; }
+.md summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.md summary::-webkit-details-marker { display: none; }
+.md summary::before {
+  content: "›";
+  font-family: var(--font-mono);
+  color: var(--faint);
+  transition: transform .15s;
+  display: inline-block;
+}
+.md details[open] summary::before { transform: rotate(90deg); }
+
+/* ── Callouts ───────────────────────────────────────────────────────────── */
+
+.md .callout {
+  margin: 1.4em 0;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  background: var(--surface-2);
+  font-style: normal;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.md .callout-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.md .callout-warn { border-left-color: var(--running); }
+.md .callout-warn .callout-title { color: var(--running); }
+.md .callout p:last-child { margin-bottom: 0; }
+
+/* ── Compact mode (chat messages) ────────────────────────────────────────── */
+
+.md--compact { font-size: 14.5px; line-height: 1.6; }
+.md--compact h1 { font-size: 22px; padding-bottom: 12px; margin-bottom: 16px; }
+.md--compact h2 { font-size: 18px; padding-top: 16px; margin-top: 1.4em; }
+.md--compact h3 { font-size: 16px; }
+.md--compact pre { margin: 1em 0; font-size: 12.5px; }
+.md--compact pre code { padding: 14px 18px; }
+.md--compact blockquote { font-size: 17px; margin: 1.1em 0; }
+.md--compact table { font-size: 13px; }
+.md--compact th, .md--compact td { padding: 10px 14px; }
+
+/* ── Footnotes ──────────────────────────────────────────────────────────── */
+
+.md .fn-ref { vertical-align: super; font-size: .75em; line-height: 1; }
+.md .fn-ref a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.md .fn-ref a:hover { text-decoration: underline; }
+.md .fn-list { margin-top: 2em; padding-top: .75em; border-top: 1px solid var(--line-2); font-size: .875em; }
+.md .fn-list ol { margin: 0; padding-left: 1.25em; }
+.md .fn-list li { margin: .4em 0; color: var(--muted); }
+.md .fn-back { text-decoration: none; color: var(--faint); margin-left: .3em; }
+.md .fn-back:hover { color: var(--accent); }
+
+/* ── LaTeX / KaTeX ─────────────────────────────────────────────────────── */
+
+.md .math-inline { display: inline; }
 .md .math-block {
   display: block;
   overflow-x: auto;
   overflow-y: hidden;
-  margin: 10px 0;
-  padding: 4px 0;
+  margin: 1.25em 0;
+  padding: .5em 0;
   -webkit-overflow-scrolling: touch;
 }
-.md .math-block .katex-display {
-  margin: 0;
-  padding: 0 2px;
-}
-.md .katex { font-size: 1.2em; }
-.md .katex-display > .katex { font-size: 1.25em; white-space: nowrap; }
-
-/* KaTeX renders parse errors as a span with this class — make them visible
- * but not alarming, so a stray `$` in prose doesn't shout at the user. */
+.md .math-block .katex-display { margin: 0; padding: 0 .5em; }
+.md .katex { font-size: max(1.15em, 15px); }
+.md .katex-display > .katex { font-size: 1.15em; white-space: nowrap; }
 .md .katex-error {
-  color: var(--muted);
+  color: var(--err);
   font-family: var(--font-mono);
-  font-size: 0.9em;
-  background: var(--surface-2);
-  padding: 0 4px;
+  font-size: .85em;
+  background: var(--err-soft);
+  padding: .2em .4em;
   border-radius: 4px;
-}
-
-@media (max-width: 640px) {
-  .md { font-size: 15px; }
-  .md .katex { font-size: 1.1em; }
-  .md .katex-display > .katex { font-size: 1.15em; }
-  .md .math-block { margin: 8px -4px; padding: 4px; }
+  border: 1px solid var(--err-line);
 }

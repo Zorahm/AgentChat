@@ -70,3 +70,23 @@ jobs:
           releaseDraft: false
           prerelease: false
           projectPath: src-tauri
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          $staging = "portable-staging"
+          New-Item -ItemType Directory -Force $staging | Out-Null
+          Copy-Item "src-tauri\target\release\AgentChat.exe" "$staging\"
+          Copy-Item "src-tauri\target\release\backend-x86_64-pc-windows-msvc.exe" "$staging\"
+          $zip = "AgentChat_${version}_x64_portable.zip"
+          Compress-Archive -Path "$staging\*" -DestinationPath $zip
+          Write-Host "Portable: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
+
+      - name: Upload portable to release
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          gh release upload "${{ github.ref_name }}" "AgentChat_${version}_x64_portable.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

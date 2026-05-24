@@ -72,8 +72,8 @@
   display: flex; gap: 2px;
   opacity: 0; transition: opacity .15s;
 }
-.msg:hover > .msg-actions,
-.msg:focus-within > .msg-actions { opacity: 1; }
+.msg:hover .msg-actions,
+.msg:focus-within .msg-actions { opacity: 1; }
 
 .msg-actions--compact {}
 
@@ -87,8 +87,69 @@
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
 }
-.msg-act-btn:hover {
+.msg-act-btn:hover:not(:disabled) {
   background: var(--hover); color: var(--ink);
+}
+.msg-act-btn:disabled {
+  opacity: .35; cursor: not-allowed;
+}
+
+/* ── Inline editor for user message ──────────────────────────────── */
+.msg-user--editing {
+  width: 100%;
+  max-width: 720px;
+}
+.msg-edit {
+  display: flex; flex-direction: column;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.msg-edit-textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 4px 2px;
+}
+.msg-edit-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 8px;
+}
+.msg-edit-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.msg-edit-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.msg-edit-btn--primary {
+  background: var(--user-bg);
+  color: #fff;
+  border-color: transparent;
+}
+.msg-edit-btn--primary:hover:not(:disabled) {
+  background: var(--user-bg);
+  filter: brightness(1.08);
+}
+.msg-edit-btn:disabled {
+  opacity: .4; cursor: not-allowed;
 }
 
 /* ── Variant navigation ──────────────────────────────────────────── */
@@ -119,9 +180,18 @@
   min-width: 28px; text-align: center;
 }
 
-/* ── User message timestamp ──────────────────────────────────────── */
+/* ── User message footer (time + actions on one row) ───────────── */
+.msg-user-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 2px;
+  opacity: 0; transition: opacity .15s;
+}
+.msg:hover .msg-user-foot,
+.msg:focus-within .msg-user-foot { opacity: 1; }
+.msg-user-foot .msg-actions {
+  margin-left: auto;
+}
 .msg-user-time {
-  font-size: 11px; opacity: .55; margin-top: 2px;
+  font-size: 11px; opacity: .55;
   color: var(--muted);
 }
 
@@ -275,6 +345,47 @@
 .composer-right { display: flex; align-items: center; gap: 6px; }
 .composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-left: 6px; }
 
+/* ── MCP chip ─────────────────────────────────────────────────────────── */
+
+.mcp-chip { position: relative; display: inline-flex; }
+.mcp-chip-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--border, #d4d4d4);
+  background: transparent; color: var(--muted);
+  font-size: 12px; cursor: pointer; font-family: var(--font-body);
+}
+.mcp-chip-btn:hover { background: var(--hover-bg, rgba(0,0,0,0.04)); }
+.mcp-chip-btn--on { color: var(--ink); border-color: var(--ink); }
+.mcp-chip-popover {
+  position: absolute; bottom: calc(100% + 4px); right: 0;
+  min-width: 220px; max-width: 320px;
+  background: var(--surface, #fff); color: var(--ink);
+  border: 1px solid var(--border, #d4d4d4); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  padding: 6px; z-index: 50;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mcp-chip-head {
+  padding: 4px 6px; font-size: 11px; text-transform: uppercase;
+  color: var(--muted); letter-spacing: 0.04em;
+}
+.mcp-chip-empty {
+  padding: 8px; font-size: 12px; color: var(--muted); text-align: center;
+}
+.mcp-chip-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 6px; border-radius: 6px; cursor: pointer;
+  font-size: 13px;
+}
+.mcp-chip-item:hover { background: var(--hover-bg, rgba(0,0,0,0.04)); }
+.mcp-chip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mcp-chip-dot--running { background: #4ade80; }
+.mcp-chip-dot--error   { background: #f87171; }
+.mcp-chip-dot--stopped { background: var(--faint, #9ca3af); }
+.mcp-chip-tools { font-size: 11px; color: var(--muted); min-width: 14px; text-align: right; }
+
 .icon-btn {
   width: 32px; height: 32px; border-radius: 7px; border: none; background: transparent;
   color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
@@ -329,7 +440,6 @@
   flex-shrink: 0;
   animation: wlc-float 4s ease-in-out 1s infinite;
   margin-top: -4px;
-  cursor: pointer;
 }
 .chat-welcome-logo img {
   width: 100%; height: 100%;
@@ -393,3 +503,37 @@
   padding: 1px 5px; border-radius: 4px;
   font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2);
 }
+
+/* ── Iterations exhausted card ─────────────────────────────────────────── */
+.iter-exhausted-card {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  background: rgba(234, 179, 8, 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+.iter-exhausted-info {
+  display: flex; align-items: center; gap: 8px;
+}
+.iter-exhausted-icon {
+  flex-shrink: 0; color: #ca8a04;
+}
+.iter-exhausted-text {
+  font-size: 13px; color: var(--ink); font-weight: 500;
+}
+.iter-exhausted-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.iter-exhausted-btn {
+  font-size: 12px; font-weight: 500;
+  padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--ink); cursor: pointer; transition: background .12s;
+}
+.iter-exhausted-btn:hover { background: var(--hover); }
+.iter-exhausted-btn--primary {
+  background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.4);
+  color: var(--ink);
+}
+.iter-exhausted-btn--primary:hover { background: rgba(234, 179, 8, 0.25); }

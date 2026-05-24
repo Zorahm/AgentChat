@@ -7,7 +7,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
-from api.schemas.skills import InstallRequest, SkillContent, SkillFile, SkillInfo
+from api.schemas.skills import InstallRequest, SkillContent, SkillFile, SkillInfo, SkillLocation
+from skills.reader import SkillEntry
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -16,14 +17,27 @@ _MAX_TREE_ENTRIES = 400  # cap to keep the side panel cheap
 _MAX_ARCHIVE_BYTES = 50 * 1024 * 1024  # 50 MB cap on uploaded .skill / .zip
 
 
+def _to_skill_info(skill: SkillEntry) -> SkillInfo:
+    return SkillInfo(
+        name=skill.name,
+        description=skill.description,
+        version=skill.version,
+        author=skill.author,
+        path=str(skill.path),
+    )
+
+
 @router.get("", response_model=list[SkillInfo])
 async def list_skills(request: Request) -> list[SkillInfo]:
     reader = request.app.state.skill_reader
     reader.rebuild()
-    return [
-        SkillInfo(name=s.name, description=s.description, version=s.version, author=s.author)
-        for s in reader.list_skills()
-    ]
+    return [_to_skill_info(s) for s in reader.list_skills()]
+
+
+@router.get("/location", response_model=SkillLocation)
+async def skills_location(request: Request) -> SkillLocation:
+    reader = request.app.state.skill_reader
+    return SkillLocation(skills_dir=str(reader.skills_dir))
 
 
 @router.post("/install", response_model=list[SkillInfo])
@@ -35,10 +49,7 @@ async def install_skill(request: Request, body: InstallRequest) -> list[SkillInf
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    return [
-        SkillInfo(name=e.name, description=e.description, version=e.version, author=e.author)
-        for e in entries
-    ]
+    return [_to_skill_info(e) for e in entries]
 
 
 @router.post("/install-file", response_model=list[SkillInfo])
@@ -59,10 +70,7 @@ async def install_skill_file(request: Request, file: UploadFile) -> list[SkillIn
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    return [
-        SkillInfo(name=e.name, description=e.description, version=e.version, author=e.author)
-        for e in entries
-    ]
+    return [_to_skill_info(e) for e in entries]
 
 
 @router.delete("/{name}")

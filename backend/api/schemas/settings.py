@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from mcp_integration.config import MCPServerConfig
+
 
 class ModelConfig(BaseModel):
     id: str
@@ -31,7 +33,7 @@ class SettingsData(BaseModel):
     models: list[ModelConfig] = Field(default_factory=list)
     default_model: str = "openai/gpt-4o"
     temperature: float = 0.7
-    max_iterations: int = 10
+    max_iterations: int = 50
     user_name: str = ""
     theme: str = "system"
     onboarding_completed: bool = False
@@ -39,6 +41,7 @@ class SettingsData(BaseModel):
     # "auto" — use WSL if available, fall back to PowerShell on Windows.
     # "wsl" — force WSL (errors if missing). "powershell" — force PowerShell.
     shell_preference: str = "auto"
+    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
 
 
 class SettingsUpdate(BaseModel):

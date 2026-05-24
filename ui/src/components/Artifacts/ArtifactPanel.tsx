@@ -1,1 +1,0 @@
-export { ArtifactsSidePanel } from "./ArtifactsSidePanel";

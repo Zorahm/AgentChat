@@ -4,7 +4,6 @@ Strategy:
   - OpenAI-compatible providers: GET {api_base}/models with Bearer auth
   - Anthropic:                   GET {api_base}/v1/models with x-api-key
   - Gemini:                      GET generativelanguage.googleapis.com/v1beta/models?key=...
-  - Ollama:                      GET {api_base}/api/tags
 
 Results are cached in-memory with a TTL; ``refresh=True`` bypasses cache.
 """
@@ -158,7 +157,7 @@ async def _fetch_provider_model_ids(p: ProviderConfig) -> list[tuple[str, str]]:
     """Return list of (model_id, display_name) tuples."""
     if not p.api_base:
         raise ValueError("api_base not configured")
-    if not p.api_key and p.id not in {"ollama", "lmstudio", "litellm_proxy"}:
+    if not p.api_key and p.id not in {"lmstudio", "litellm_proxy"}:
         # local providers don't require a real key
         raise ValueError("api_key not set")
 
@@ -174,9 +173,6 @@ async def _fetch_provider_model_ids(p: ProviderConfig) -> list[tuple[str, str]]:
         key = p.api_key or ""
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
         headers: dict[str, str] = {}
-    elif p.id == "ollama":
-        url = f"{base}/api/tags"
-        headers = {}
     else:
         url = f"{base}/models"
         headers = {"Authorization": f"Bearer {p.api_key}"} if p.api_key else {}
@@ -201,10 +197,6 @@ def _extract_model_ids(provider_id: str, data: Any) -> list[tuple[str, str]]:
             if name:
                 out.append((name, m.get("displayName", name)))
         return out
-
-    if provider_id == "ollama":
-        entries = data.get("models", []) if isinstance(data, dict) else []
-        return [(m["name"], m["name"]) for m in entries if isinstance(m, dict) and m.get("name")]
 
     # OpenAI-compatible: {"data": [{"id": "...", "name": "..."}, ...]}
     # or {"models": [{"id": "..."}, ...]}

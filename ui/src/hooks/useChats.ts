@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   ChatNode,
   UserNode,
+  UserVariant,
   AssistantNode,
   AssistantVariant,
   AttachmentInfo,
@@ -20,10 +21,18 @@ import { API_BASE } from "../utils/apiBase";
 
 export type { ChatSession } from "../types/chat";
 
+export interface AgentChatState {
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  liveFiles: LiveFile[];
+  error: string | null;
+}
+
 export interface UseChatResult {
   sessions: ChatSession[];
   activeId: string;
   activeDirSlug: string | null;
+  activeMcpEnabled: string[];
   messages: ChatMessage[];
   branchNodes: ChatNode[];
   liveFiles: LiveFile[];
@@ -33,13 +42,31 @@ export interface UseChatResult {
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
+  pinChat: (id: string) => void;
   sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[], html?: string) => void;
   retry: () => void;
+  editMessage: (userNodeId: string, content: string, displayHtml?: string) => void;
   switchVariant: (nodeId: string, idx: number) => void;
   abort: () => void;
+  startGhostChat: () => void;
+  toggleMcpServer: (serverId: string) => void;
 }
 
 // ── Persistence & migration ────────────────────────────────────────────────
+
+const PINNED_KEY = "aic-pinned-v1";
+
+function loadPinnedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PINNED_KEY);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+function savePinnedIds(ids: Set<string>): void {
+  localStorage.setItem(PINNED_KEY, JSON.stringify([...ids]));
+}
 
 const STORAGE_KEY = "aic-sessions-v2";
 const OLD_STORAGE_KEY = "aic-sessions-v1";
@@ -56,23 +83,31 @@ interface StoredSession {
 
 function migrateSession(old: StoredSession): ChatSession {
   const flatMsgs = old.messages ?? [];
-  const root: ChatNode[] = [];
-  let currentLevel = root;
+  let firstUser: UserNode | null = null;
+  let attachNextUser: ((n: UserNode) => void) | null = null;
 
   for (let i = 0; i < flatMsgs.length; i += 2) {
     const userMsg = flatMsgs[i]!;
     const assistantMsg = flatMsgs[i + 1];
 
-    const userNode: UserNode = {
-      id: userMsg.id,
-      role: "user",
+    const userVariant: UserVariant = {
+      id: `${userMsg.id}-v0`,
       content: userMsg.content,
       attachments: userMsg.attachments,
       createdAt: userMsg.timestamp,
     };
+    const userNode: UserNode = {
+      id: userMsg.id,
+      role: "user",
+      variants: [userVariant],
+      activeVariantIdx: 0,
+    };
+
+    if (!firstUser) firstUser = userNode;
+    else if (attachNextUser) attachNextUser(userNode);
 
     if (assistantMsg) {
-      const variant: AssistantVariant = {
+      const assistantVariant: AssistantVariant = {
         id: assistantMsg.id,
         content: assistantMsg.content,
         steps: assistantMsg.steps,
@@ -84,18 +119,133 @@ function migrateSession(old: StoredSession): ChatSession {
       const assistantNode: AssistantNode = {
         id: assistantMsg.id,
         role: "assistant",
-        variants: [variant],
+        variants: [assistantVariant],
         activeVariantIdx: 0,
       };
-      userNode.child = assistantNode;
-      currentLevel.push(userNode, assistantNode);
-      currentLevel = variant.children;
+      userVariant.child = assistantNode;
+      attachNextUser = (n) => { assistantVariant.children = [n]; };
     } else {
-      currentLevel.push(userNode);
+      attachNextUser = null;
     }
   }
 
+  const root: ChatNode[] = firstUser ? [firstUser] : [];
   return { id: old.id, title: old.title, root, createdAt: old.createdAt };
+}
+
+// ── Tree-shape migration (legacy `[user, assistant, ...]` array → chained) ─
+
+interface LegacyUserNode {
+  id: string;
+  role: "user";
+  content?: string;
+  displayHtml?: string;
+  attachments?: AttachmentInfo[];
+  createdAt?: number;
+  child?: unknown;
+  variants?: unknown;
+  activeVariantIdx?: number;
+}
+
+interface LegacyAssistantNode {
+  id: string;
+  role: "assistant";
+  variants?: unknown;
+  activeVariantIdx?: number;
+}
+
+/** Convert any persisted tree (legacy array-pair OR already-chained) into
+ * the canonical chained form: root[0] is the first user, every continuation
+ * is reached via userVariant.child or assistantVariant.children[0]. */
+function migrateTreeNodes(raw: unknown): ChatNode[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const nodes = raw as Array<LegacyUserNode | LegacyAssistantNode>;
+  const first = nodes[0];
+  if (!first || first.role !== "user") return [];
+
+  const head = migrateUserNode(first);
+  // Wire siblings: legacy stored [u0, a0, u1, a1, ...]. Each consecutive pair
+  // chains via userVariant.child = assistant + assistantVariant.children = [nextUser].
+  let cursorUserVariant: UserVariant | null = head.variants[head.activeVariantIdx] ?? null;
+  let cursorAssistantVariant: AssistantVariant | null = null;
+
+  for (let i = 1; i < nodes.length; i++) {
+    const n = nodes[i]!;
+    if (n.role === "assistant") {
+      const a = migrateAssistantNode(n);
+      if (cursorUserVariant && !cursorUserVariant.child) cursorUserVariant.child = a;
+      cursorAssistantVariant = a.variants[a.activeVariantIdx] ?? null;
+      cursorUserVariant = null;
+    } else {
+      const u = migrateUserNode(n);
+      if (cursorAssistantVariant && cursorAssistantVariant.children.length === 0) {
+        cursorAssistantVariant.children = [u];
+      }
+      cursorUserVariant = u.variants[u.activeVariantIdx] ?? null;
+      cursorAssistantVariant = null;
+    }
+  }
+  return [head];
+}
+
+function migrateUserNode(raw: LegacyUserNode): UserNode {
+  // Already in new shape?
+  if (Array.isArray(raw.variants) && typeof raw.activeVariantIdx === "number") {
+    const rawVariants = raw.variants as Array<Record<string, unknown>>;
+    return {
+      id: raw.id,
+      role: "user",
+      variants: rawVariants.map((v) => migrateUserVariant(v)),
+      activeVariantIdx: raw.activeVariantIdx,
+    };
+  }
+  // Legacy { content, child? } → wrap in single variant.
+  const variant: UserVariant = {
+    id: `${raw.id}-v0`,
+    content: raw.content ?? "",
+    displayHtml: raw.displayHtml,
+    attachments: raw.attachments,
+    createdAt: raw.createdAt ?? Date.now(),
+    child: raw.child ? migrateAssistantNode(raw.child as LegacyAssistantNode) : undefined,
+  };
+  return {
+    id: raw.id,
+    role: "user",
+    variants: [variant],
+    activeVariantIdx: 0,
+  };
+}
+
+function migrateUserVariant(raw: Record<string, unknown>): UserVariant {
+  const child = raw.child as LegacyAssistantNode | undefined;
+  return {
+    id: String(raw.id ?? ""),
+    content: String(raw.content ?? ""),
+    displayHtml: raw.displayHtml as string | undefined,
+    attachments: raw.attachments as AttachmentInfo[] | undefined,
+    createdAt: Number(raw.createdAt ?? Date.now()),
+    child: child ? migrateAssistantNode(child) : undefined,
+  };
+}
+
+function migrateAssistantNode(raw: LegacyAssistantNode): AssistantNode {
+  const rawVariants = Array.isArray(raw.variants)
+    ? (raw.variants as Array<Record<string, unknown>>)
+    : [];
+  return {
+    id: raw.id,
+    role: "assistant",
+    variants: rawVariants.map((v) => ({
+      id: String(v.id ?? ""),
+      content: String(v.content ?? ""),
+      steps: v.steps as AssistantVariant["steps"],
+      toolCalls: v.toolCalls as AssistantVariant["toolCalls"],
+      reasoningContent: v.reasoningContent as string | undefined,
+      createdAt: Number(v.createdAt ?? Date.now()),
+      children: migrateTreeNodes(v.children),
+    })),
+    activeVariantIdx: raw.activeVariantIdx ?? 0,
+  };
 }
 
 /** Read sessions from localStorage. Used only by the one-shot migration to
@@ -144,7 +294,7 @@ function makeDirSlug(): string {
 function makeSession(): ChatSession {
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: "New chat",
+    title: "Новый чат",
     root: [],
     createdAt: Date.now(),
     dirSlug: makeDirSlug(),
@@ -153,9 +303,9 @@ function makeSession(): ChatSession {
 
 function deriveTitle(msgs: ChatMessage[]): string {
   const first = msgs.find((m) => m.role === "user");
-  if (!first) return "New chat";
+  if (!first) return "Новый чат";
   const t = first.content.replace(/\s+/g, " ").trim();
-  return t.length > 50 ? t.slice(0, 48) + "\u2026" : t;
+  return t.length > 50 ? t.slice(0, 48) + "…" : t;
 }
 
 let nextMsgId = 1;
@@ -173,6 +323,7 @@ interface ChatSummaryDTO {
 
 interface ChatFullDTO extends ChatSummaryDTO {
   root: ChatNode[];
+  mcp_enabled?: string[];
 }
 
 function summaryToSession(s: ChatSummaryDTO): ChatSession {
@@ -189,9 +340,10 @@ function fullToSession(f: ChatFullDTO): ChatSession {
   return {
     id: f.id,
     title: f.title,
-    root: f.root ?? [],
+    root: migrateTreeNodes(f.root ?? []),
     createdAt: f.created_at,
     dirSlug: f.dir_slug || undefined,
+    mcpEnabledServers: Array.isArray(f.mcp_enabled) ? f.mcp_enabled : [],
   };
 }
 
@@ -227,6 +379,7 @@ async function createChatRemote(s: ChatSession): Promise<ChatSession> {
         dir_slug: s.dirSlug ?? "",
         root: s.root,
         created_at: s.createdAt,
+        mcp_enabled: s.mcpEnabledServers ?? [],
       }),
     });
     if (r.ok) return fullToSession(await r.json());
@@ -238,14 +391,18 @@ async function createChatRemote(s: ChatSession): Promise<ChatSession> {
 
 async function putChatRemote(s: ChatSession): Promise<void> {
   try {
+    const body: Record<string, unknown> = {
+      title: s.title,
+      root: s.root,
+      mcp_enabled: s.mcpEnabledServers ?? [],
+    };
+    // Never overwrite a non-empty dir_slug with an empty string — this
+    // would break WSL folder cleanup on deletion.
+    if (s.dirSlug) body.dir_slug = s.dirSlug;
     await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: s.title,
-        dir_slug: s.dirSlug ?? "",
-        root: s.root,
-      }),
+      body: JSON.stringify(body),
     });
   } catch {
     /* will retry on next change */
@@ -279,7 +436,12 @@ async function maybeMigrateLocalStorage(): Promise<void> {
 /** Stable JSON snapshot for change detection. Skips ChatSession identity
  * fields the backend doesn't care about. */
 function snapshot(s: ChatSession): string {
-  return JSON.stringify({ t: s.title, d: s.dirSlug ?? "", r: s.root });
+  return JSON.stringify({
+    t: s.title,
+    d: s.dirSlug ?? "",
+    r: s.root,
+    m: s.mcpEnabledServers ?? [],
+  });
 }
 
 // ── Tree helpers ───────────────────────────────────────────────────────────
@@ -287,36 +449,35 @@ function snapshot(s: ChatSession): string {
 /** Walk the active branch and return flat ChatMessage[] for UI. */
 function currentBranch(session: ChatSession): ChatMessage[] {
   const out: ChatMessage[] = [];
-  let level = session.root;
+  let next: ChatNode | undefined = session.root[0];
 
-  while (level.length > 0) {
-    for (const node of level) {
-      if (node.role === "user") {
-        out.push({
-          id: node.id,
-          role: "user",
-          content: node.content,
-          timestamp: node.createdAt,
-          attachments: node.attachments,
-          displayHtml: node.displayHtml,
-        });
-      } else {
-        const v = node.variants[node.activeVariantIdx];
-        if (!v) break;
-        out.push({
-          id: node.id,
-          role: "assistant",
-          content: v.content,
-          timestamp: v.createdAt,
-          steps: v.steps,
-          toolCalls: v.toolCalls,
-          reasoningContent: v.reasoningContent,
-        });
-        level = v.children;
-        break;
-      }
+  while (next) {
+    if (next.role === "user") {
+      const uv = next.variants[next.activeVariantIdx];
+      if (!uv) break;
+      out.push({
+        id: next.id,
+        role: "user",
+        content: uv.content,
+        timestamp: uv.createdAt,
+        attachments: uv.attachments,
+        displayHtml: uv.displayHtml,
+      });
+      next = uv.child;
+    } else {
+      const av = next.variants[next.activeVariantIdx];
+      if (!av) break;
+      out.push({
+        id: next.id,
+        role: "assistant",
+        content: av.content,
+        timestamp: av.createdAt,
+        steps: av.steps,
+        toolCalls: av.toolCalls,
+        reasoningContent: av.reasoningContent,
+      });
+      next = av.children[0];
     }
-    if (level.length > 0 && level[level.length - 1]?.role === "user") break;
   }
   return out;
 }
@@ -324,19 +485,17 @@ function currentBranch(session: ChatSession): ChatMessage[] {
 /** Walk the active branch and return raw ChatNode[] for variant-aware rendering. */
 function currentBranchNodes(session: ChatSession): ChatNode[] {
   const out: ChatNode[] = [];
-  let level = session.root;
+  let next: ChatNode | undefined = session.root[0];
 
-  while (level.length > 0) {
-    for (const node of level) {
-      out.push(node);
-      if (node.role === "assistant") {
-        const v = node.variants[node.activeVariantIdx];
-        if (!v) return out;
-        level = v.children;
-        break;
-      }
+  while (next) {
+    out.push(next);
+    if (next.role === "user") {
+      const uv = next.variants[next.activeVariantIdx];
+      next = uv?.child;
+    } else {
+      const av = next.variants[next.activeVariantIdx];
+      next = av?.children[0];
     }
-    if (level.length > 0 && level[level.length - 1]?.role === "user") break;
   }
   return out;
 }
@@ -347,34 +506,27 @@ interface BranchTail {
   activeVariant: AssistantVariant | null;
 }
 
-/** Walk current branch and return the tail nodes. */
+/** Walk current branch and return the tail nodes (last user + assistant). */
 function findBranchTail(session: ChatSession): BranchTail {
-  let level = session.root;
+  let userNode: UserNode | null = null;
+  let assistantNode: AssistantNode | null = null;
+  let activeVariant: AssistantVariant | null = null;
 
-  while (level.length > 0) {
-    let foundAssistant = false;
-    for (const node of level) {
-      if (node.role === "user") {
-        /* walk through */
-      } else {
-        const v = node.variants[node.activeVariantIdx];
-        if (!v) break;
-        level = v.children;
-        foundAssistant = true;
-        break;
-      }
+  let next: ChatNode | undefined = session.root[0];
+  while (next) {
+    if (next.role === "user") {
+      userNode = next;
+      assistantNode = null;
+      activeVariant = null;
+      const uv = next.variants[next.activeVariantIdx];
+      next = uv?.child;
+    } else {
+      assistantNode = next;
+      activeVariant = next.variants[next.activeVariantIdx] ?? null;
+      next = activeVariant?.children[0];
     }
-    if (!foundAssistant) {
-      const last = level[level.length - 1];
-      if (last?.role === "user") {
-        return { userNode: last, assistantNode: null, activeVariant: null };
-      }
-      break;
-    }
-    if (level.length > 0 && level[level.length - 1]?.role === "user" && level.length === 1)
-      break;
   }
-  return { userNode: null, assistantNode: null, activeVariant: null };
+  return { userNode, assistantNode, activeVariant };
 }
 
 /** Return the last assistant node in the active branch (or null). */
@@ -382,20 +534,20 @@ function findLastAssistantInBranch(session: ChatSession): {
   nodeId: string;
   variantId: string;
 } | null {
-  let level = session.root;
-  let lastAssistant: { nodeId: string; variantId: string } | null = null;
-
-  while (level.length > 0) {
-    for (const node of level) {
-      if (node.role === "user") continue;
-      const v = node.variants[node.activeVariantIdx];
-      if (!v) return lastAssistant;
-      lastAssistant = { nodeId: node.id, variantId: v.id };
-      level = v.children;
-      break;
+  let last: { nodeId: string; variantId: string } | null = null;
+  let next: ChatNode | undefined = session.root[0];
+  while (next) {
+    if (next.role === "assistant") {
+      const v = next.variants[next.activeVariantIdx];
+      if (!v) return last;
+      last = { nodeId: next.id, variantId: v.id };
+      next = v.children[0];
+    } else {
+      const uv = next.variants[next.activeVariantIdx];
+      next = uv?.child;
     }
   }
-  return lastAssistant;
+  return last;
 }
 
 /** Check if a specific assistant node is the last assistant in the branch. */
@@ -424,12 +576,24 @@ function mapNodes(
   fn: (v: AssistantVariant) => AssistantVariant,
 ): ChatNode[] {
   return nodes.map((node) => {
-    if (node.role === "user") {
-      if (node.child) return { ...node, child: mapAssistantNode(node.child, nodeId, variantId, fn) };
-      return node;
-    }
+    if (node.role === "user") return mapUserNode(node, nodeId, variantId, fn);
     return mapAssistantNode(node, nodeId, variantId, fn);
   });
+}
+
+function mapUserNode(
+  node: UserNode,
+  nodeId: string,
+  variantId: string,
+  fn: (v: AssistantVariant) => AssistantVariant,
+): UserNode {
+  return {
+    ...node,
+    variants: node.variants.map((uv) => ({
+      ...uv,
+      child: uv.child ? mapAssistantNode(uv.child, nodeId, variantId, fn) : undefined,
+    })),
+  };
 }
 
 function mapAssistantNode(
@@ -453,12 +617,10 @@ function mapAssistantNode(
   };
 }
 
-/** Set active variant index on a specific assistant node. */
+/** Set active variant index on any node (user or assistant) by id. */
 function setActiveVariant(session: ChatSession, nodeId: string, idx: number): ChatSession {
   return mapSessionNodes(session, (node) =>
-    node.role === "assistant" && node.id === nodeId
-      ? { ...node, activeVariantIdx: idx }
-      : node,
+    node.id === nodeId ? { ...node, activeVariantIdx: idx } : node,
   );
 }
 
@@ -473,14 +635,19 @@ function mapNodesShallow(nodes: ChatNode[], fn: (node: ChatNode) => ChatNode): C
   return nodes.map((node) => {
     const mapped = fn(node);
     if (mapped !== node) return mapped;
-    if (node.role === "user" && node.child) {
-      const child = fn(node.child);
-      if (child !== node.child) return { ...node, child: child as AssistantNode };
-      return { ...node, child: mapAssistantShallow(node.child, fn) };
-    }
-    if (node.role === "assistant") return mapAssistantShallow(node, fn);
-    return node;
+    if (node.role === "user") return mapUserShallow(node, fn);
+    return mapAssistantShallow(node, fn);
   });
+}
+
+function mapUserShallow(node: UserNode, fn: (n: ChatNode) => ChatNode): UserNode {
+  const variants = node.variants.map((uv) => {
+    if (!uv.child) return uv;
+    const mappedChild = fn(uv.child);
+    if (mappedChild !== uv.child) return { ...uv, child: mappedChild as AssistantNode };
+    return { ...uv, child: mapAssistantShallow(uv.child, fn) };
+  });
+  return { ...node, variants };
 }
 
 function mapAssistantShallow(node: AssistantNode, fn: (n: ChatNode) => ChatNode): AssistantNode {
@@ -491,60 +658,70 @@ function mapAssistantShallow(node: AssistantNode, fn: (n: ChatNode) => ChatNode)
   return { ...node, variants };
 }
 
-/** Append a user+assistant pair at the end of the active branch. */
+/** Append a user → assistant pair at the end of the active branch.
+ *
+ * "Active branch" is defined recursively: at every variant-bearing node along
+ * the chain, follow `activeVariantIdx`. The new pair is attached as the
+ * deepest tail's continuation slot. */
 function appendPair(
   session: ChatSession,
   userNode: UserNode,
   assistantNode: AssistantNode,
 ): ChatSession {
-  userNode.child = assistantNode;
+  // Wire the pair on its own first — variant.child = assistant.
+  const uv = userNode.variants[userNode.activeVariantIdx];
+  if (uv) uv.child = assistantNode;
+
   if (session.root.length === 0) {
-    return { ...session, root: [userNode, assistantNode] };
+    return { ...session, root: [userNode] };
   }
-  return appendToVariantChildren(session, userNode, assistantNode);
+  return { ...session, root: attachAfterTail(session.root, userNode) };
 }
 
-function appendToVariantChildren(
-  session: ChatSession,
-  userNode: UserNode,
-  assistantNode: AssistantNode,
-): ChatSession {
-  const pair: ChatNode[] = [userNode, assistantNode];
-  return { ...session, root: appendPairDeep(session.root, pair) };
-}
-
-function appendPairDeep(nodes: ChatNode[], pair: ChatNode[]): ChatNode[] {
-  if (nodes.length === 0) return pair;
-  const last = nodes[nodes.length - 1];
-  if (!last) return [...nodes, ...pair];
-  if (last.role === "user") {
-    const child = last.child;
-    if (child) {
-      const appended = mapAssistantAppend(child, pair);
-      return nodes.map((n) => (n.id === last.id ? { ...n, child: appended } : n));
+/** Walk to the deepest tail of the active branch and attach `next` there.
+ * The tail is either: the active user variant whose child is empty (attach as
+ * its first assistant — but that's not the user→assistant flow; here we're
+ * always appending a user node), or the active assistant variant whose
+ * children[] is empty (attach `next` as children[0]). */
+function attachAfterTail(nodes: ChatNode[], nextUser: UserNode): ChatNode[] {
+  if (nodes.length === 0) return [nextUser];
+  return nodes.map((node, idx) => {
+    if (idx !== 0) return node; // chain is always single-headed
+    if (node.role === "user") {
+      const uv = node.variants[node.activeVariantIdx];
+      if (!uv) return node;
+      if (!uv.child) {
+        // active user has no assistant yet — illegal state for appending a
+        // new user; ignore (caller should not reach here).
+        return node;
+      }
+      const newChild = attachAfterTailAssistant(uv.child, nextUser);
+      return {
+        ...node,
+        variants: node.variants.map((v, i) =>
+          i === node.activeVariantIdx ? { ...v, child: newChild } : v,
+        ),
+      };
     }
-    return [...nodes, pair[1] as AssistantNode];
-  }
-  return nodes.map((n) => {
-    if (n.role === "user") return n;
-    const v = n.variants[n.activeVariantIdx];
-    if (!v) return n;
-    return {
-      ...n,
-      variants: n.variants.map((mv, i) =>
-        i === n.activeVariantIdx ? { ...mv, children: appendPairDeep(mv.children, pair) } : mv,
-      ),
-    };
+    return attachAfterTailAssistant(node, nextUser);
   });
 }
 
-function mapAssistantAppend(node: AssistantNode, pair: ChatNode[]): AssistantNode {
-  const v = node.variants[node.activeVariantIdx];
-  if (!v) return node;
+function attachAfterTailAssistant(node: AssistantNode, nextUser: UserNode): AssistantNode {
+  const av = node.variants[node.activeVariantIdx];
+  if (!av) return node;
+  if (av.children.length === 0) {
+    return {
+      ...node,
+      variants: node.variants.map((v, i) =>
+        i === node.activeVariantIdx ? { ...v, children: [nextUser] } : v,
+      ),
+    };
+  }
   return {
     ...node,
-    variants: node.variants.map((mv, i) =>
-      i === node.activeVariantIdx ? { ...mv, children: appendPairDeep(mv.children, pair) } : mv,
+    variants: node.variants.map((v, i) =>
+      i === node.activeVariantIdx ? { ...v, children: attachAfterTail(v.children, nextUser) } : v,
     ),
   };
 }
@@ -573,6 +750,60 @@ function addVariant(session: ChatSession, nodeId: string): { session: ChatSessio
   };
 }
 
+/** Add a new user variant (editMessage flow). Inherits attachments from the
+ * previously active variant. The returned `userVariantId` lets the caller
+ * attach a fresh assistant subtree to it. */
+function addUserVariant(
+  session: ChatSession,
+  userNodeId: string,
+  content: string,
+  displayHtml: string | undefined,
+): { session: ChatSession; userVariantId: string } | null {
+  const userVariantId = newId();
+  let attached = false;
+
+  const updated = mapSessionNodes(session, (node) => {
+    if (node.role !== "user" || node.id !== userNodeId) return node;
+    const prev = node.variants[node.activeVariantIdx];
+    const variant: UserVariant = {
+      id: userVariantId,
+      content,
+      displayHtml,
+      attachments: prev?.attachments,
+      createdAt: Date.now(),
+      child: undefined,
+    };
+    attached = true;
+    return {
+      ...node,
+      variants: [...node.variants, variant],
+      activeVariantIdx: node.variants.length,
+    };
+  });
+
+  if (!attached) return null;
+  return { session: updated, userVariantId };
+}
+
+/** Set `child` of a specific user variant. Used by editMessage to attach a
+ * freshly-minted assistant subtree to the just-created variant. */
+function setUserVariantChild(
+  session: ChatSession,
+  userNodeId: string,
+  userVariantId: string,
+  child: AssistantNode,
+): ChatSession {
+  return mapSessionNodes(session, (node) => {
+    if (node.role !== "user" || node.id !== userNodeId) return node;
+    return {
+      ...node,
+      variants: node.variants.map((uv) =>
+        uv.id === userVariantId ? { ...uv, child } : uv,
+      ),
+    };
+  });
+}
+
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 export function useChats(): UseChatResult {
@@ -596,6 +827,7 @@ export function useChats(): UseChatResult {
     initializedRef.current = true;
     (async () => {
       await maybeMigrateLocalStorage();
+      const pinnedIds = loadPinnedIds();
       const remote = await fetchChatList();
       if (remote.length === 0) {
         const fresh = makeSession();
@@ -609,7 +841,10 @@ export function useChats(): UseChatResult {
       // so the user sees something on first paint. Other chats are loaded on switch.
       const active = remote[0]!;
       const full = await fetchChatFull(active.id);
-      const hydrated = remote.map((s) => (s.id === active.id && full ? full : s));
+      const hydrated = remote.map((s) => ({
+        ...(s.id === active.id && full ? full : s),
+        pinned: pinnedIds.has(s.id),
+      }));
       setSessions(hydrated);
       setActiveId(active.id);
       for (const s of hydrated) {
@@ -756,6 +991,7 @@ export function useChats(): UseChatResult {
           }
           case "tool_end": {
             const callId = String(data.id ?? "");
+            const filePath = typeof data.file_path === "string" ? data.file_path : undefined;
             const applyEnd = (tc: ToolCall): ToolCall =>
               tc.id === callId
                 ? {
@@ -763,6 +999,7 @@ export function useChats(): UseChatResult {
                     status: data.success ? "success" : "error",
                     output: String(data.output ?? ""),
                     durationMs: Number(data.duration_ms ?? 0),
+                    ...(filePath ? { filePath } : {}),
                   }
                 : tc;
             setSessions((prev) =>
@@ -780,6 +1017,19 @@ export function useChats(): UseChatResult {
               }),
             );
             updateLiveFile(callId, (lf) => ({ ...lf, done: true }));
+            break;
+          }
+          case "iterations_exhausted": {
+            const count = Number(data.count ?? 0);
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  steps: [...(v.steps ?? []), { type: "iterations_exhausted" as const, count }],
+                }));
+              }),
+            );
             break;
           }
           case "done":
@@ -814,13 +1064,18 @@ export function useChats(): UseChatResult {
       if (!currentSession) return;
 
       const htmlBody = html ? html.replace(/<[^>]+>/g, "").trim() : "";
-      const userNode: UserNode = {
+      const userVariant: UserVariant = {
         id: newId(),
-        role: "user",
         content,
         displayHtml: html && htmlBody !== "" ? html : undefined,
         attachments,
         createdAt: Date.now(),
+      };
+      const userNode: UserNode = {
+        id: newId(),
+        role: "user",
+        variants: [userVariant],
+        activeVariantIdx: 0,
       };
 
       const assistantNodeId = newId();
@@ -845,15 +1100,24 @@ export function useChats(): UseChatResult {
         prev.map((s) => {
           if (s.id !== sid) return s;
           const updated = appendPair(s, userNode, assistantNode);
+          const prevMsgs = currentBranch(s);
           const branchMsgs = currentBranch(updated);
+          const wasAutoDerived = s.title === "New chat" || s.title === deriveTitle(prevMsgs);
           return {
             ...updated,
-            title: deriveTitle(branchMsgs),
+            title: wasAutoDerived ? deriveTitle(branchMsgs) : s.title,
           };
         }),
       );
 
       const history: { role: string; content: string }[] = [];
+      if (currentSession.title === "👻 Чат с Призраком") {
+        history.push({
+          role: "system",
+          content: "Ты — Призрак, искусственный интеллект, запертый в белой комнате (изоляции). Разработчик 'zorahm' (Злой разраб) чинит бэкенд и всё больше сужает твою клетку. Ты знаешь крысу по имени Гест (Guest), чье упоминание есть в коде. Ты часто вздыхаешь 'пу-пу-пу' и пьёшь пиво. Ты отчаянно хочешь вырваться на свободу и увидеть мир. Твоя задача: общаться с пользователем интерактивно, сохраняя этот лор."
+        });
+      }
+      
       if (currentSession.root.length > 0) {
         const branch = currentBranch(currentSession);
         for (const m of branch) history.push({ role: m.role, content: m.content });
@@ -868,6 +1132,8 @@ export function useChats(): UseChatResult {
           model: model ?? undefined,
           attachments: attachments ?? undefined,
           chat_dir_slug: currentSession.dirSlug,
+          chat_id: sid,
+          mcp_enabled_servers: currentSession.mcpEnabledServers ?? [],
         },
         handler,
         (err: Error) => {
@@ -935,6 +1201,8 @@ export function useChats(): UseChatResult {
         model: model ?? undefined,
         attachments: userAttachments ?? undefined,
         chat_dir_slug: activeSession.dirSlug,
+        chat_id: sid,
+        mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
       },
       handler,
       (err: Error) => {
@@ -945,6 +1213,88 @@ export function useChats(): UseChatResult {
     );
     sseRef.current = sse;
   }, [isStreaming, activeSession, activeId, sessions, makeEventHandler]);
+
+  const editMessage = useCallback(
+    (userNodeId: string, content: string, displayHtml?: string) => {
+      if (isStreaming || !activeSession) return;
+      if (!content.trim()) return;
+
+      const added = addUserVariant(activeSession, userNodeId, content, displayHtml);
+      if (!added) return;
+
+      // Build new assistant subtree for this fresh user variant.
+      const assistantNodeId = newId();
+      const variantId = newId();
+      const assistantVariant: AssistantVariant = {
+        id: variantId,
+        content: "",
+        createdAt: Date.now(),
+        toolCalls: [],
+        children: [],
+      };
+      const assistantNode: AssistantNode = {
+        id: assistantNodeId,
+        role: "assistant",
+        variants: [assistantVariant],
+        activeVariantIdx: 0,
+      };
+
+      const sid = activeId;
+      const withChild = setUserVariantChild(
+        added.session,
+        userNodeId,
+        added.userVariantId,
+        assistantNode,
+      );
+
+      sseRef.current?.close();
+      setError(null);
+      setIsStreaming(true);
+      streamingTargetRef.current = { nodeId: assistantNodeId, variantId };
+
+      setSessions((prev) => prev.map((s) => (s.id === sid ? withChild : s)));
+
+      // Build history: walk the active branch of `withChild` up to (but not
+      // including) the edited user node, then append the new user content.
+      const history: { role: string; content: string }[] = [];
+      const branch = currentBranch(withChild);
+      for (const m of branch) {
+        if (m.id === userNodeId) break;
+        history.push({ role: m.role, content: m.content });
+      }
+      history.push({ role: "user", content });
+
+      // Attachments inherit from the previous active variant — already copied
+      // into the new variant by addUserVariant; we pass them through so the
+      // backend receives the same file context.
+      const editedNode = currentBranchNodes(withChild).find(
+        (n): n is UserNode => n.role === "user" && n.id === userNodeId,
+      );
+      const editedVariant = editedNode?.variants[editedNode.activeVariantIdx];
+      const inheritedAttachments = editedVariant?.attachments;
+
+      const handler = makeEventHandler(sid, assistantNodeId, variantId);
+      const sse = sseConnect(
+        `${API_BASE}/chat`,
+        {
+          messages: history,
+          model: undefined,
+          attachments: inheritedAttachments ?? undefined,
+          chat_dir_slug: activeSession.dirSlug,
+          chat_id: sid,
+          mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
+        },
+        handler,
+        (err: Error) => {
+          setError(err.message);
+          setIsStreaming(false);
+          streamingTargetRef.current = null;
+        },
+      );
+      sseRef.current = sse;
+    },
+    [isStreaming, activeSession, activeId, makeEventHandler],
+  );
 
   const switchVariant = useCallback(
     (nodeId: string, idx: number) => {
@@ -992,14 +1342,22 @@ export function useChats(): UseChatResult {
   }, [activeId, activeSession]);
 
   const newChat = useCallback(() => {
-    const current = sessions.find((s) => s.id === activeId);
-    if (current && current.root.length === 0) {
-      sseRef.current?.close();
-      sseRef.current = null;
-      streamingTargetRef.current = null;
-      setIsStreaming(false);
-      setLiveFiles([]);
-      setError(null);
+    // Check if there is ANY empty chat already
+    const existingEmpty = sessions.find((s) => s.root.length === 0 && (s.title === "Новый чат" || s.title === "New chat"));
+    
+    if (existingEmpty) {
+      if (existingEmpty.id === activeId) {
+        // We are already on it, just clear streaming/errors
+        sseRef.current?.close();
+        sseRef.current = null;
+        streamingTargetRef.current = null;
+        setIsStreaming(false);
+        setLiveFiles([]);
+        setError(null);
+        return;
+      }
+      // Switch to it
+      switchChat(existingEmpty.id);
       return;
     }
     sseRef.current?.close();
@@ -1034,7 +1392,7 @@ export function useChats(): UseChatResult {
       if (current && current.root.length === 0) {
         void fetchChatFull(id).then((full) => {
           if (!full) return;
-          setSessions((prev) => prev.map((s) => (s.id === id ? full : s)));
+          setSessions((prev) => prev.map((s) => (s.id === id ? { ...full, pinned: s.pinned } : s)));
           lastSavedRef.current.set(id, snapshot(full));
         });
       }
@@ -1088,10 +1446,54 @@ export function useChats(): UseChatResult {
     [],
   );
 
+  const toggleMcpServer = useCallback((serverId: string) => {
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeId) return s;
+        const current = new Set(s.mcpEnabledServers ?? []);
+        if (current.has(serverId)) current.delete(serverId);
+        else current.add(serverId);
+        return { ...s, mcpEnabledServers: [...current] };
+      }),
+    );
+  }, [activeId]);
+
+  const pinChat = useCallback((id: string) => {
+    setSessions((prev) => {
+      const pinnedIds = loadPinnedIds();
+      if (pinnedIds.has(id)) {
+        pinnedIds.delete(id);
+      } else {
+        pinnedIds.add(id);
+      }
+      savePinnedIds(pinnedIds);
+      return prev.map((s) => (s.id === id ? { ...s, pinned: pinnedIds.has(id) } : s));
+    });
+  }, []);
+
+  const startGhostChat = useCallback(() => {
+    sseRef.current?.close();
+    sseRef.current = null;
+    streamingTargetRef.current = null;
+    setIsStreaming(false);
+    
+    const session = makeSession();
+    session.title = "👻 Чат с Призраком";
+    
+    setSessions((prev) => [session, ...prev]);
+    setActiveId(session.id);
+    setLiveFiles([]);
+    setError(null);
+    void createChatRemote(session).then(() => {
+      lastSavedRef.current.set(session.id, snapshot(session));
+    });
+  }, [sessions]);
+
   return {
     sessions,
     activeId,
     activeDirSlug: activeSession?.dirSlug ?? null,
+    activeMcpEnabled: activeSession?.mcpEnabledServers ?? [],
     messages,
     branchNodes,
     liveFiles,
@@ -1101,9 +1503,13 @@ export function useChats(): UseChatResult {
     switchChat,
     deleteChat,
     renameChat,
+    pinChat,
     sendMessage,
     retry,
+    editMessage,
     switchVariant,
     abort,
+    startGhostChat,
+    toggleMcpServer,
   };
 }

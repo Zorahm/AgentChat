@@ -13,9 +13,9 @@ class AgentConfig(BaseModel):
         description="LiteLLM model identifier (e.g. gpt-4o, claude-3-opus-20240229)",
     )
     max_iterations: int = Field(
-        default=10,
+        default=50,
         ge=1,
-        le=200,
+        le=500,
         description="Maximum agent loop iterations before forced stop",
     )
     system_prompt: str = Field(

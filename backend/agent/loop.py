@@ -16,6 +16,13 @@ from agent.types import ToolCall, ToolResult
 from agent.write_file_stream import emit_write_file_chunks
 from agent.wsl_exec import wsl_read_text, wsl_write_bytes
 from llm.client import LLMClient
+from tools.edit_file import (
+    _convert_to_line_ending,
+    _detect_line_ending,
+    _diff_stats,
+    _normalize_line_endings,
+    smart_replace,
+)
 from tools.registry import ToolRegistry
 
 
@@ -39,6 +46,12 @@ When the user attaches a binary file, the message includes its absolute path
 parse archives by hand (no zipfile / no XML scraping) unless every tool below
 has failed.
 
+When a text file is too large to be included inline (>50KB), the message
+will say `Файл длинный — не читай его целиком` and give you a path. Use
+`read_file` with `offset` and `limit` to read it in manageable chunks
+(e.g., read_file path="/path/to/file" offset=1 limit=200 for the first
+200 lines, then offset=201 limit=200 for the next, and so on).
+
 Pick the tool by extension:
   .docx .odt .rtf .epub .html .md → `pandoc "<path>" -t plain` (or `-t markdown`
                                      to preserve structure)
@@ -49,6 +62,11 @@ Pick the tool by extension:
                                      `ssconvert "<path>" /dev/stdout -T Gnumeric_stf:stf_csv`
   .csv .tsv .txt .log .json .yaml → `cat` / `head` / `jq` directly
   .pptx                           → `pandoc` (best-effort) or unzip + read slide XML
+
+Large plain-text files (.txt, .log, .csv, etc.): use `read_file` with
+`offset` and `limit` to paginate through them. Start with offset=1 limit=200
+and increase offset to read subsequent pages. This avoids loading the entire
+file into context at once.
 
 Pandoc is preinstalled in WSL. If a command says "command not found", install
 it once with `apt-get install -y --no-install-recommends <pkg>` before retrying.
@@ -81,7 +99,8 @@ Renderable extensions get inline preview in the panel:
 Use this whenever you produce something for the user to look at or download:
 generated charts (matplotlib `savefig` to PNG, then artifact), reports,
 diagrams, audio/video, exported spreadsheets. Always save into the chat's
-working directory (`pwd` at the start of a turn gives you the chat sandbox)
+working directory (`pwd` at the start of a turn gives you the chat sandbox;
+the path is also provided at the top of the system prompt)
 so the path is stable and viewable. Do NOT base64 image data into chat text
 — emit the artifact tag instead.
 
@@ -103,12 +122,13 @@ whatever file-level work was requested."""
 
 
 async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> None:
-    """Write file to disk from a completed <file> tag event. Mutates event in-place.
+    """Write file to disk from a completed <file> tag event. Delegates to WriteFileTool.
 
-    Catches every exception (not just OSError) so that one malformed write
-    can't take down the SSE stream — we always come back with a structured
-    tool_end the UI can render.
+    Catches every exception so that one malformed write can't take down the
+    SSE stream — we always come back with a structured tool_end the UI can render.
     """
+    from tools.write_file import WriteFileTool
+
     path: str = event.pop("_path", "")
     content: str = event.pop("_content", "")
 
@@ -117,38 +137,12 @@ async def _write_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> 
         event["success"] = False
         return
 
-    denied = policy.check_write(path)
-    if denied:
-        event["output"] = f"Error: {denied}"
-        event["success"] = False
-        return
-
+    tool = WriteFileTool()
+    tool.set_policy(policy)
     try:
-        size = len(content.encode("utf-8"))
-        # Choose the write backend by path namespace (not by configured shell):
-        # the model is free to write either a WSL or a Windows path as long as
-        # the sandbox allowed it, and we want both to actually land on disk.
-        if path.startswith("/"):
-            await wsl_write_bytes(path, content.encode("utf-8"))
-        else:
-            p = Path(path)
-            await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
-            await asyncio.to_thread(p.write_text, content, "utf-8")
-        event["output"] = f"Written {size} bytes to {path}"
-        event["success"] = True
-    except FileNotFoundError as exc:
-        event["output"] = (
-            f"Error: cannot write to {path}: {exc}. "
-            "Parent directory may be missing on a read-only mount, or wsl.exe "
-            "is unavailable (try switching to PowerShell in Settings → Терминал)."
-        )
-        event["success"] = False
-    except PermissionError as exc:
-        event["output"] = f"Error: permission denied writing to {path}: {exc}"
-        event["success"] = False
-    except OSError as exc:
-        event["output"] = f"Error: writing to {path} failed: {exc}"
-        event["success"] = False
+        result = await tool.execute(path=path, content=content)
+        event["output"] = result
+        event["success"] = not result.startswith("Error")
     except Exception as exc:  # noqa: BLE001 — last-resort guard for the SSE stream
         event["output"] = f"Error: unexpected failure writing {path}: {exc!r}"
         event["success"] = False
@@ -192,36 +186,18 @@ async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> N
                 raise FileNotFoundError(f"file not found: {path}")
             original = await asyncio.to_thread(p.read_text, "utf-8")
 
-        count = original.count(old)
-        if count == 0:
-            # Help the model see the gap. Show the first ~80 chars of old and
-            # whether a normalised version (CRLF→LF, trimmed trailing spaces)
-            # would have matched — common breakage from copy-pasted snippets.
-            preview = old.replace("\n", "\\n")[:80]
-            hint = ""
-            if "\r\n" in original and old.replace("\n", "\r\n") in original:
-                hint = " (file uses CRLF line endings; emit old with literal CRLF)"
-            elif _normalise_ws(original).count(_normalise_ws(old)) == 1:
-                hint = " (only whitespace differs — match exact indentation)"
-            raise ValueError(
-                f"'old' string not found in {path}. Tried to match {preview!r}.{hint}"
-            )
-        if count > 1:
-            raise ValueError(
-                f"'old' string matches {count} times in {path} — add surrounding "
-                "context (line above/below) to make it unique"
-            )
-
-        updated = original.replace(old, new, 1)
+        ending = _detect_line_ending(original)
+        old_norm = _convert_to_line_ending(_normalize_line_endings(old), ending)
+        new_norm = _convert_to_line_ending(_normalize_line_endings(new), ending)
+        updated = smart_replace(original, old_norm, new_norm)
 
         if path.startswith("/"):
             await wsl_write_bytes(path, updated.encode("utf-8"))
         else:
             await asyncio.to_thread(Path(path).write_text, updated, "utf-8")
 
-        size_diff = len(updated.encode("utf-8")) - len(original.encode("utf-8"))
-        line_delta = updated.count("\n") - original.count("\n")
-        event["output"] = f"Edited {path} ({size_diff:+d} bytes, {line_delta:+d} lines)"
+        added, removed = _diff_stats(original, updated)
+        event["output"] = f"Edit applied to {path} (+{added}/-{removed} lines)"
         event["success"] = True
     except FileNotFoundError as exc:
         event["output"] = f"Edit failed: {exc}"
@@ -232,18 +208,6 @@ async def _edit_file_from_tag(event: dict[str, Any], policy: SandboxPolicy) -> N
     except Exception as exc:  # noqa: BLE001 — last-resort guard for the SSE stream
         event["output"] = f"Edit failed: unexpected error in {path}: {exc!r}"
         event["success"] = False
-
-
-def _normalise_ws(s: str) -> str:
-    """Collapse all whitespace runs to a single space and trim per-line edges.
-
-    Used only as a diagnostic when an <edit> can't match — tells the model
-    "only whitespace differs" so it doesn't keep retrying the same string.
-    Differs from a strict normalise: we want to ignore tabs-vs-spaces and
-    indent depth so a near-match still trips the hint.
-    """
-    import re as _re
-    return _re.sub(r"\s+", " ", s.replace("\r\n", "\n")).strip()
 
 
 class AgentLoop:
@@ -280,49 +244,6 @@ class AgentLoop:
     # public API
     # ------------------------------------------------------------------
 
-    async def run(self, user_input: str) -> str:
-        """Execute the full agent loop for one user message.
-
-        Returns the final text response from the model.
-        Side effect: populates ``self.steps`` with tool call records.
-        """
-        self.messages.append({"role": "user", "content": user_input})
-
-        tool_defs = self.tools.to_openai_schema()
-        tool_defs_or_none = tool_defs if tool_defs else None
-
-        for _ in range(self.config.max_iterations):
-            response = await self.llm.completion(
-                model=self.config.model,
-                messages=self._build_messages(),
-                tools=tool_defs_or_none,
-                extra_body=self.config.extra_body,
-            )
-
-            choice = response.choices[0]
-            msg = choice.message
-
-            # Build assistant message
-            assistant_msg: dict[str, Any] = {"role": "assistant"}
-            if msg.content:
-                assistant_msg["content"] = msg.content
-
-            if msg.tool_calls:
-                # ── model requested tool calls ──
-                tool_call_dicts = self._normalize_tool_calls(msg.tool_calls)
-                assistant_msg["tool_calls"] = tool_call_dicts
-                self.messages.append(assistant_msg)
-
-                for tc_raw in msg.tool_calls:
-                    await self._execute_and_record(tc_raw)
-                # loop continues — tool results are now in messages
-            else:
-                # ── terminal response (no tool calls) ──
-                self.messages.append(assistant_msg)
-                return msg.content or ""
-
-        return "Agent stopped: maximum iterations reached."
-
     async def run_stream(self, user_input: str | list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
         """Streaming agent loop — yields token / tool_start / tool_chunk / tool_end / done events."""
         self.messages.append({"role": "user", "content": user_input})
@@ -338,6 +259,8 @@ class AgentLoop:
             tool_call_state: dict[int, dict[str, Any]] = {}
             wf_state: dict[str, dict[str, Any]] = {}
             interceptor = FileTagInterceptor()
+            # Collect tag-based operation results to feed back to the agent
+            tag_results: list[dict[str, Any]] = []
 
             async for chunk in self.llm.completion_stream(
                 model=self.config.model,
@@ -359,8 +282,16 @@ class AgentLoop:
                         elif event["type"] == "tool_end":
                             if "_path" in event:
                                 await _write_file_from_tag(event, self._policy)
+                                tag_results.append({
+                                    "output": str(event.get("output", "")),
+                                    "success": bool(event.get("success", True)),
+                                })
                             elif "_edit_path" in event:
                                 await _edit_file_from_tag(event, self._policy)
+                                tag_results.append({
+                                    "output": str(event.get("output", "")),
+                                    "success": bool(event.get("success", True)),
+                                })
                         yield event
 
                 if delta.tool_calls:
@@ -371,6 +302,11 @@ class AgentLoop:
             # Flush any text buffered at stream end
             for event in interceptor.flush():
                 accumulated_content += event.get("content", "")
+                if event.get("type") == "tool_end":
+                    tag_results.append({
+                        "output": str(event.get("output", "")),
+                        "success": bool(event.get("success", True)),
+                    })
                 yield event
 
             # Build final tool calls list (sorted by index)
@@ -382,6 +318,16 @@ class AgentLoop:
                 if accumulated_reasoning:
                     msg["reasoning_content"] = accumulated_reasoning
                 self.messages.append(msg)
+
+                # Feed tag-based results back so the agent sees errors and can retry
+                if tag_results:
+                    feedback = "\n".join(r["output"] for r in tag_results if r["output"])
+                    if feedback:
+                        self.messages.append({"role": "user", "content": feedback})
+                    if any(not r["success"] for r in tag_results):
+                        # There were failures — let the agent respond to them
+                        continue
+
                 yield {"type": "done"}
                 return
 
@@ -405,6 +351,11 @@ class AgentLoop:
                 except json.JSONDecodeError:
                     args = {}
 
+                skill_md_path = ""
+                if name == "read_skill" and args.get("name"):
+                    p = self.tools.get_skill_md_path(str(args["name"]))
+                    skill_md_path = str(p) if p else ""
+
                 # write_file: tool_start was already emitted during streaming
                 already_started = name == "write_file" and wf_state.get(call_id, {}).get("started", False)
                 if not already_started:
@@ -426,21 +377,30 @@ class AgentLoop:
                     success = False
                 duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
-                self.messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
+                # Tools may return a plain string or an OpenAI content list (e.g. image blocks).
+                # The LLM sees the list directly; the UI gets a human-readable summary string.
+                if isinstance(output, list):
+                    display_output = f"[image: {args.get('path', '?')}]"
+                    self.messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
+                else:
+                    display_output = output
+                    self.messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
 
                 yield {
                     "type": "tool_end", "id": call_id, "name": name,
-                    "output": output, "duration_ms": duration_ms, "success": success,
+                    "output": display_output, "duration_ms": duration_ms, "success": success,
+                    **({"file_path": skill_md_path} if name == "read_skill" and skill_md_path else {}),
                 }
 
                 self.steps.append({
                     "tool_call": ToolCall(id=call_id, function={"name": name, "arguments": args_raw}),
                     "result": ToolResult(
                         tool_call_id=call_id, name=name,
-                        success=success, output=output, duration_ms=duration_ms,
+                        success=success, output=display_output, duration_ms=duration_ms,
                     ),
                 })
 
+        yield {"type": "iterations_exhausted", "count": self.config.max_iterations}
         yield {"type": "done"}
 
     def reset(self) -> None:
@@ -471,6 +431,8 @@ class AgentLoop:
             f"{_ARTIFACTS_ADDENDUM}"
         )
         prompt = f"{prompt}\n\n{addenda}" if prompt else addenda
+        if self._policy.chat_dir:
+            prompt = f"{prompt}\n\nCurrent working directory: {self._policy.chat_dir}"
         if prompt:
             result.append({"role": "system", "content": prompt})
         result.extend(self.messages)
@@ -496,6 +458,8 @@ class AgentLoop:
             success = False
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+        display_output = f"[image: {args.get('path', '?')}]" if isinstance(output, list) else output
+
         # Store result as a tool message for the LLM
         self.messages.append({
             "role": "tool",
@@ -513,7 +477,7 @@ class AgentLoop:
                 tool_call_id=call_id,
                 name=name,
                 success=success,
-                output=output,
+                output=display_output,
                 duration_ms=duration_ms,
             ),
         })

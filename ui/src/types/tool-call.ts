@@ -6,7 +6,8 @@ export type ProcessStep =
   | { type: "thought"; content: string }
   | { type: "tool"; call: ToolCall }
   | { type: "text"; content: string }
-  | { type: "break" };
+  | { type: "break" }
+  | { type: "iterations_exhausted"; count: number };
 
 export interface ToolCall {
   id: string;
@@ -15,12 +16,15 @@ export interface ToolCall {
   output?: string;
   status: ToolCallStatus;
   durationMs?: number;
+  filePath?: string;
 }
 
 export const TOOL_ICONS: Record<string, string> = {
   bash_tool: ">_",
   web_search: "🔍",
   read_file: "📄",
+  read_photo: "🖼",
   write_file: "📄",
+  edit_file: "📄",
   read_skill: "📚",
 };

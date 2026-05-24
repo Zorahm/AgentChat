@@ -25,3 +25,11 @@ class ChatRequest(BaseModel):
         default=None,
         description="Per-chat working directory slug (chat-{id}-{ts}). bash_tool cwd's into ~/AgentChat/chats/{slug}/.",
     )
+    chat_id: str | None = Field(
+        default=None,
+        description="Chat ID for backend persistence after stream completes.",
+    )
+    mcp_enabled_servers: list[str] | None = Field(
+        default=None,
+        description="IDs of MCP servers to wire in for this turn. Unknown / disabled IDs are skipped silently.",
+    )

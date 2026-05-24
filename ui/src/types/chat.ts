@@ -41,15 +41,23 @@ export interface AssistantVariant {
   children: ChatNode[];
 }
 
-export interface UserNode {
+export interface UserVariant {
   id: string;
-  role: "user";
   content: string;
   /** Optional rich-text HTML (tiptap getHTML) preserved for display only. */
   displayHtml?: string;
   attachments?: AttachmentInfo[];
   createdAt: number;
   child?: AssistantNode;
+}
+
+export interface UserNode {
+  id: string;
+  role: "user";
+  /** All edits of this message slot. The original is variants[0]; each edit
+   * appends a new variant carrying its own assistant subtree under `child`. */
+  variants: UserVariant[];
+  activeVariantIdx: number;
 }
 
 export interface AssistantNode {
@@ -68,4 +76,8 @@ export interface ChatSession {
   createdAt: number;
   /** Working directory slug used by bash_tool: `~/AgentChat/chats/{dirSlug}/`. */
   dirSlug?: string;
+  /** Client-side pin flag — stored in localStorage, not synced to backend. */
+  pinned?: boolean;
+  /** IDs of MCP servers enabled for this chat. Empty = no MCP. */
+  mcpEnabledServers?: string[];
 }

@@ -39,6 +39,10 @@ class BaseTool(ABC):
         ...
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> str:
-        """Execute the tool with parsed arguments. Returns a human-readable string."""
+    async def execute(self, **kwargs: Any) -> str | list[dict[str, Any]]:
+        """Execute the tool with parsed arguments.
+
+        Returns either a plain string or an OpenAI-compatible content list
+        (e.g. image blocks) that is passed directly as the tool message content.
+        """
         ...

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills.reader import AgentSkillsReader
+from skills.reader import AgentSkillsReader, _parse_frontmatter
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 
@@ -112,9 +112,11 @@ class ReadSkillTool(BaseTool):
 
         skill_md = entry.path / "SKILL.md"
         try:
-            content = skill_md.read_text("utf-8")
+            raw = skill_md.read_text("utf-8")
         except OSError as exc:
             return f"Error reading skill '{name}': {exc}"
+
+        _, content = _parse_frontmatter(raw)
 
         win_dir = str(entry.path.resolve())
         wsl_dir = _to_wsl_path(entry.path)

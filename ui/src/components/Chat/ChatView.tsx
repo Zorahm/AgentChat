@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen } from "@phosphor-icons/react";
-import type { AgentChatState } from "../../hooks/useAgentChat";
+import type { AgentChatState } from "../../hooks/useChats";
 import { ChatInput } from "./ChatInput";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, AttachmentInfo, ChatNode } from "../../types/chat";
@@ -16,12 +16,14 @@ export interface ModelItem {
 }
 
 interface ChatViewProps {
+  activeId: string;
   state: AgentChatState;
   chatTitle: string;
   dirSlug: string | null;
   onSend: (text: string, attachments: AttachmentInfo[]) => void;
   onStop: () => void;
   onRetry: () => void;
+  onEdit: (userNodeId: string, content: string, displayHtml?: string) => void;
   onSwitchVariant: (nodeId: string, idx: number) => void;
   branchNodes: ChatNode[];
   onToggleFiles: () => void;
@@ -30,6 +32,8 @@ interface ChatViewProps {
   onModelChange: (model: string) => void;
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
+  mcpEnabled: string[];
+  onToggleMcpServer: (serverId: string) => void;
 }
 
 /** Animates `text` character-by-character. `done` derives from displayed
@@ -68,9 +72,10 @@ function useTypewriter(text: string, speed = 45): { displayed: string; done: boo
 }
 
 export function ChatView({
-  state, chatTitle, dirSlug, onSend, onStop, onRetry, onSwitchVariant, branchNodes, onToggleFiles,
+  activeId, state, chatTitle, dirSlug, onSend, onStop, onRetry, onEdit, onSwitchVariant, branchNodes, onToggleFiles,
   models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
+  mcpEnabled, onToggleMcpServer,
 }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -83,7 +88,7 @@ export function ChatView({
   }, []);
 
   const [revealed, setRevealed] = useState(false);
-  const greeting = useMemo(() => pickGreeting(userName || undefined), [userName]);
+  const greeting = useMemo(() => pickGreeting(userName || undefined), [userName, activeId]);
   const { displayed, done: typingDone } = useTypewriter(revealed ? greeting : "");
 
   const handleScroll = useCallback(() => {
@@ -104,7 +109,9 @@ export function ChatView({
   );
 
   const hasFiles = state.liveFiles.length > 0 || state.messages.some(
-    (m: ChatMessage) => (m.attachments?.length ?? 0) > 0,
+    (m: ChatMessage) =>
+      (m.attachments?.length ?? 0) > 0 ||
+      (m.role === "assistant" && m.toolCalls?.some((tc) => tc.name === "write_file")),
   );
 
   const isEmpty = state.messages.length === 0 && !state.isStreaming;
@@ -151,8 +158,10 @@ export function ChatView({
               onModelChange={onModelChange}
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
-              placeholder="How can I help you?"
+              placeholder="Как я могу помочь?"
               dirSlug={dirSlug}
+              mcpEnabled={mcpEnabled}
+              onToggleMcpServer={onToggleMcpServer}
             />
           </div>
         </div>
@@ -163,11 +172,16 @@ export function ChatView({
               const node = branchNodes[idx];
               const isLast = idx === branchNodes.length - 1;
               const isAssistantNode = node?.role === "assistant";
+              const isUserNode = node?.role === "user";
               const isLastAssistant = isAssistantNode && isLast;
               const isLastInBranch = isLastAssistant;
-              const variantCount = isAssistantNode ? node.variants.length : 0;
-              const variantIndex = isAssistantNode ? node.activeVariantIdx + 1 : 0;
-              const nodeId = isAssistantNode ? node.id : undefined;
+              const variantCount = node
+                ? (node.role === "assistant" ? node.variants.length : node.variants.length)
+                : 0;
+              const variantIndex = node
+                ? (node.role === "assistant" ? node.activeVariantIdx + 1 : node.activeVariantIdx + 1)
+                : 0;
+              const nodeId = node?.id;
 
               return (
                 <MessageBubble
@@ -175,11 +189,14 @@ export function ChatView({
                   message={msg}
                   liveFiles={state.liveFiles}
                   onRetry={isLastInBranch ? onRetry : undefined}
+                  onEdit={isUserNode ? onEdit : undefined}
+                  canEdit={isUserNode && !state.isStreaming}
                   isLastAssistantInBranch={isLastInBranch}
                   variantCount={variantCount}
                   variantIndex={variantIndex}
                   nodeId={nodeId}
                   onSwitchVariant={nodeId ? onSwitchVariant : undefined}
+                  isGlobalStreaming={isLastInBranch ? state.isStreaming : false}
                 />
               );
             })}
@@ -201,6 +218,8 @@ export function ChatView({
             thinkingEnabled={thinkingEnabled}
             onThinkingToggle={onThinkingToggle}
             dirSlug={dirSlug}
+            mcpEnabled={mcpEnabled}
+            onToggleMcpServer={onToggleMcpServer}
           />
         </>
       )}

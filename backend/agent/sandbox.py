@@ -8,8 +8,8 @@ Three rules:
      attached via @-mention (which land under ``chat_dir/uploads/``) plus
      anything the model itself created through <file>. Reading arbitrary
      filesystem paths is forbidden so the model can't scan ``~/.ssh``,
-     ``/etc``, AppData, or the rest of the host. The .agents directory is
-     always blocked even when it sits under chat_dir.
+     ``/etc``, AppData, or the rest of the host. Explicit allowlist prefixes
+     can grant read-only access to shared agent resources such as ``~/.agents``.
   3. write_file and the <file>/<edit> stream tags only accept paths inside
      the chat directory.
 
@@ -25,12 +25,15 @@ import shlex
 from dataclasses import dataclass, field
 
 
+
+
 @dataclass(frozen=True)
 class SandboxPolicy:
     """One policy per chat request, built in api/chat.py."""
 
     chat_dir: str = ""  # absolute path; WSL form for shell="wsl", Windows for "powershell"
     blocked_read_prefixes: tuple[str, ...] = field(default_factory=tuple)
+    allowed_read_prefixes: tuple[str, ...] = field(default_factory=tuple)
     user_name: str = ""
     unrestricted: bool = False
     # Which terminal the bash_tool envelope wraps. PowerShell has no bwrap
@@ -46,8 +49,8 @@ class SandboxPolicy:
         In restricted mode the rule is allowlist-style: the path must be
         inside ``chat_dir``. That gives the model access to attached files
         (``chat_dir/uploads/*``) and files it created itself, and nothing
-        else. The .agents blocklist is checked first as defense in depth in
-        case a future bug ever lets chat_dir overlap with it.
+        else. The blocklist is checked first as defense in depth in case a
+        future bug ever lets chat_dir overlap with internal app storage.
         """
         if self.unrestricted:
             return None
@@ -62,6 +65,10 @@ class SandboxPolicy:
                     f"Sandbox: чтение из системной папки агента запрещено ({path}). "
                     "Включи 'Unrestricted mode' в Settings, если правда нужно."
                 )
+
+        for allowed in self.allowed_read_prefixes:
+            if _is_under(norm, _normalize(allowed)):
+                return None
 
         if not self.chat_dir:
             return (
@@ -149,6 +156,15 @@ class SandboxPolicy:
             )
 
         chat_q = shlex.quote(self.chat_dir)
+        path_entries = [
+            f"{self.chat_dir}/.venv/bin",
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+        ]
         # Build the bwrap argv as a single bash command. Read-only system
         # mounts give the model access to all installed tools (python, node,
         # git, etc.) without letting it modify them. /tmp is a private tmpfs.
@@ -180,7 +196,9 @@ class SandboxPolicy:
             "--setenv", "TERM", "xterm-256color",
             "--setenv", "LANG", "C.UTF-8",
             "--setenv", "LC_ALL", "C.UTF-8",
-            "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "--setenv",
+            "PATH",
+            ":".join(path_entries),
             "--unshare-user-try",
             "--unshare-ipc",
             "--unshare-pid",

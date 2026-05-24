@@ -8,6 +8,11 @@ class SkillInfo(BaseModel):
     description: str = ""
     version: str = ""
     author: str = ""
+    path: str = ""
+
+
+class SkillLocation(BaseModel):
+    skills_dir: str
 
 
 class InstallRequest(BaseModel):

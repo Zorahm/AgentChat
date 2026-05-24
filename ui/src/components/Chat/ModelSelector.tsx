@@ -38,7 +38,6 @@ function providerLabel(id: string): string {
     openai: "OpenAI",
     anthropic: "Anthropic",
     google: "Google",
-    ollama: "Ollama",
     deepseek: "DeepSeek",
     groq: "Groq",
     mistral: "Mistral",
@@ -59,6 +58,7 @@ function modelBadge(m: ModelItem): string | null {
     return null;
 }
 
+
 export function ModelSelector({
   models, model, onChange,
   thinkingEnabled, onThinkingToggle,
@@ -78,18 +78,20 @@ export function ModelSelector({
 
   const currentName = models.find((m) => m.id === model)?.name ?? model;
   const groups = groupModels(models);
-
   return (
     <div className="ms-wrap" ref={wrapRef}>
-      <button
-        className="ms-pill"
-        onClick={() => setOpen((v) => !v)}
-        title={model}
-      >
-        <span className="ms-pill-dot" />
-        <span className="ms-pill-name">{currentName}</span>
-        <span className="ms-pill-chev"><CaretDown /></span>
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <button
+          className="ms-pill"
+          onClick={() => setOpen((v) => !v)}
+          title={model}
+        >
+          <span className="ms-pill-dot" />
+          <span className="ms-pill-name">{currentName}</span>
+          <span className="ms-pill-chev"><CaretDown /></span>
+        </button>
+
+      </div>
 
       {open && (
         <div className="ms-dropdown">

@@ -15,10 +15,18 @@ from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
 from api.schemas.chat import AttachmentInfo, ChatRequest
 from llm.client import LLMClient
+from mcp_integration.manager import MCPManager
+from mcp_integration.registry_view import MCPAwareRegistry
+from mcp_integration.tool_proxy import MCPToolProxy
+from tools.base import BaseTool
 from tools.bash_tool import BashTool
+from tools.edit_file import EditFileTool
 from tools.read_file import ReadFileTool
+from tools.read_photo import ReadPhotoTool
 from tools.registry import ToolRegistry
 from tools.write_file import WriteFileTool
+
+INLINE_CONTENT_LIMIT = 50_000
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
@@ -38,7 +46,45 @@ def _resolve_chat_cwd(slug: str | None, user_home: str, shell: str = "wsl") -> s
         return f"{user_home}\\AgentChat\\chats\\{slug}"
     return f"{user_home}/AgentChat/chats/{slug}"
 
+
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+async def _build_mcp_proxies(
+    enabled_ids: list[str] | None,
+    settings_store: Any,
+    manager: MCPManager,
+) -> list[BaseTool]:
+    """Spin up requested MCP servers and return one proxy per discovered tool.
+
+    Unknown / disabled IDs are silently dropped. A spawn error logs and
+    skips that one server — the rest still load. The agent sees zero MCP
+    tools from a failed server, and the UI surfaces the error via the
+    server-status endpoint.
+    """
+    if not enabled_ids:
+        return []
+
+    proxies: list[BaseTool] = []
+    for server_id in enabled_ids:
+        cfg = settings_store.get_mcp_server(server_id)
+        if cfg is None or not cfg.enabled:
+            continue
+        try:
+            tools = await manager.ensure_started(cfg)
+        except Exception:  # noqa: BLE001 — manager already logged
+            continue
+        for tool in tools:
+            proxies.append(
+                MCPToolProxy(
+                    manager=manager,
+                    cfg=cfg,
+                    tool_name=tool.name,
+                    description=tool.description,
+                    input_schema=tool.input_schema,
+                )
+            )
+    return proxies
 
 
 def _sse_event(event_type: str, data: dict[str, Any]) -> str:
@@ -70,15 +116,31 @@ def _format_user_content(
     when images are attached AND the model supports vision. For non-vision
     models, images are still mentioned by path so the model can move,
     embed, or transform the file via bash / python — it just can't *see* it.
+
+    Text attachments smaller than INLINE_CONTENT_LIMIT chars are inlined.
+    Larger ones are referenced by path with a read_file hint so the model
+    can read them in chunks using offset/limit.
     """
     if not attachments:
         return text
 
     images = [a for a in attachments if a.mime_type.startswith("image/")]
-    text_files = [a for a in attachments if a.content and not a.mime_type.startswith("image/")]
-    binary_files = [a for a in attachments if not a.content and not a.mime_type.startswith("image/")]
+    inline_files: list[AttachmentInfo] = []
+    offloaded_files: list[AttachmentInfo] = []
+    binary_files: list[AttachmentInfo] = []
 
-    # Build file summary line
+    for a in attachments:
+        if a.mime_type.startswith("image/"):
+            continue
+        if a.content and len(a.content) <= INLINE_CONTENT_LIMIT:
+            inline_files.append(a)
+        elif a.content and a.path:
+            offloaded_files.append(a)
+        elif a.content:
+            inline_files.append(a)
+        else:
+            binary_files.append(a)
+
     summary_parts: list[str] = []
     for a in attachments:
         kb = a.size / 1024
@@ -86,14 +148,39 @@ def _format_user_content(
         summary_parts.append(f"{a.name} ({sz})")
     header = "📎 " + ", ".join(summary_parts)
 
+    def _fmt_offloaded(a: AttachmentInfo) -> str:
+        lines = a.content.count("\n") + (1 if not a.content.endswith("\n") else 0)
+        kb = a.size / 1024
+        size_str = f"{kb:.0f}KB" if kb < 1024 else f"{kb / 1024:.1f}MB"
+        return (
+            f"\nФайл «{a.name}» ({size_str}, {lines} строк) сохранён: {a.path}\n"
+            "Файл длинный — не читай его целиком. Используй read_file с offset "
+            "и limit для постраничного чтения (например: offset=1, limit=200)."
+        )
+
+    def _fmt_text_file(a: AttachmentInfo) -> str:
+        """Formatting for text/plain files uploaded without inline content (large pastes)."""
+        kb = a.size / 1024
+        size_str = f"{kb:.0f}KB" if kb < 1024 else f"{kb / 1024:.1f}MB"
+        return (
+            f"\nТекстовый файл «{a.name}» ({size_str}) сохранён: {a.path}\n"
+            "Читай его инструментом read_file с offset и limit для постраничного чтения "
+            "(например: offset=1, limit=200). Не читай весь файл сразу."
+        )
+
     use_vision = vision and any(img.data_url for img in images)
 
     if use_vision:
         text_parts: list[str] = [header]
-        for tf in text_files:
+        for tf in inline_files:
             text_parts.append(f"\n--- {tf.name} ---\n{tf.content}")
+        for of_ in offloaded_files:
+            text_parts.append(_fmt_offloaded(of_))
         for bf in binary_files:
-            text_parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
+            if bf.mime_type == "text/plain" and bf.path:
+                text_parts.append(_fmt_text_file(bf))
+            else:
+                text_parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
         for img in images:
             if img.path:
                 text_parts.append(
@@ -117,8 +204,10 @@ def _format_user_content(
     # No vision (model can't see images, or there are no images) — plain text
     # with file paths. Model can still operate on images by path.
     parts: list[str] = [header]
-    for tf in text_files:
+    for tf in inline_files:
         parts.append(f"\n--- {tf.name} ---\n{tf.content}")
+    for of_ in offloaded_files:
+        parts.append(_fmt_offloaded(of_))
     for bf in binary_files:
         parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
     for img in images:
@@ -194,7 +283,13 @@ async def chat(
         extra_body=extra_body,
     )
 
-    registry: ToolRegistry = app_state.tool_registry
+    base_registry: ToolRegistry = app_state.tool_registry
+    mcp_proxies = await _build_mcp_proxies(
+        body.mcp_enabled_servers, store, app_state.mcp_manager
+    )
+    registry: ToolRegistry = (
+        MCPAwareRegistry(base_registry, mcp_proxies) if mcp_proxies else base_registry
+    )
 
     # Build the per-chat sandbox policy and push it into every tool that can
     # touch the filesystem plus the agent loop (which handles <file>/<edit>
@@ -204,6 +299,7 @@ async def chat(
         USER_HOME,
         USER_NAME,
         WSL_USER_HOME,
+        get_allowed_read_prefixes,
         get_blocked_read_prefixes,
         resolve_active_shell,
     )
@@ -213,6 +309,7 @@ async def chat(
     policy = SandboxPolicy(
         chat_dir=chat_dir,
         blocked_read_prefixes=get_blocked_read_prefixes(),
+        allowed_read_prefixes=get_allowed_read_prefixes(),
         user_name=USER_NAME,
         unrestricted=store.unrestricted_mode,
         shell=active_shell,
@@ -224,9 +321,16 @@ async def chat(
     read = registry.get(ReadFileTool.name)
     if isinstance(read, ReadFileTool):
         read.set_policy(policy)
+    read_photo = registry.get(ReadPhotoTool.name)
+    if isinstance(read_photo, ReadPhotoTool):
+        read_photo.set_policy(policy)
+        read_photo.set_vision_supported(_model_supports_vision(lite_model))
     write = registry.get(WriteFileTool.name)
     if isinstance(write, WriteFileTool):
         write.set_policy(policy)
+    edit = registry.get(EditFileTool.name)
+    if isinstance(edit, EditFileTool):
+        edit.set_policy(policy)
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key)
     agent = AgentLoop(config=config, tools=registry, llm=llm, policy=policy)
@@ -248,6 +352,12 @@ async def chat(
                 yield _sse_event(event["type"], event)
         except Exception as exc:
             yield _sse_event("error", {"message": str(exc)})
+        finally:
+            if body.chat_id:
+                try:
+                    app_state.chat_store.touch_chat(body.chat_id)
+                except Exception:
+                    pass  # non-critical
 
     return StreamingResponse(
         event_stream(),

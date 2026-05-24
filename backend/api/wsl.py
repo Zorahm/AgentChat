@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import subprocess
 from typing import Any
@@ -10,10 +11,22 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from agent.wsl_exec import decode_loose
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/wsl", tags=["wsl"])
 
 # Suppress the Windows console flash for wsl/probe subprocesses.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+# In-process background install task — single concurrent install at most.
+# install-deps used to block the HTTP request for 5–30 minutes, leaving the
+# frontend stuck on "Установка…" with no visible activity (uvicorn's access
+# log only fires on response). Moving it off the request thread fixes both.
+_install_task: asyncio.Task[None] | None = None
+_install_log: list[str] = []
+_install_error: str | None = None
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -29,6 +42,8 @@ class WSLStatus(BaseModel):
     python: str | None
     npm: str | None
     pandoc: str | None  # pandoc version string if installed in WSL
+    libreoffice: str | None  # libreoffice version string if installed
+    poppler: bool  # pdftotext (poppler-utils) is available
     docx: bool  # global npm `docx` package available
     dns_ok: bool  # hostname resolution works inside the distro
     powershell_available: bool
@@ -67,26 +82,9 @@ async def _run(args: list[str], timeout: int = 30) -> tuple[int, str, str]:
     # wsl.exe writes Unicode in UTF-16LE on some Windows builds; try utf-8 then utf-16.
     raw_out = result.stdout
     raw_err = result.stderr
-    out = _decode_loose(raw_out)
-    err = _decode_loose(raw_err)
+    out = decode_loose(raw_out)
+    err = decode_loose(raw_err)
     return result.returncode, out, err
-
-
-def _decode_loose(data: bytes) -> str:
-    """Best-effort bytes → str. WSL CLI sometimes emits UTF-16LE."""
-    if not data:
-        return ""
-    try:
-        s = data.decode("utf-8")
-        # Heuristic: WSL UTF-16 output has lots of NUL bytes between chars.
-        if "\x00" in s:
-            raise UnicodeDecodeError("utf-8", data, 0, 1, "looks like utf-16")
-        return s
-    except UnicodeDecodeError:
-        try:
-            return data.decode("utf-16-le").replace("\x00", "")
-        except UnicodeDecodeError:
-            return data.decode("utf-8", errors="replace")
 
 
 async def _wsl_default_distro() -> str | None:
@@ -111,6 +109,15 @@ async def _wsl_which(binary: str) -> str | None:
         return None
     line = out.strip()
     return line or None
+
+
+async def _wsl_has(binary: str) -> bool:
+    """Check if a binary exists inside WSL (no version probe)."""
+    code, _, _ = await _run(
+        ["wsl.exe", "--", "bash", "-lc", f"command -v {binary} >/dev/null 2>&1"],
+        timeout=10,
+    )
+    return code == 0
 
 
 async def _has_global_npm_pkg(pkg: str) -> bool:
@@ -208,6 +215,8 @@ async def status(request: Request) -> WSLStatus:
             python=None,
             npm=None,
             pandoc=None,
+            libreoffice=None,
+            poppler=False,
             docx=False,
             dns_ok=False,
             powershell_available=ps_available,
@@ -217,7 +226,8 @@ async def status(request: Request) -> WSLStatus:
 
     distro = await _wsl_default_distro()
     distro_running = False
-    node = python = npm = pandoc = None
+    node = python = npm = pandoc = libreoffice = None
+    poppler = False
     docx = False
     dns_ok = False
 
@@ -233,6 +243,9 @@ async def status(request: Request) -> WSLStatus:
             python = await _wsl_which("python3")
             npm = await _wsl_which("npm")
             pandoc = await _wsl_which("pandoc")
+            libreoffice = await _wsl_which("libreoffice")
+            # poppler-utils ships `pdftotext`; that's the marker we probe for.
+            poppler = await _wsl_has("pdftotext")
             if npm:
                 docx = await _has_global_npm_pkg("docx")
             dns_ok = await _wsl_dns_works()
@@ -245,6 +258,8 @@ async def status(request: Request) -> WSLStatus:
         python=python,
         npm=npm,
         pandoc=pandoc,
+        libreoffice=libreoffice,
+        poppler=poppler,
         docx=docx,
         dns_ok=dns_ok,
         powershell_available=ps_available,
@@ -273,47 +288,101 @@ async def install_distro() -> InstallResult:
     )
 
 
+class InstallDepsStatus(BaseModel):
+    """Snapshot of the current background install-deps task."""
+
+    running: bool
+    log: str
+    error: str | None
+
+
+async def _run_install_deps() -> None:
+    """Background worker. Writes progress to module-level state."""
+    global _install_error
+    _install_error = None
+    _install_log.clear()
+
+    def emit(line: str) -> None:
+        logger.info("install-deps: %s", line)
+        _install_log.append(line)
+
+    try:
+        emit("Старт: проверяю DNS в WSL…")
+        if not await _wsl_dns_works():
+            emit("DNS сломан — применяю фикс (resolv.conf + wsl.conf, затем wsl --shutdown).")
+            ok, log = await _apply_dns_fix()
+            if log:
+                emit(log)
+            if not ok:
+                _install_error = "DNS fix failed — apt не сможет резолвить хосты."
+                return
+            emit("DNS починен.")
+
+        emit("apt update + ставлю Node, Python, pandoc, LibreOffice, poppler-utils. Это 5–10 минут.")
+        # `--no-install-recommends` keeps footprint reasonable — without it
+        # pandoc pulls texlive (several hundred MB) and libreoffice pulls
+        # fonts and clipart that aren't needed for headless conversion.
+        script = (
+            "set -e; "
+            "export DEBIAN_FRONTEND=noninteractive; "
+            "apt-get update; "
+            "apt-get install -y nodejs npm python3 python3-pip python3-venv; "
+            "apt-get install -y --no-install-recommends pandoc; "
+            "apt-get install -y --no-install-recommends libreoffice; "
+            "apt-get install -y poppler-utils; "
+            "npm install -g docx"
+        )
+        code, out, err = await _run(
+            ["wsl.exe", "--user", "root", "--", "bash", "-lc", script],
+            timeout=1800,
+        )
+        tail = "\n".join(filter(None, [(out or "").strip(), (err or "").strip()]))
+        if tail:
+            emit(tail[-2000:])  # cap to keep memory bounded
+        if code != 0:
+            _install_error = f"apt вернул код {code} — см. лог."
+            return
+        emit("✓ Готово. Все библиотеки установлены.")
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.exception("install-deps background task failed")
+        _install_error = f"Неожиданная ошибка: {exc}"
+
+
 @router.post("/install-deps", response_model=InstallResult)
 async def install_deps() -> InstallResult:
-    """Install Node, Python, pandoc, and the `docx` npm package inside the default distro.
+    """Kick off the install in the background and return immediately.
 
-    Runs as root via `wsl --user root` to avoid the sudo-password prompt
-    that would block a non-interactive subprocess. If DNS resolution is
-    broken inside WSL, apply the fix first — otherwise `apt-get update`
-    would fail on host lookup before installing anything.
+    The caller polls /wsl/install-deps/status (or /wsl/status, watching for
+    libreoffice/poppler/docx flips) to know when it's done.
+
+    Returning fast is the load-bearing change here. The previous version
+    blocked the HTTP request for 5–30 minutes; uvicorn doesn't log until
+    a response is sent, so the request appeared "stuck" from the UI side
+    with no visible activity.
     """
-    preflight_log = ""
-    if not await _wsl_dns_works():
-        ok, log = await _apply_dns_fix()
-        preflight_log = f"[dns fix]\n{log}\n"
-        if not ok:
-            return InstallResult(
-                success=False,
-                output=preflight_log + "DNS fix failed — apt would not be able to resolve hosts.",
-            )
+    global _install_task
+    if _install_task and not _install_task.done():
+        return InstallResult(
+            success=True,
+            output="Установка уже идёт — следи за прогрессом в этом окне.",
+        )
+    logger.info("install-deps: scheduling background task")
+    _install_task = asyncio.create_task(_run_install_deps())
+    return InstallResult(
+        success=True,
+        output="Установка запущена в фоне. Это 5–10 минут.",
+    )
 
-    # `--no-install-recommends` on pandoc keeps the apt footprint reasonable —
-    # without it apt pulls in texlive and several hundred MB of LaTeX runtime
-    # that we don't need for text extraction.
-    script = (
-        "set -e; "
-        "export DEBIAN_FRONTEND=noninteractive; "
-        "apt-get update; "
-        "apt-get install -y nodejs npm python3 python3-pip; "
-        "apt-get install -y --no-install-recommends pandoc; "
-        "npm install -g docx"
+
+@router.get("/install-deps/status", response_model=InstallDepsStatus)
+async def install_deps_status() -> InstallDepsStatus:
+    """Return the current install task's log and running state."""
+    running = _install_task is not None and not _install_task.done()
+    return InstallDepsStatus(
+        running=running,
+        log="\n".join(_install_log),
+        error=_install_error,
     )
-    code, out, err = await _run(
-        ["wsl.exe", "--user", "root", "--", "bash", "-lc", script],
-        timeout=600,
-    )
-    output = (out or "").strip()
-    if err and err.strip():
-        output = f"{output}\n[stderr]\n{err.strip()}".strip()
-    output = preflight_log + output
-    if code != 0:
-        return InstallResult(success=False, output=output or f"exit code {code}")
-    return InstallResult(success=True, output=output or "OK")
 
 
 @router.post("/fix-dns", response_model=InstallResult)

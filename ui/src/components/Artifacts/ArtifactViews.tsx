@@ -71,7 +71,7 @@ export function RenderView({
     const html = marked.parse(content) as string;
     return (
       <div
-        className="art-render-md"
+        className="art-render-md md"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );

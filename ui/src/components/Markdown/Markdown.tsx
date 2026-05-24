@@ -6,6 +6,8 @@
  * before marked runs and restored as KaTeX HTML afterwards. Typography lives
  * in `styles/markdown.css` under the `.md` class — every caller picks it up
  * automatically.
+ *
+ * Extensions: definition lists (marked-definition-lists), footnotes (custom).
  */
 
 import { useMemo } from "react";
@@ -17,14 +19,9 @@ import { renderMathToken } from "../../utils/renderMath";
 
 interface MarkdownProps {
   text: string;
-  /** Strip YAML frontmatter from the top (`--- ... ---`). */
   stripFrontmatter?: boolean;
-  /** Convert single newlines to <br>. Useful for chat messages where each
-   * line should stand alone; turn off for documents (SKILL.md, READMEs). */
   breaks?: boolean;
-  /** Render LaTeX math via KaTeX. Default off — opt-in for chat. */
   math?: boolean;
-  /** Extra class names merged with the base `md`. */
   className?: string;
 }
 
@@ -33,8 +30,45 @@ function stripFrontmatterBlock(text: string): string {
   const rest = text.slice(3).replace(/^\r?\n/, "");
   const end = rest.search(/\r?\n---\r?\n?/);
   if (end === -1) return text;
-  const after = rest.slice(end).replace(/^\r?\n---\r?\n?/, "");
-  return after.replace(/^\r?\n+/, "");
+  return rest.slice(end).replace(/^\r?\n---\r?\n?/, "").replace(/^\r?\n+/, "");
+}
+
+function extractYamlFrontmatter(text: string): { yaml: string | null; body: string } {
+  if (!text.startsWith("---")) return { yaml: null, body: text };
+  const rest = text.slice(3).replace(/^\r?\n/, "");
+  const end = rest.search(/\r?\n---\r?\n?/);
+  if (end === -1) return { yaml: null, body: text };
+  return {
+    yaml: rest.slice(0, end),
+    body: rest.slice(end).replace(/^\r?\n---\r?\n?/, "").replace(/^\r?\n+/, ""),
+  };
+}
+
+function preprocessFootnotes(src: string): string {
+  const defs: Array<{ id: string; content: string }> = [];
+  let text = src.replace(/^\[\^(\w+)\]:\s*(.*?)(?=\n(?:\n|\[\^)|$)/gms, (_, id: string, content: string) => {
+    defs.push({ id, content: content.trim() });
+    return "";
+  });
+
+  if (defs.length === 0) return text;
+
+  text = text.replace(/\[\^(\w+)\]/g, (_, id: string) => {
+    const idx = defs.findIndex((d) => d.id === id);
+    if (idx === -1) return `[^${id}]`;
+    return `<sup class="fn-ref"><a href="#fn-${id}" id="fnref-${id}">${idx + 1}</a></sup>`;
+  });
+
+  text += `\n\n<section class="fn-list">\n<ol>\n`;
+  for (const def of defs) {
+    text += `<li id="fn-${def.id}">${def.content} <a href="#fnref-${def.id}" class="fn-back">↩</a></li>\n`;
+  }
+  text += `</ol>\n</section>\n`;
+  return text;
+}
+
+function stripHeadingNumbers(text: string): string {
+  return text.replace(/^(#{1,6})(\s*)(?:\d+[\.\)]?\s*)*(¶\s*)?/gm, "$1$2");
 }
 
 export function Markdown({
@@ -45,7 +79,20 @@ export function Markdown({
   className,
 }: MarkdownProps) {
   const segments = useMemo(() => {
-    let body = stripFrontmatter ? stripFrontmatterBlock(text) : text;
+    let body = text;
+    let yamlBlock: string | null = null;
+
+    if (stripFrontmatter) {
+      body = stripFrontmatterBlock(body);
+    } else {
+      const parsed = extractYamlFrontmatter(body);
+      yamlBlock = parsed.yaml;
+      body = parsed.body;
+    }
+
+    body = preprocessFootnotes(body);
+    body = stripHeadingNumbers(body);
+
     const mathResult = math ? extractMath(body) : null;
     if (mathResult) body = mathResult.text;
 
@@ -58,6 +105,15 @@ export function Markdown({
     }
 
     const segs = parseCodeBlocks(html);
+
+    if (yamlBlock) {
+      segs.unshift({
+        type: "code",
+        language: "yaml",
+        code: yamlBlock,
+      });
+    }
+
     if (!mathResult) return segs;
 
     return segs.map((seg) => {

@@ -1,8 +1,8 @@
 /** Single message bubble — user or assistant with process block, markdown, artifacts. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp } from "@phosphor-icons/react";
-import { Brain, Spinner, CheckCircle, CaretDoubleDown } from "@phosphor-icons/react";
+import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp, PencilSimple, X } from "@phosphor-icons/react";
+import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
 import { API_BASE } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo } from "../../types/chat";
@@ -16,12 +16,16 @@ import { parseArtifacts } from "../../utils/parseArtifacts";
 import { getLang } from "../../utils/getLang";
 import { formatTime } from "../../utils/formatTime";
 import type { LiveFile } from "../../types/artifact";
+import { BookOpen } from "@phosphor-icons/react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   liveFiles?: LiveFile[];
   onRetry?: () => void;
+  onEdit?: (userNodeId: string, content: string, displayHtml?: string) => void;
+  canEdit?: boolean;
   isLastAssistantInBranch?: boolean;
+  isGlobalStreaming?: boolean;
   variantCount?: number;
   variantIndex?: number;
   nodeId?: string;
@@ -33,91 +37,29 @@ function MarkdownContent({ text }: { text: string }) {
 }
 
 export function MessageBubble({
-  message, liveFiles = [], onRetry, isLastAssistantInBranch,
-  variantCount = 0, variantIndex = 0, nodeId, onSwitchVariant,
+  message, liveFiles = [], onRetry, onEdit, canEdit = false, isLastAssistantInBranch,
+  isGlobalStreaming = false, variantCount = 0, variantIndex = 0, nodeId, onSwitchVariant,
 }: MessageBubbleProps) {
   if (message.role === "user") {
-    const [expanded, setExpanded] = useState(false);
-    const MAX_LINES = 8;
-    const hasAttachments = (message.attachments?.length ?? 0) > 0;
-    const legacyHtml = !message.displayHtml &&
-      (message.content.startsWith("<p>") || message.content.startsWith("<div>"))
-      ? message.content
-      : null;
-    const renderHtml = message.displayHtml ?? legacyHtml;
-    const copyText = legacyHtml
-      ? message.content.replace(/<[^>]+>/g, "").trim()
-      : message.content;
-    const textContent = renderHtml
-      ? renderHtml.replace(/<[^>]+>/g, "").trim()
-      : message.content;
-    const lineCount = textContent.split("\n").length;
-    const isLong = lineCount > MAX_LINES;
     return (
-      <div className="msg msg-user">
-        {hasAttachments && (() => {
-          const images = message.attachments!.filter((a) => a.mime_type.startsWith("image/"));
-          const files = message.attachments!.filter((a) => !a.mime_type.startsWith("image/"));
-          return (
-            <>
-              {images.length > 0 && (
-                <div className="msg-img-row">
-                  {images.map((a) => {
-                    const src = a.data_url
-                      ?? (a.path ? `${API_BASE}/files/serve?path=${encodeURIComponent(a.path)}` : null);
-                    return src ? (
-                      <div key={a.name} className="msg-img-thumb">
-                        <img src={src} alt={a.name} />
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              )}
-              {files.length > 0 && (
-                <div className="msg-file-chips">
-                  {files.map((a) => {
-                    const ext = a.name.includes(".")
-                      ? a.name.split(".").pop()!.toUpperCase().slice(0, 5)
-                      : "FILE";
-                    return (
-                      <div key={a.name} className="msg-file-chip">
-                        <div className="msg-file-chip-info">
-                          <div className="msg-file-chip-name">{a.name}</div>
-                          <div className="msg-file-chip-meta">{fmtSize(a.size)}</div>
-                        </div>
-                        <span className="msg-file-chip-badge">{ext}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          );
-        })()}
-        {renderHtml ? (
-          <div
-            className={`msg-user-bubble${isLong && !expanded ? " msg-user-bubble--collapsed" : ""}`}
-            dangerouslySetInnerHTML={{ __html: renderHtml }}
-          />
-        ) : (
-          <div className="msg-user-bubble msg-user-bubble--plain">
-            {message.content}
-          </div>
-        )}
-        {isLong && (
-          <button className="msg-expand-btn" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? <CaretUp size={12} /> : <CaretDoubleDown size={12} />}
-          </button>
-        )}
-        <div className="msg-user-time">{formatTime(message.timestamp)}</div>
-        <MsgActions content={copyText} compact />
-      </div>
+      <UserBubble
+        message={message}
+        onEdit={onEdit}
+        canEdit={canEdit}
+        variantCount={variantCount}
+        variantIndex={variantIndex}
+        nodeId={nodeId}
+        onSwitchVariant={onSwitchVariant}
+      />
     );
   }
 
   const steps = message.steps ?? [];
   const groups = splitStepGroups(steps);
-  const isStreaming = !!(message.toolCalls?.some((tc) => tc.status === "running"));
+
+  const iterExhausted = steps.find(
+    (s): s is Extract<ProcessStep, { type: "iterations_exhausted" }> => s.type === "iterations_exhausted",
+  );
 
   const useFallback = groups.length === 0 && message.content.length > 0;
   const fallback = useFallback ? parseArtifacts(message.content) : null;
@@ -146,12 +88,21 @@ export function MessageBubble({
         const isLast = i === groups.length - 1;
         const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", artifacts: [] };
 
+        // Spinner while: any tool in this group is still running,
+        // OR the global SSE stream is active but this group has no text yet
+        // (tools just completed, model hasn't responded yet).
+        // Non-last groups are always done — checkmark.
+        const anyGroupToolRunning = procSteps
+          .filter((s): s is Extract<ProcessStep, { type: "tool" }> => s.type === "tool")
+          .some((s) => s.call.status === "running");
+        const blockStreaming = isLast && (anyGroupToolRunning || (isGlobalStreaming && !groupText));
+
         return (
           <div className="msg-group" key={i}>
             {procSteps.length > 0 && (
               <ProcessBlock
                 steps={procSteps}
-                isStreaming={isStreaming && isLast}
+                isStreaming={blockStreaming}
                 liveFiles={liveFiles}
               />
             )}
@@ -168,7 +119,208 @@ export function MessageBubble({
         <ArtifactCard key={`art-fb-${i}`} artifact={a} />
       ))}
 
-      {!isStreaming && <MsgActions content={message.content} onRetry={isLastAssistantInBranch ? onRetry : undefined} />}
+      {iterExhausted && <IterationsExhaustedCard count={iterExhausted.count} />}
+
+      {!isGlobalStreaming && <MsgActions content={message.content} onRetry={isLastAssistantInBranch ? onRetry : undefined} />}
+    </div>
+  );
+}
+
+/* ── User bubble with inline editor + variant navigation ──────────── */
+
+interface UserBubbleProps {
+  message: ChatMessage;
+  onEdit?: (userNodeId: string, content: string, displayHtml?: string) => void;
+  canEdit: boolean;
+  variantCount: number;
+  variantIndex: number;
+  nodeId?: string;
+  onSwitchVariant?: (nodeId: string, idx: number) => void;
+}
+
+function UserBubble({
+  message, onEdit, canEdit, variantCount, variantIndex, nodeId, onSwitchVariant,
+}: UserBubbleProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const MAX_LINES = 8;
+  const hasAttachments = (message.attachments?.length ?? 0) > 0;
+  const legacyHtml = !message.displayHtml &&
+    (message.content.startsWith("<p>") || message.content.startsWith("<div>"))
+    ? message.content
+    : null;
+  const renderHtml = message.displayHtml ?? legacyHtml;
+  const copyText = legacyHtml
+    ? message.content.replace(/<[^>]+>/g, "").trim()
+    : message.content;
+  const textContent = renderHtml
+    ? renderHtml.replace(/<[^>]+>/g, "").trim()
+    : message.content;
+  const lineCount = textContent.split("\n").length;
+  const isLong = lineCount > MAX_LINES;
+  const hasVariants = variantCount > 1;
+
+  if (editing && onEdit && nodeId) {
+    return (
+      <div className="msg msg-user msg-user--editing">
+        <InlineEditor
+          initialText={textContent}
+          onCancel={() => setEditing(false)}
+          onSave={(newText) => {
+            setEditing(false);
+            onEdit(nodeId, newText, undefined);
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="msg msg-user">
+      {hasAttachments && (() => {
+        const images = message.attachments!.filter((a) => a.mime_type.startsWith("image/"));
+        const files = message.attachments!.filter((a) => !a.mime_type.startsWith("image/"));
+        return (
+          <>
+            {images.length > 0 && (
+              <div className="msg-img-row">
+                {images.map((a) => {
+                  const src = a.data_url
+                    ?? (a.path ? `${API_BASE}/files/serve?path=${encodeURIComponent(a.path)}` : null);
+                  return src ? (
+                    <div key={a.name} className="msg-img-thumb">
+                      <img src={src} alt={a.name} />
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
+            {files.length > 0 && (
+              <div className="msg-file-chips">
+                {files.map((a) => {
+                  const ext = a.name.includes(".")
+                    ? a.name.split(".").pop()!.toUpperCase().slice(0, 5)
+                    : "FILE";
+                  return (
+                    <div key={a.name} className="msg-file-chip">
+                      <div className="msg-file-chip-info">
+                        <div className="msg-file-chip-name">{a.name}</div>
+                        <div className="msg-file-chip-meta">{fmtSize(a.size)}</div>
+                      </div>
+                      <span className="msg-file-chip-badge">{ext}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
+      {renderHtml ? (
+        <div
+          className={`msg-user-bubble${isLong && !expanded ? " msg-user-bubble--collapsed" : ""}`}
+          dangerouslySetInnerHTML={{ __html: renderHtml }}
+        />
+      ) : (
+        <div className="msg-user-bubble msg-user-bubble--plain">
+          {message.content}
+        </div>
+      )}
+      {isLong && (
+        <button className="msg-expand-btn" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <CaretUp size={12} /> : <CaretDoubleDown size={12} />}
+        </button>
+      )}
+      <div className="msg-user-foot">
+        <div className="msg-user-time">{formatTime(message.timestamp)}</div>
+        <MsgActions
+          content={copyText}
+          onEdit={onEdit && nodeId ? () => setEditing(true) : undefined}
+          canEdit={canEdit}
+          compact
+        />
+      </div>
+      {hasVariants && (
+        <VariantNav
+          total={variantCount}
+          current={variantIndex}
+          onPrev={() => nodeId && onSwitchVariant?.(nodeId, variantIndex - 2)}
+          onNext={() => nodeId && onSwitchVariant?.(nodeId, variantIndex)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Inline editor for user messages ──────────────────────────────── */
+
+interface InlineEditorProps {
+  initialText: string;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}
+
+function InlineEditor({ initialText, onSave, onCancel }: InlineEditorProps) {
+  const [text, setText] = useState(initialText);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    // Auto-grow to content
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  }, []);
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    const ta = e.target;
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  };
+
+  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (canSave) onSave(text.trim());
+    }
+  };
+
+  const trimmed = text.trim();
+  const canSave = trimmed.length > 0 && trimmed !== initialText.trim();
+
+  return (
+    <div className="msg-edit">
+      <textarea
+        ref={taRef}
+        className="msg-edit-textarea"
+        value={text}
+        onChange={handleInput}
+        onKeyDown={handleKey}
+        placeholder="Отредактируй сообщение…"
+      />
+      <div className="msg-edit-actions">
+        <button className="msg-edit-btn" onClick={onCancel} title="Отмена (Esc)">
+          <X />
+          <span>Отмена</span>
+        </button>
+        <button
+          className="msg-edit-btn msg-edit-btn--primary"
+          onClick={() => canSave && onSave(trimmed)}
+          disabled={!canSave}
+          title="Отправить (Ctrl+Enter)"
+        >
+          <Check />
+          <span>Отправить</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -206,9 +358,11 @@ function VariantNav({ total, current, onPrev, onNext }: {
 
 /* ── Message action bar (copy + retry) ──────── */
 
-function MsgActions({ content, onRetry, compact }: {
+function MsgActions({ content, onRetry, onEdit, canEdit, compact }: {
   content: string;
   onRetry?: () => void;
+  onEdit?: () => void;
+  canEdit?: boolean;
   compact?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
@@ -236,6 +390,16 @@ function MsgActions({ content, onRetry, compact }: {
       <button className="msg-act-btn" title={copied ? "Скопировано" : "Копировать"} onClick={handleCopy}>
         {copied ? <Check /> : <Copy />}
       </button>
+      {onEdit && (
+        <button
+          className="msg-act-btn"
+          title={canEdit ? "Редактировать" : "Подожди ответ"}
+          onClick={() => canEdit && onEdit()}
+          disabled={!canEdit}
+        >
+          <PencilSimple />
+        </button>
+      )}
       {onRetry && (
         <button className="msg-act-btn" title="Повторить" onClick={() => onRetry()}>
           <ArrowClockwise />
@@ -264,14 +428,18 @@ function splitStepGroups(steps: ProcessStep[]): ProcessStep[][] {
 const TOOL_VERBS_PRESENT: Record<string, string> = {
   bash_tool: "выполняет команду",
   read_file: "читает файл",
+  read_photo: "смотрит фото",
   write_file: "пишет файл",
+  edit_file: "редактирует файл",
   read_skill: "читает скилл",
   web_search: "ищет в вебе",
 };
 const TOOL_VERBS_PAST: Record<string, string> = {
   bash_tool: "выполнил команду",
   read_file: "прочитал файл",
+  read_photo: "посмотрел фото",
   write_file: "записал файл",
+  edit_file: "отредактировал файл",
   read_skill: "прочитал скилл",
   web_search: "поискал в вебе",
 };
@@ -348,8 +516,14 @@ function ProcessBlock({
                 />
               );
             }
+            if (c.name === "edit_file") {
+              return <EditFileStep key={c.id} call={c} />;
+            }
             if (c.name === "bash_tool") {
               return <BashToolStep key={c.id} call={c} />;
+            }
+            if (c.name === "read_skill") {
+              return <SkillReadStep key={c.id} call={c} />;
             }
             return (
               <div key={c.id} className="thinking-step thinking-step--tool">
@@ -506,7 +680,124 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
   );
 }
 
+function EditFileStep({ call }: { call: ToolCall }) {
+  const path = String(call.input?.path ?? "");
+  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const isEditing = call.status === "running";
+  const isError = call.status === "error";
+
+  const stats = (() => {
+    if (!call.output) return null;
+    const m = call.output.match(/\+(\d+)\/-(\d+)/);
+    if (!m) return null;
+    return { added: Number(m[1]), removed: Number(m[2]) };
+  })();
+
+  const openInPanel = () =>
+    window.dispatchEvent(new CustomEvent("open-artifact", { detail: path }));
+
+  return (
+    <div className="thinking-step thinking-step--tool">
+      <span className="thinking-gic">{fileExtIcon(ext)}</span>
+      <div className="thinking-content">
+        <div className="tc-write-label">
+          {isEditing ? "Редактирую" : "Отредактировал"}
+          <button className="tc-write-badge" onClick={openInPanel} title="Открыть файл">
+            {fileName}
+          </button>
+          {isError && (
+            <span className="tc-write-err" title={call.output}>
+              {call.output?.slice(0, 80) || "ошибка"}
+            </span>
+          )}
+          {!isEditing && !isError && stats && (
+            <span className="tc-edit-stats">
+              <span className="tc-edit-add">+{stats.added}</span>
+              <span className="tc-edit-del">-{stats.removed}</span>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Iterations exhausted card ─────────────── */
+
+function pluralIterations(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "итераций";
+  if (mod10 === 1) return "итерация";
+  if (mod10 >= 2 && mod10 <= 4) return "итерации";
+  return "итераций";
+}
+
+function IterationsExhaustedCard({ count }: { count: number }) {
+  const newLimit = count * 2;
+
+  const handleContinue = () => {
+    window.dispatchEvent(new CustomEvent("iterations-continue", { detail: { count, newLimit } }));
+  };
+
+  const handleSettings = () => {
+    window.dispatchEvent(new CustomEvent("navigate", { detail: "settings:models" }));
+  };
+
+  return (
+    <div className="iter-exhausted-card">
+      <div className="iter-exhausted-info">
+        <Warning className="iter-exhausted-icon" weight="fill" size={16} />
+        <span className="iter-exhausted-text">
+          Агент остановлен — исчерпано {count} {pluralIterations(count)}
+        </span>
+      </div>
+      <div className="iter-exhausted-actions">
+        <button className="iter-exhausted-btn iter-exhausted-btn--primary" onClick={handleContinue}>
+          Продолжить (увеличить до {newLimit})
+        </button>
+        <button className="iter-exhausted-btn" onClick={handleSettings}>
+          Настройки
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── helpers ────────────────────────────────── */
+
+function SkillReadStep({ call }: { call: ToolCall }) {
+  const skillName = String(call.input?.name ?? "");
+  const label = call.status === "running"
+    ? `Reading the ${skillName} skill`
+    : `Read the ${skillName} skill`;
+
+  const handleClick = () => {
+    const filePath = call.filePath;
+    if (filePath) {
+      window.dispatchEvent(new CustomEvent("open-artifact", { detail: filePath }));
+    }
+  };
+
+  return (
+    <div className="thinking-step thinking-step--tool thinking-step--skill-read">
+      <span className="skill-read-icon"><BookOpen size={14} /></span>
+      <button
+        className={`skill-read-label${call.filePath ? " skill-read-label--link" : ""}`}
+        onClick={call.filePath ? handleClick : undefined}
+        disabled={!call.filePath}
+      >
+        {label}
+      </button>
+      {!call.filePath && call.status !== "running" && (
+        <span className="skill-read-duration">
+          {call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)}s` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;

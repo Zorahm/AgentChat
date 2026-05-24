@@ -12,6 +12,7 @@ export function toolIcon(name: string): React.ReactNode {
     case "bash_tool": return <Terminal />;
     case "web_search": return <MagnifyingGlass />;
     case "read_file": case "read_skill": return <BookOpen />;
+    case "read_photo": return <FileImage />;
     case "write_file": return <FileCode />;
     default: return <Terminal />;
   }

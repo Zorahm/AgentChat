@@ -1,7 +1,0 @@
-{
-  "name": "sample",
-  "version": "1.0.0",
-  "description": "Sample skill for testing the skills system. Load this when you need to verify skills are working.",
-  "triggers": ["sample", "test skill", "demo"],
-  "author": "system"
-}

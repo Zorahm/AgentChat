@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,10 @@ _BLOCK_SCALAR_MARKERS = frozenset({"|", ">", "|-", "|+", ">-", ">+"})
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     """Parse YAML-like frontmatter. Handles simple values plus | and > block scalars."""
+    # Strip BOM and normalize line endings so file-creation quirks don't break parsing.
+    text = text.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n")
+    # Trim leading blank lines — editors sometimes insert one before the first ---.
+    text = text.lstrip("\n")
     if not text.startswith("---"):
         return {}, text
 
@@ -83,15 +88,29 @@ class AgentSkillsReader:
         # like the installer); kept as a separate attr for backwards compatibility.
         self.skills_dir: Path = self.skills_dirs[0]
         self._skills: dict[str, SkillEntry] = {}
+        self._last_scan_ts: float = 0.0
 
     _SKIP_DIRS = frozenset({".git", "node_modules", "dist", "build", "__pycache__", ".venv", "venv"})
 
-    def rebuild(self) -> None:
+    def rebuild(self, force: bool = False) -> None:
         """Scan all configured skill directories and refresh the internal cache.
 
-        Directories are scanned in order; on a name collision, the first match wins
-        (so app-local skills shadow user-global ones with the same name).
+        Skips the scan if no directory has been modified since the last call
+        (unless *force* is True). Directories are scanned in order; on a name
+        collision, the first match wins (so app-local skills shadow user-global
+        ones with the same name).
         """
+        if not force:
+            try:
+                newest = max(
+                    (d.stat().st_mtime for d in self.skills_dirs if d.exists()),
+                    default=0.0,
+                )
+                if newest <= self._last_scan_ts and self._skills:
+                    return
+            except OSError:
+                pass
+
         self._skills.clear()
         for d in self.skills_dirs:
             if not d.exists():
@@ -113,6 +132,7 @@ class AgentSkillsReader:
                     author=meta.get("author", ""),
                     path=entry_path,
                 )
+        self._last_scan_ts = time.time()
 
     def _iter_skill_files(self, root: Path) -> list[Path]:
         """Walk *root* yielding every SKILL.md, sorted by path; skip noise dirs."""

@@ -1,9 +1,9 @@
 /** Root application — sidebar, chat, artifacts panel layout. */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useChats } from "./hooks/useChats";
-import type { AgentChatState } from "./hooks/useAgentChat";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChats, type AgentChatState } from "./hooks/useChats";
 import { Sidebar } from "./components/Sidebar";
+import { useAvatar } from "./hooks/useAvatar";
 import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
@@ -14,6 +14,7 @@ import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
+import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 
 const PANEL_MIN = 280;
 const PANEL_MAX = 1500;
@@ -32,6 +33,7 @@ export function App() {
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
+  const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
   const [theme, setTheme] = useState("system");
   const [wslWarning, setWslWarning] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
@@ -44,6 +46,7 @@ export function App() {
     setOpenFilePath(null);
     setGeneralPanelOpen(false);
   }, [chats.activeId]);
+
 
   // Listen for "Open" clicks on artifact cards in chat
   useEffect(() => {
@@ -118,11 +121,22 @@ export function App() {
     } catch { /* use defaults */ }
   }, [model]);
 
+  const updateSettings = useCallback(async (partial: Record<string, unknown>) => {
+    try {
+      await fetch(`${API_BASE}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(partial),
+      });
+      await fetchSettings();
+    } catch { /* offline */ }
+  }, [fetchSettings]);
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   useEffect(() => {
     if (localStorage.getItem("agentchat.wslWarnDismissed")) return;
-    fetch(`${API_BASE}/system-status`)
+    fetch(`${API_BASE}/wsl/status`)
       .then((r) => r.json())
       .then((d) => { if (d.wsl_available === false) setWslWarning(true); })
       .catch(() => {});
@@ -148,26 +162,6 @@ export function App() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
-  useEffect(() => {
-    const handler = () => fetchSettings();
-    window.addEventListener("settings-changed", handler);
-    return () => window.removeEventListener("settings-changed", handler);
-  }, [fetchSettings]);
-
-  const handleModelChange = (newModel: string) => {
-    setModel(newModel);
-    fetch(`${API_BASE}/settings`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ default_model: newModel }),
-    }).catch(() => {});
-  };
-
-  const handleSend = (text: string, attachments: AttachmentInfo[], html?: string) => {
-    if (view !== "chat") setView("chat");
-    chats.sendMessage(text, model, attachments, html);
-  };
-
   const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats") => {
     if (v === "skills") {
       setSettingsTab("skills");
@@ -183,11 +177,65 @@ export function App() {
   useEffect(() => {
     const handler = (e: Event) => {
       const v = (e as CustomEvent<string>).detail;
+      if (v === "settings:models") {
+        setSettingsTab("models");
+        setView("settings");
+        setTimeout(fetchSettings, 300);
+        return;
+      }
       if (v === "settings" || v === "skills" || v === "chat" || v === "allchats") handleNavigate(v);
     };
     window.addEventListener("navigate", handler);
     return () => window.removeEventListener("navigate", handler);
-  }, [handleNavigate]);
+  }, [handleNavigate, fetchSettings]);
+
+  // Handle the "Continue + increase limit" button from the iterations-exhausted card
+  const continueCbRef = useRef<(count: number) => void>(() => {});
+  continueCbRef.current = (count: number) => {
+    const newLimit = count * 2;
+    void fetch(`${API_BASE}/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_iterations: newLimit }),
+    }).then(() => {
+      if (view !== "chat") setView("chat");
+      chats.sendMessage("Continue", model, []);
+      void fetchSettings();
+    }).catch(() => {
+      if (view !== "chat") setView("chat");
+      chats.sendMessage("Continue", model, []);
+    });
+  };
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { count } = (e as CustomEvent<{ count: number }>).detail;
+      continueCbRef.current(count);
+    };
+    window.addEventListener("iterations-continue", handler);
+    return () => window.removeEventListener("iterations-continue", handler);
+  }, []);
+
+  const handleSend = (text: string, attachments: AttachmentInfo[], html?: string) => {
+    if (view !== "chat") setView("chat");
+    chats.sendMessage(text, model, attachments, html);
+  };
+
+  const handleModelChange = (newModel: string) => {
+    setModel(newModel);
+    const current = (models as Array<ModelItem & { thinking?: boolean }>).find((m) => m.id === newModel);
+    if (current) setThinkingEnabled(current.thinking !== false);
+    void updateSettings({ default_model: newModel });
+  };
+
+  const handleSignOut = useCallback(async (deleteChats: boolean) => {
+    clearAvatar();
+    setUserName("");
+    if (deleteChats) {
+      for (const s of chats.sessions) chats.deleteChat(s.id);
+    }
+    await updateSettings({ user_name: "", onboarding_completed: false });
+    setOnboardingDone(false);
+  }, [clearAvatar, chats, updateSettings]);
 
   const chatState: AgentChatState = {
     messages: chats.messages,
@@ -212,11 +260,17 @@ export function App() {
       })
     : models;
 
+  const settingsCtx = useMemo<SettingsContextValue>(() => ({
+    model, setModel, theme, userName, thinkingEnabled, setThinkingEnabled,
+    enabledProviders, models, onboardingDone, updateSettings, refreshSettings: fetchSettings,
+  }), [model, theme, userName, thinkingEnabled, enabledProviders, models, onboardingDone, updateSettings, fetchSettings]);
+
   const sideW = sidebarCollapsed ? 44 : 240;
   const rightW = view === "chat" && panelOpen ? panelWidth : 0;
   const gridCols = `${sideW}px 1fr ${rightW}px`;
 
   return (
+    <SettingsContext.Provider value={settingsCtx}>
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <GlobalDropZone />
       {onboardingDone === false && (
@@ -233,20 +287,24 @@ export function App() {
           onSwitch={chats.switchChat}
           onDelete={chats.deleteChat}
           onRename={chats.renameChat}
+          onPin={chats.pinChat}
           activeView={view}
           onNavigate={handleNavigate}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((v) => !v)}
           userName={userName}
+          avatarUrl={avatarUrl}
         />
 
         <ChatView
+          activeId={chats.activeId}
           state={chatState}
           chatTitle={shortTitle}
           dirSlug={chats.activeDirSlug}
           onSend={handleSend}
           onStop={chats.abort}
           onRetry={chats.retry}
+          onEdit={chats.editMessage}
           onSwitchVariant={chats.switchVariant}
           branchNodes={chats.branchNodes}
           onToggleFiles={handleToggleFiles}
@@ -255,6 +313,8 @@ export function App() {
           onModelChange={handleModelChange}
           thinkingEnabled={thinkingEnabled}
           onThinkingToggle={() => setThinkingEnabled((v) => !v)}
+          mcpEnabled={chats.activeMcpEnabled}
+          onToggleMcpServer={chats.toggleMcpServer}
         />
         {panelOpen && !openFilePath && (
           <FilesPanel
@@ -263,11 +323,12 @@ export function App() {
               setGeneralPanelOpen(false);
               setOpenFilePath(path);
             }}
+            onClose={() => setGeneralPanelOpen(false)}
           />
         )}
         {openFilePath && (
           <ArtifactsSidePanel
-            key={`${chats.activeId}||${openFilePath}`}
+            key={chats.activeId}
             messages={chats.messages}
             liveFiles={chats.liveFiles}
             openFilePath={openFilePath}
@@ -278,20 +339,34 @@ export function App() {
       </div>
 
       {view === "allchats" && (
-        <div className="page-overlay">
-          <AllChatsPage
-            sessions={chats.sessions}
-            activeId={chats.activeId}
-            onSwitch={chats.switchChat}
-            onDelete={chats.deleteChat}
-            onRename={chats.renameChat}
-            onBack={() => handleNavigate("chat")}
-          />
+        <div className="ac-modal-overlay" onClick={() => handleNavigate("chat")}>
+          <div className="ac-modal-content" onClick={e => e.stopPropagation()}>
+            <AllChatsPage
+              sessions={chats.sessions}
+              activeId={chats.activeId}
+              onSwitch={chats.switchChat}
+              onDelete={chats.deleteChat}
+              onRename={chats.renameChat}
+              onPin={chats.pinChat}
+              onBack={() => handleNavigate("chat")}
+            />
+          </div>
         </div>
       )}
       {view === "settings" && (
         <div className="page-overlay">
-          <SettingsPanel onClose={() => handleNavigate("chat")} initialTab={settingsTab} />
+          <SettingsPanel
+            onClose={() => handleNavigate("chat")}
+            initialTab={settingsTab}
+            avatarUrl={avatarUrl}
+            setAvatarFromFile={setAvatarFromFile}
+            clearAvatar={clearAvatar}
+            onSignOut={handleSignOut}
+            onStartGhostChat={() => {
+              handleNavigate("chat");
+              chats.startGhostChat();
+            }}
+          />
         </div>
       )}
       {wslWarning && (
@@ -314,5 +389,6 @@ export function App() {
         </div>
       )}
     </div>
+    </SettingsContext.Provider>
   );
 }

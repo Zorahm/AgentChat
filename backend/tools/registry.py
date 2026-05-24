@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from tools.base import BaseTool
@@ -33,7 +34,7 @@ class ToolRegistry:
         """Produce the list of OpenAI-compatible tool dicts for LiteLLM."""
         return [tool.get_definition().model_dump() for tool in self._tools.values()]
 
-    async def execute(self, name: str, arguments: dict[str, Any]) -> str:
+    async def execute(self, name: str, arguments: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Execute a registered tool by name with keyword arguments."""
         tool = self._tools.get(name)
         if tool is None:
@@ -42,3 +43,15 @@ class ToolRegistry:
             return await tool.execute(**arguments)
         except TypeError as e:
             return f"Error: invalid arguments for '{name}' — {e}"
+
+    def get_skill_md_path(self, skill_name: str) -> Path | None:
+        """Return the absolute path to a skill's SKILL.md, or None."""
+        from tools.read_skill import ReadSkillTool
+
+        tool = self._tools.get("read_skill")
+        if not isinstance(tool, ReadSkillTool):
+            return None
+        entry = tool._reader.get(skill_name)
+        if entry is None:
+            return None
+        return entry.path / "SKILL.md"

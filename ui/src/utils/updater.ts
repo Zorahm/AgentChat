@@ -57,12 +57,3 @@ export async function checkForUpdates(
     return { state: "error", message };
   }
 }
-
-export function isTauri(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    ("__TAURI_INTERNALS__" in window ||
-      "isTauri" in window ||
-      "__TAURI__" in window)
-  );
-}

@@ -46,3 +46,4 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+.DEV (DO NOT COMMIT)/

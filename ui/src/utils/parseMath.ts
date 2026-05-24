@@ -94,7 +94,7 @@ export function extractMath(text: string): ExtractResult {
 
 function findInlineEnd(text: string, start: number): number {
   const after = text[start + 1];
-  if (!after || /\s/.test(after) || /\d/.test(after)) return -1;
+  if (!after || /\s/.test(after)) return -1;
 
   const n = text.length;
   let j = start + 1;

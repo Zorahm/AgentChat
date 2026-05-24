@@ -32,7 +32,7 @@ export function parseCodeBlocks(html: string): ContentSegment[] {
     if (before) segments.push({ type: "html", html: before });
 
     const lang = m[1] ?? "text";
-    const code = unescapeHtml(m[2] ?? "");
+    const code = unescapeHtml(m[2] ?? "").trim();
     segments.push({ type: "code", language: lang, code });
 
     lastIndex = PRE_RE.lastIndex;

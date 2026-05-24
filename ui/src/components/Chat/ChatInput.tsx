@@ -7,6 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
+import { MCPChip } from "./MCPChip";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText } from "../../utils/mentions";
 import { MentionNodeView } from "./MentionNodeView";
@@ -26,6 +27,8 @@ interface ChatInputProps {
   fillText?: string;
   onFillTextConsumed?: () => void;
   dirSlug?: string | null;
+  mcpEnabled?: string[];
+  onToggleMcpServer?: (serverId: string) => void;
 }
 
 interface PendingFile {
@@ -44,12 +47,16 @@ interface PendingFile {
 let _fid = 1;
 const nextFid = () => String(_fid++);
 
+/** Characters above which pasted/typed text becomes a .txt file attachment. */
+const LARGE_TEXT_CHARS = 20_000;
+
 export function ChatInput({
   onSend, onStop, disabled, isStreaming,
   models, model, onModelChange, thinkingEnabled, onThinkingToggle,
   placeholder = "Message…",
   fillText, onFillTextConsumed,
   dirSlug,
+  mcpEnabled, onToggleMcpServer,
 }: ChatInputProps) {
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -66,17 +73,33 @@ export function ChatInput({
   const handleSend = useCallback(async () => {
     if (!editorRef.current) return;
     const html = editorRef.current.getHTML();
-    const text = extractText(editorRef.current.getJSON());
-    if ((!text.trim() && pendingFiles.length === 0) || disabled) return;
+    const rawText = extractText(editorRef.current.getJSON());
+    if ((!rawText.trim() && pendingFiles.length === 0) || disabled) return;
 
-    // Upload everything that isn't already on disk. Text files (.txt/.md) are
-    // skipped because their `content` is read inline. Images go through too —
-    // the dataUrl is for vision blocks, but the file itself must also live in
-    // chats/<slug>/uploads/ so the model can re-read or transform it via bash.
-    const needUpload = pendingFiles.filter(
-      (pf) => !pf.content && !pf.uploading && !pf.uploadedPath
+    // ── Auto-convert large text to a .txt file attachment ─────────────────
+    // content=null ensures the backend references it by path (read_file),
+    // rather than inlining it into the model's context.
+    let sendText = rawText;
+    let sendHtml = html;
+    let basePending = pendingFiles;
+    if (rawText.trim().length > LARGE_TEXT_CHARS) {
+      const body = rawText.trim();
+      const fileName = `text_${Date.now()}.txt`;
+      const file = new File([body], fileName, { type: "text/plain" });
+      basePending = [{
+        id: nextFid(), file, name: fileName, size: file.size,
+        type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
+      }, ...pendingFiles];
+      sendText = "";
+      sendHtml = "";
+    }
+    // ── end auto-convert ───────────────────────────────────────────────────
+
+    // Upload ALL files to disk so every attachment has a server path.
+    const needUpload = basePending.filter(
+      (pf) => !pf.uploading && !pf.uploadedPath
     );
-    const finalFiles = [...pendingFiles];
+    const finalFiles = [...basePending];
 
     if (needUpload.length > 0) {
       setPendingFiles((prev) =>
@@ -99,7 +122,9 @@ export function ChatInput({
             if (idx >= 0) {
               finalFiles[idx] = {
                 ...finalFiles[idx]!,
-                content: up.content ?? finalFiles[idx]!.content,
+                content: (finalFiles[idx]!.content === null && finalFiles[idx]!.type === "text/plain")
+                  ? null
+                  : (up.content ?? finalFiles[idx]!.content),
                 uploading: false,
                 uploadedPath: up.path,
               };
@@ -120,7 +145,7 @@ export function ChatInput({
         data_url: pf.dataUrl,
       }));
 
-    onSend(text.trim() || "(attached files)", attachments, html.trim());
+    onSend(sendText.trim() || "(attached files)", attachments, sendHtml.trim() || undefined);
     editorRef.current.commands.clearContent();
     setTextLen(0);
     setPendingFiles([]);
@@ -137,6 +162,47 @@ export function ChatInput({
     },
   });
 
+  // Ref pattern keeps the closure current without re-creating the editor on each render.
+  const handlePasteRef = useRef<(view: unknown, event: ClipboardEvent) => boolean>(() => false);
+  handlePasteRef.current = (_view, event) => {
+    const plainText = event.clipboardData?.getData("text/plain") ?? "";
+    if (plainText.length > LARGE_TEXT_CHARS) {
+      const fileName = `pasted_${Date.now()}.txt`;
+      const file = new File([plainText], fileName, { type: "text/plain" });
+      setPendingFiles((prev) => [...prev, {
+        id: nextFid(), file, name: fileName, size: file.size,
+        type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
+      }]);
+      return true; // tells ProseMirror: handled, don't insert
+    }
+    const items = event.clipboardData?.items;
+    if (items) {
+      let handled = false;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item?.type.startsWith("image/")) {
+          const blob = item.getAsFile();
+          if (!blob) continue;
+          const name = `pasted_${Date.now()}.png`;
+          const reader = new FileReader();
+          reader.onload = () => {
+            setPendingFiles((prev) => [...prev, {
+              id: nextFid(),
+              file: new File([blob], name, { type: blob.type }),
+              name, size: blob.size, type: blob.type,
+              content: null, dataUrl: reader.result as string,
+              uploading: false, error: null,
+            }]);
+          };
+          reader.readAsDataURL(blob);
+          handled = true;
+        }
+      }
+      if (handled) return true;
+    }
+    return false;
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false, blockquote: false }),
@@ -147,6 +213,7 @@ export function ChatInput({
     ],
     editorProps: {
       attributes: { class: "tiptap-editor", "data-placeholder": placeholder },
+      handlePaste: (view, event) => handlePasteRef.current(view, event),
     },
     onUpdate: ({ editor: ed }) => {
       setTextLen(ed.getText().length);
@@ -179,45 +246,6 @@ export function ChatInput({
     setTextLen(fillText.length);
     onFillTextConsumed?.();
   }, [fillText, editor, onFillTextConsumed]);
-
-  /* ── paste (Ctrl+V images) ────────────────── */
-
-  useEffect(() => {
-    if (!editor) return;
-    const el = editor.view.dom;
-    const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item && item.type.startsWith("image/")) {
-          e.preventDefault();
-          const blob = item.getAsFile();
-          if (!blob) continue;
-
-          const name = `pasted_${Date.now()}.png`;
-          const reader = new FileReader();
-          reader.onload = () => {
-            setPendingFiles((prev) => [...prev, {
-              id: nextFid(),
-              file: new File([blob], name, { type: blob.type }),
-              name,
-              size: blob.size,
-              type: blob.type,
-              content: null,
-              dataUrl: reader.result as string,
-              uploading: false,
-              error: null,
-            }]);
-          };
-          reader.readAsDataURL(blob);
-        }
-      }
-    };
-    el.addEventListener("paste", onPaste);
-    return () => el.removeEventListener("paste", onPaste);
-  }, [editor]);
 
   /* ── file attach ──────────────────────────── */
 
@@ -397,6 +425,12 @@ export function ChatInput({
           </div>
 
           <div className="composer-right">
+            {onToggleMcpServer && (
+              <MCPChip
+                enabledIds={mcpEnabled ?? []}
+                onToggle={onToggleMcpServer}
+              />
+            )}
             <ModelSelector
               models={models}
               model={model}
@@ -417,9 +451,6 @@ export function ChatInput({
             )}
           </div>
         </div>
-      </div>
-      <div className="composer-hint">
-        <kbd>Enter</kbd> — отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> — новая строка
       </div>
     </div>
   );

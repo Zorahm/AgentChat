@@ -18,16 +18,24 @@ from typing import Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT 'New chat',
-    dir_slug    TEXT NOT NULL DEFAULT '',
-    created_at  INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL,
-    root_json   TEXT NOT NULL DEFAULT '[]'
+    id                TEXT PRIMARY KEY,
+    title             TEXT NOT NULL DEFAULT 'New chat',
+    dir_slug          TEXT NOT NULL DEFAULT '',
+    created_at        INTEGER NOT NULL,
+    updated_at        INTEGER NOT NULL,
+    root_json         TEXT NOT NULL DEFAULT '[]',
+    mcp_enabled_json  TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at DESC);
 """
+
+# Per-version ALTER statements for in-place migration on existing DBs.
+# Each entry is tried; SQLite errors with "duplicate column name" are
+# swallowed since they just mean the migration already ran.
+_MIGRATIONS: tuple[str, ...] = (
+    "ALTER TABLE chats ADD COLUMN mcp_enabled_json TEXT NOT NULL DEFAULT '[]'",
+)
 
 
 def _now_ms() -> int:
@@ -58,6 +66,12 @@ class ChatStore:
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(SCHEMA)
+        for stmt in _MIGRATIONS:
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError:
+                # Column already exists from a previous run — skip.
+                pass
 
     # ------------------------------------------------------------------
     # public API
@@ -76,7 +90,7 @@ class ChatStore:
         """Return the full chat including parsed root tree."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, title, dir_slug, created_at, updated_at, root_json "
+                "SELECT id, title, dir_slug, created_at, updated_at, root_json, mcp_enabled_json "
                 "FROM chats WHERE id = ?",
                 (chat_id,),
             ).fetchone()
@@ -87,34 +101,12 @@ class ChatStore:
             out["root"] = json.loads(out.pop("root_json") or "[]")
         except json.JSONDecodeError:
             out["root"] = []
+        try:
+            mcp_enabled = json.loads(out.pop("mcp_enabled_json") or "[]")
+        except json.JSONDecodeError:
+            mcp_enabled = []
+        out["mcp_enabled"] = mcp_enabled if isinstance(mcp_enabled, list) else []
         return out
-
-    def create_chat(
-        self,
-        chat_id: str,
-        title: str,
-        dir_slug: str,
-        root: list[Any] | None = None,
-        created_at: int | None = None,
-    ) -> dict[str, Any]:
-        """Insert a new chat. Idempotent on chat_id (raises on conflict)."""
-        now = _now_ms()
-        ts = created_at if created_at is not None else now
-        root_blob = json.dumps(root or [], ensure_ascii=False)
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO chats (id, title, dir_slug, created_at, updated_at, root_json) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (chat_id, title, dir_slug, ts, now, root_blob),
-            )
-        return {
-            "id": chat_id,
-            "title": title,
-            "dir_slug": dir_slug,
-            "created_at": ts,
-            "updated_at": now,
-            "root": root or [],
-        }
 
     def update_chat(
         self,
@@ -122,8 +114,9 @@ class ChatStore:
         title: str | None = None,
         dir_slug: str | None = None,
         root: list[Any] | None = None,
+        mcp_enabled: list[str] | None = None,
     ) -> dict[str, Any] | None:
-        """Patch any of title / dir_slug / root. Touch updated_at."""
+        """Patch any of title / dir_slug / root / mcp_enabled. Touch updated_at."""
         sets: list[str] = []
         params: list[Any] = []
         if title is not None:
@@ -135,6 +128,9 @@ class ChatStore:
         if root is not None:
             sets.append("root_json = ?")
             params.append(json.dumps(root, ensure_ascii=False))
+        if mcp_enabled is not None:
+            sets.append("mcp_enabled_json = ?")
+            params.append(json.dumps(list(mcp_enabled), ensure_ascii=False))
         if not sets:
             return self.get_chat(chat_id)
 
@@ -156,6 +152,14 @@ class ChatStore:
             cur = self._conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         return cur.rowcount > 0
 
+    def touch_chat(self, chat_id: str) -> None:
+        """Update only the updated_at timestamp — lightweight post-stream save."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE chats SET updated_at = ? WHERE id = ?",
+                (_now_ms(), chat_id),
+            )
+
     def upsert_chat(
         self,
         chat_id: str,
@@ -163,19 +167,22 @@ class ChatStore:
         dir_slug: str,
         root: list[Any] | None = None,
         created_at: int | None = None,
+        mcp_enabled: list[str] | None = None,
     ) -> dict[str, Any]:
         """Insert or replace a chat — used by the migration path."""
         now = _now_ms()
         ts = created_at if created_at is not None else now
         root_blob = json.dumps(root or [], ensure_ascii=False)
+        mcp_blob = json.dumps(list(mcp_enabled or []), ensure_ascii=False)
         with self._lock:
             self._conn.execute(
-                "INSERT INTO chats (id, title, dir_slug, created_at, updated_at, root_json) "
-                "VALUES (?, ?, ?, ?, ?, ?) "
+                "INSERT INTO chats (id, title, dir_slug, created_at, updated_at, root_json, mcp_enabled_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET "
                 "title=excluded.title, dir_slug=excluded.dir_slug, "
-                "updated_at=excluded.updated_at, root_json=excluded.root_json",
-                (chat_id, title, dir_slug, ts, now, root_blob),
+                "updated_at=excluded.updated_at, root_json=excluded.root_json, "
+                "mcp_enabled_json=excluded.mcp_enabled_json",
+                (chat_id, title, dir_slug, ts, now, root_blob, mcp_blob),
             )
         return self.get_chat(chat_id) or {}
 

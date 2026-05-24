@@ -1,7 +1,7 @@
 /** Artifacts side panel — Render / Code tabs, per-artifact navigation. */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { X, ArrowsClockwise, Copy, Eye, Code } from "@phosphor-icons/react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code } from "@phosphor-icons/react";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
@@ -33,7 +33,7 @@ interface Props {
   onResizeStart: (e: React.MouseEvent) => void;
 }
 
-function collectArtifacts(messages: ChatMessage[], liveFiles: LiveFile[]): Artifact[] {
+function collectArtifacts(messages: ChatMessage[]): Artifact[] {
   const seen = new Set<string>();
   const result: Artifact[] = [];
 
@@ -46,29 +46,28 @@ function collectArtifacts(messages: ChatMessage[], liveFiles: LiveFile[]): Artif
 
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
-    // Inline <artifact /> markers — legacy path
     for (const a of parseArtifacts(msg.content).artifacts) push(a);
-    // <file> tag tool calls — the file the model wrote becomes openable
-    for (const tc of msg.toolCalls ?? []) {
-      if (tc.name !== "write_file") continue;
-      const path = String(tc.input?.path ?? "");
-      if (!path) continue;
-      const label = path.split(/[/\\]/).pop() ?? path;
-      push({ type: "file", path, label });
-    }
-  }
-  // In-flight writes that haven't yet been committed to the message
-  for (const lf of liveFiles) {
-    if (!lf.path) continue;
-    const label = lf.path.split(/[/\\]/).pop() ?? lf.path;
-    push({ type: "file", path: lf.path, label });
   }
 
   return result;
 }
 
+/** Paths that were edited via edit_file after their liveFile was created. */
+function editedPaths(messages: ChatMessage[]): Set<string> {
+  const s = new Set<string>();
+  for (const msg of messages) {
+    for (const tc of msg.toolCalls ?? []) {
+      if (tc.name === "edit_file" && tc.status === "success") {
+        const p = String(tc.input?.path ?? "");
+        if (p) s.add(p);
+      }
+    }
+  }
+  return s;
+}
+
 export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose, onResizeStart }: Props) {
-  const artifacts = collectArtifacts(messages, liveFiles);
+  const artifacts = collectArtifacts(messages);
   const artifactsRef = useRef<Artifact[]>([]);
   artifactsRef.current = artifacts;
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -76,24 +75,34 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   const [cache, setCache] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState<Set<string>>(new Set());
 
-  // Single effect handles both cases: openFilePath change and artifacts change (e.g. lazy load).
-  // openFilePath takes priority; falls back to last artifact when not found.
+  // Navigate to the file indicated by openFilePath whenever it changes.
   useEffect(() => {
-    if (artifacts.length === 0) return;
-    if (openFilePath) {
-      const idx = artifactsRef.current.findIndex((a) => a.path === openFilePath);
-      if (idx >= 0) {
-        setSelectedIdx(idx);
-        const ext = openFilePath.split(".").pop()?.toLowerCase() ?? "";
-        setTab(pickDefaultTab(ext));
-        return;
-      }
+    if (!openFilePath || artifacts.length === 0) return;
+    const idx = artifactsRef.current.findIndex((a) => a.path === openFilePath);
+    if (idx >= 0) {
+      setSelectedIdx(idx);
+      setTab(pickDefaultTab(openFilePath.split(".").pop()?.toLowerCase() ?? ""));
     }
-    const idx = artifacts.length - 1;
-    setSelectedIdx(idx);
-    const ext = artifacts[idx]?.path?.split(".").pop()?.toLowerCase() ?? "";
-    setTab(pickDefaultTab(ext));
-  }, [openFilePath, artifacts.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFilePath]);
+
+  // Auto-navigate to the newest artifact when the list grows (e.g. a new file
+  // is written or edited). Skip on the initial mount — at that point we rely
+  // on the openFilePath effect above to position correctly.
+  const prevArtifactCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevArtifactCountRef.current === null) {
+      prevArtifactCountRef.current = artifacts.length;
+      return;
+    }
+    if (artifacts.length > prevArtifactCountRef.current) {
+      const idx = artifacts.length - 1;
+      setSelectedIdx(idx);
+      const ext = artifactsRef.current[idx]?.path?.split(".").pop()?.toLowerCase() ?? "";
+      setTab(pickDefaultTab(ext));
+    }
+    prevArtifactCountRef.current = artifacts.length;
+  }, [artifacts.length]);
 
   const selected = artifacts[selectedIdx] ?? null;
   const activeLive = selected?.path
@@ -101,26 +110,27 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     : undefined;
   const isWritingSelected = !!activeLive;
 
+  // Paths touched by a completed edit_file — their liveFile content is stale.
+  const edited = useMemo(() => editedPaths(messages), [messages]);
+
   const getContent = useCallback(
     (art: Artifact | null): string | null => {
       if (!art) return null;
       if (!art.path) return (art as Record<string, string>)["content"] ?? null;
-      // While a file is still being streamed in, deliberately surface NO content
-      // so the panel stays light and the user can close it without fighting
-      // re-renders. The inline preview under the tool call shows the live stream.
       const lf = liveFiles.find((f) => f.path === art.path);
+      // Still streaming — no content yet.
       if (lf && !lf.done) return null;
-      if (lf && lf.done) return lf.content;
+      // Done liveFile, but if the file was edited since writing, skip stale liveFile
+      // content and fall through to the cache (which holds the post-edit bytes).
+      if (lf && lf.done && !edited.has(art.path)) return lf.content;
       return cache[art.path] ?? null;
     },
-    [liveFiles, cache],
+    [liveFiles, cache, edited],
   );
 
   useEffect(() => {
     if (!selected?.path) return;
     const path = selected.path;
-    // Don't fetch from disk while the write is still in flight — the file
-    // either doesn't exist yet or holds stale bytes.
     if (liveFiles.some((f) => f.path === path && !f.done)) return;
     if (cache[path] !== undefined) return;
     if (loading.has(path)) return;
@@ -139,8 +149,8 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
       );
   }, [selected, liveFiles, cache, loading]);
 
-  // When a live file finishes writing, drop its cached entry (if any) so the
-  // next render re-fetches the freshly-written bytes from disk.
+  // When a live file finishes writing, drop its cached entry so the next
+  // render re-fetches the freshly-written bytes from disk.
   const liveDoneKey = liveFiles
     .filter((f) => f.done)
     .map((f) => f.path)
@@ -155,6 +165,31 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveDoneKey]);
 
+  // When edit_file completes, evict the cache for those paths so the panel
+  // re-fetches the updated bytes from disk automatically.
+  const editDoneKey = [...edited].sort().join("|");
+  useEffect(() => {
+    if (!editDoneKey) return;
+    setCache((c) => {
+      const next = { ...c };
+      for (const p of editDoneKey.split("|")) if (p) delete next[p];
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editDoneKey]);
+
+  const [dropOpen, setDropOpen] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setDropOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [dropOpen]);
+
   const refresh = useCallback(() => {
     if (!selected?.path) return;
     const path = selected.path;
@@ -167,9 +202,26 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
 
   const content = getContent(selected);
   const isLoading = !!(selected?.path && loading.has(selected.path));
-
   const copy = () => {
     if (content !== null) navigator.clipboard.writeText(content).catch(() => {});
+    setDropOpen(false);
+  };
+
+  const download = async () => {
+    if (!filePath || !fileName) return;
+    try {
+      const res = await fetch(`${API_BASE}/files/serve?path=${encodeURIComponent(filePath)}`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently ignore — download is best-effort
+    }
   };
 
   const filePath = selected?.path ?? "";
@@ -220,45 +272,43 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
         </div>
 
         <div className="ap-head-right">
-          <button
-            className="ap-copy-btn"
-            onClick={copy}
-            disabled={content === null}
-            title="Copy to clipboard"
-          >
-            <Copy size={14} />
-            <span>Copy</span>
-          </button>
+          <div className="ap-drop-wrap" ref={dropRef}>
+            <div className="ap-split-btn">
+              <button
+                className="ap-split-btn__main"
+                onClick={download}
+                disabled={content === null}
+                title="Download"
+              >
+                <DownloadSimple size={14} />
+                <span>Download</span>
+              </button>
+              <button
+                className="ap-split-btn__arrow"
+                onClick={() => setDropOpen((o) => !o)}
+                disabled={content === null}
+                title="More"
+              >
+                <CaretDown size={10} />
+              </button>
+            </div>
+            {dropOpen && (
+              <div className="ap-drop-menu">
+                <button className="ap-drop-item" onClick={copy}>
+                  <Copy size={13} />
+                  Copy
+                </button>
+              </div>
+            )}
+          </div>
           <button className="ap-icon-btn" onClick={refresh} title="Refresh">
-            <ArrowsClockwise size={15} />
+            <ArrowClockwise size={15} />
           </button>
           <button className="ap-icon-btn ap-icon-btn--close" onClick={onClose} title="Close">
             <X size={15} />
           </button>
         </div>
       </div>
-
-      {artifacts.length > 1 && (
-        <div className="art-file-tabs">
-          {artifacts.map((a, i) => {
-            const name = a.path?.split("/").pop() ?? a.label ?? `artifact ${i + 1}`;
-            return (
-              <div
-                key={i}
-                className={`art-file-tab${i === selectedIdx ? " active" : ""}`}
-                onClick={() => {
-                  setSelectedIdx(i);
-                  const e = a.path?.split(".").pop()?.toLowerCase() ?? "";
-                  setTab(pickDefaultTab(e));
-                }}
-                title={a.path}
-              >
-                {name}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       <div className="art-content">
         {isWritingSelected && (

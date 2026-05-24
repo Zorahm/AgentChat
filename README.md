@@ -6,11 +6,11 @@ Desktop AI chat with an agentic loop. Tauri shell, Python backend, LiteLLM provi
 
 | Layer | Tech |
 |---|---|
-| Desktop shell | Tauri 1.x (Rust) |
+| Desktop shell | Tauri 2.x (Rust) |
 | UI | React 18 + TypeScript + Vite |
 | Backend | FastAPI + uvicorn (Python 3.11) |
 | LLM routing | LiteLLM |
-| Skills | JSON manifests + hot-reload via watchdog |
+| Skills | agentskills.io + hot-reload via watchdog |
 
 ## Providers supported
 
@@ -80,17 +80,71 @@ In Settings → Paths, set a custom **Backend URL** pointing to a hosted instanc
 
 ## Project structure
 
+<details>
+<summary>📂 Click to expand</summary>
+
 ```
 AgentChat/
-├── backend/          # FastAPI app, agent loop, tools, LiteLLM client
-│   ├── agent/        # Streaming agent loop, file interceptor
-│   ├── api/          # HTTP routes (chat, settings, skills, models)
-│   ├── llm/          # LiteLLM wrapper + model fetcher
-│   ├── tools/        # bash_tool, read_file, write_file, read_skill
-│   └── skills/       # Skill installer + reader
-├── ui/               # React + TypeScript frontend
-├── src-tauri/        # Tauri shell (Rust)
-├── scripts/          # Build scripts
-├── skills/           # Bundled skills
-└── tests/            # Backend tests
+├── backend/
+│   ├── main.py              # App factory, settings store, startup
+│   ├── run.py               # Uvicorn entry point
+│   ├── api/
+│   │   ├── chat.py          # POST /api/chat — SSE streaming (core)
+│   │   ├── chats.py         # CRUD /api/chats — session persistence
+│   │   ├── settings.py      # GET/PUT /api/settings
+│   │   ├── files.py         # File upload/download
+│   │   ├── skills.py        # Skills install/list/delete
+│   │   ├── wsl.py           # WSL detection & management
+│   │   ├── health.py        # GET /api/system-status
+│   │   └── schemas/         # Pydantic request/response models
+│   ├── agent/
+│   │   ├── loop.py          # AgentLoop — run_stream() is the main path
+│   │   ├── config.py        # AgentConfig dataclass
+│   │   ├── file_tag_interceptor.py  # <file>/<edit> streaming parser
+│   │   └── sandbox.py       # SandboxPolicy — path access control
+│   ├── tools/
+│   │   ├── registry.py      # ToolRegistry — register/execute tools
+│   │   ├── bash_tool.py     # Shell command execution
+│   │   ├── read_file.py     # File reader
+│   │   ├── write_file.py    # File writer (canonical path)
+│   │   └── read_skill.py    # Reads SKILL.md for agent
+│   ├── llm/
+│   │   ├── client.py        # LLMClient — wraps LiteLLM
+│   │   └── models_fetcher.py
+│   ├── store/
+│   │   └── chat_store.py    # SQLite chat storage
+│   └── skills/
+│       ├── reader.py        # Scans SKILL.md files (with timestamp cache)
+│       └── installer.py     # GitHub/archive skill installer
+│
+├── ui/src/
+│   ├── App.tsx              # Root — settings context, layout
+│   ├── hooks/
+│   │   ├── useChats.ts      # Multi-session chat manager (main hook)
+│   │   └── useSSE.ts        # SSE connection helper
+│   ├── contexts/
+│   │   └── SettingsContext.tsx
+│   ├── components/
+│   │   ├── Chat/            # ChatView, ChatInput, MessageBubble, ModelSelector
+│   │   ├── Settings/              # Settings panel
+│   │   │   ├── SettingsPanel.tsx  # Shell (nav, tab routing, state)
+│   │   │   ├── tabs/              # Per-tab components
+│   │   │   │   ├── MainTab.tsx
+│   │   │   │   ├── ProvidersTab.tsx
+│   │   │   │   ├── ModelsTab.tsx
+│   │   │   │   ├── PathsTab.tsx
+│   │   │   │   └── AboutTab.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── AllChatsPage.tsx
+│   │   ├── Skills/          # Skills manager UI
+│   │   ├── Onboarding/      # First-run wizard
+│   │   └── Artifacts/       # File preview panels
+│   ├── types/               # ChatSession, ChatNode, ToolCall, LiveFile
+│   └── utils/               # apiBase, tauri, formatTime, parseArtifacts
+│
+├── src-tauri/               # Tauri shell — Rust
+├── skills/                  # Installed skills directory
+└── tests/
 ```
+
+</details>
