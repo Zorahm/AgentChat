@@ -41,7 +41,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4NzQzRDcwQjc5NTlDRUQKUldUdG5KVzNjRDEwYUsxeFd1UVFnL1hrVFc4Z0laSHpDZkEyTVBQbWFqM2FHRTFIM2wzSW5qYmsK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzMDZFOTk1M0JGMTY2N0YKUldSL1p2RTdsZWtHOCtDKzUyeTNkOHVpd2pDSnUra1I2RUZBQ3JQQzdZM2oydGFUSmRuOU54Y2EK",
       "endpoints": [
         "https://github.com/Zorahm/AgentChat/releases/latest/download/latest.json"
       ],
