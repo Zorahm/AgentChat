@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Atom, Lightning, Desktop, Brain, Code, GithubLogo, Globe, ArrowClockwise, CheckCircle, WarningCircle } from "@phosphor-icons/react";
-import { checkForUpdates, type UpdateStatus } from "../../../utils/updater";
+import { useRef, useState } from "react";
+import { Atom, Lightning, Desktop, Brain, Code, ArrowClockwise, CheckCircle, WarningCircle, X, CloudArrowDown } from "@phosphor-icons/react";
+import { checkForUpdate, installUpdate, type UpdateStatus } from "../../../utils/updater";
 import { isTauri } from "../../../utils/tauri";
 import pkg from "../../../../package.json";
 import avatarZorahm from "../../../assets/avatar-zorahm.png";
@@ -17,56 +17,86 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
     { name: "Python", icon: <Code />, desc: "Агентный цикл, инструменты" },
   ];
 
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle" });
-  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState<UpdateStatus>({ state: "idle" });
+  const dl = useRef({ done: 0, total: 0 });
 
-  const handleCheckUpdate = async () => {
-    if (checking) return;
-    setChecking(true);
-    await checkForUpdates((status) => {
-      setUpdateStatus(status);
-      if (status.state === "latest" || status.state === "error" || status.state === "installing") {
-        setChecking(false);
+  const busy = status.state === "checking" || status.state === "downloading" || status.state === "installing";
+  const cardOpen = status.state !== "idle";
+
+  const handleCheck = async () => {
+    if (busy) return;
+    setStatus({ state: "checking" });
+    setStatus(await checkForUpdate());
+  };
+
+  const handleInstall = async () => {
+    dl.current = { done: 0, total: 0 };
+    await installUpdate((s) => {
+      if (s.state === "downloading") {
+        if (s.total) dl.current.total = s.total;
+        dl.current.done += s.progress;
+        const pct = dl.current.total ? Math.round((dl.current.done / dl.current.total) * 100) : 0;
+        setStatus({ state: "downloading", progress: pct });
+      } else {
+        setStatus(s);
       }
     });
   };
 
-  const renderUpdateStatus = () => {
-    switch (updateStatus.state) {
+  const closeCard = () => setStatus({ state: "idle" });
+
+  const renderUpdateCard = () => {
+    switch (status.state) {
       case "checking":
         return (
-          <div className="st2-update-status">
-            <ArrowClockwise className="spin" /> Проверяю обновления...
+          <div className="st2-update-card">
+            <ArrowClockwise className="spin" />
+            <span className="st2-update-card-msg">Проверяю обновления…</span>
           </div>
         );
       case "available":
         return (
-          <div className="st2-update-status st2-update-available">
-            <WarningCircle /> Доступна версия <b>v{updateStatus.version}</b>
+          <div className="st2-update-card is-available">
+            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <div className="st2-update-card-head">
+              <CloudArrowDown />
+              <span>Доступно обновление</span>
+            </div>
+            <div className="st2-update-card-ver">v{pkg.version} → <b>v{status.version}</b></div>
+            {status.body && <div className="st2-update-card-notes">{status.body}</div>}
+            <button className="st2-btn st2-update-card-go" onClick={handleInstall}>
+              Обновить и перезапустить
+            </button>
           </div>
         );
       case "downloading":
         return (
-          <div className="st2-update-status">
-            <ArrowClockwise className="spin" /> Загрузка обновления...
+          <div className="st2-update-card">
+            <ArrowClockwise className="spin" />
+            <span className="st2-update-card-msg">Загрузка… {status.progress}%</span>
           </div>
         );
       case "installing":
         return (
-          <div className="st2-update-status">
-            <ArrowClockwise className="spin" /> Установка... Перезапустите приложение.
+          <div className="st2-update-card">
+            <ArrowClockwise className="spin" />
+            <span className="st2-update-card-msg">Установка… приложение перезапустится.</span>
           </div>
         );
       case "latest":
         return (
-          <div className="st2-update-status st2-update-latest">
-            <CheckCircle /> Установлена последняя версия
+          <div className="st2-update-card is-latest">
+            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <CheckCircle />
+            <span className="st2-update-card-msg">У вас последняя версия</span>
           </div>
         );
       case "error":
         return (
-          <div className="st2-update-status st2-update-error">
-            <WarningCircle /> {updateStatus.message}
+          <div className="st2-update-card is-error">
+            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <WarningCircle />
+            <span className="st2-update-card-msg">{status.message}</span>
           </div>
         );
       default:
@@ -91,48 +121,6 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
             <span className="st2-about-stack-desc">{s.desc}</span>
           </div>
         ))}
-      </div>
-    </div>
-
-    <div className="st2-section">
-      <h4 style={{ marginBottom: 10 }}>Версия приложения</h4>
-      <div className="st2-about-version">
-        <div className="st2-about-author" style={{ gap: 12 }}>
-          <div style={{ position: "relative", width: 36, height: 36 }}>
-            {ghostClicks >= 5 && (
-              <button 
-                className="st2-ghost-btn revealed"
-                onClick={onStartGhostChat}
-                title="????"
-              >
-                +
-              </button>
-            )}
-            <img 
-              src="/dots.svg" 
-              alt="" 
-              onClick={() => setGhostClicks(c => c + 1)}
-              className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
-              style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }} 
-            />
-          </div>
-          <div>
-            <span className="st2-about-author-name">AgentChat</span>
-            <span className="st2-about-author-meta">v{pkg.version}</span>
-          </div>
-        </div>
-        {isTauri() && (
-          <div className="st2-update-row">
-            <button
-              className="st2-btn st2-btn--ghost"
-              onClick={handleCheckUpdate}
-              disabled={checking}
-            >
-              <ArrowClockwise /> {checking ? "Проверяю..." : "Проверить обновления"}
-            </button>
-            {renderUpdateStatus()}
-          </div>
-        )}
       </div>
     </div>
 
@@ -163,6 +151,42 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
         разобрать проблему — и не улетать в среду разработки. Никакого
         скрытого запуска скриптов, никакой магии терминала. Просто диалог.
       </p>
+    </div>
+
+    <div className="st2-section st2-version-section">
+      <div className="st2-version-row">
+        <div className="st2-about-author" style={{ gap: 12 }}>
+          <div style={{ position: "relative", width: 36, height: 36 }}>
+            {ghostClicks >= 5 && (
+              <button
+                className="st2-ghost-btn revealed"
+                onClick={onStartGhostChat}
+                title="????"
+              >
+                +
+              </button>
+            )}
+            <img
+              src="/dots.svg"
+              alt=""
+              onClick={() => setGhostClicks(c => c + 1)}
+              className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
+              style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }}
+            />
+          </div>
+          <div>
+            <span className="st2-about-author-name">AgentChat</span>
+            <span className="st2-about-author-meta">v{pkg.version}</span>
+          </div>
+        </div>
+        {isTauri() && (
+          <button className="st2-update-btn" onClick={handleCheck} disabled={busy}>
+            <ArrowClockwise className={busy ? "spin" : ""} />
+            {status.state === "checking" ? "Проверяю…" : "Проверить обновления"}
+          </button>
+        )}
+      </div>
+      {isTauri() && cardOpen && renderUpdateCard()}
     </div>
   </>;
 }

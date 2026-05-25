@@ -2,6 +2,7 @@
 
 import { File } from "@phosphor-icons/react";
 import type { Artifact } from "../../types/artifact";
+import { basename } from "../../utils/basename";
 
 interface ArtifactCardProps {
   artifact: Artifact;
@@ -12,7 +13,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
 
   const path = artifact.path ?? "";
   const ext = path.split(".").pop()?.toUpperCase() ?? "";
-  const name = artifact.label ?? path.split(/[/\\]/).pop() ?? path;
+  const name = artifact.label ?? basename(path);
 
   const handleOpen = (e: React.MouseEvent) => {
     e.preventDefault();

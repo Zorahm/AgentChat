@@ -7,6 +7,7 @@ import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
 import { parseArtifacts } from "../../utils/parseArtifacts";
 import { API_BASE } from "../../utils/apiBase";
+import { basename } from "../../utils/basename";
 import { RenderView, CodeView } from "./ArtifactViews";
 
 type ViewTab = "render" | "code";
@@ -225,7 +226,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   };
 
   const filePath = selected?.path ?? "";
-  const fileName = filePath.split("/").pop() ?? selected?.label ?? "artifact";
+  const fileName = filePath ? basename(filePath) : (selected?.label ?? "artifact");
   const ext = filePath.split(".").pop()?.toUpperCase() ?? "";
   const extLower = ext.toLowerCase();
 

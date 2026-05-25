@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LiveFile } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
+import { basename } from "../../utils/basename";
 
 interface FilePreviewPanelProps {
   files: LiveFile[];
@@ -73,13 +74,13 @@ export function FilePreviewPanel({ files, closed, onClose, onOpenFile }: FilePre
   }
 
   const lines = (active?.content ?? "").split("\n");
-  const fileName = active?.path.split("/").pop() ?? active?.path ?? "";
+  const fileName = active ? basename(active.path) : "";
 
   return (
     <aside className="preview">
       <div className="pv-tabs">
         {files.map((f, i) => {
-          const shortName = f.path.split("/").pop() ?? f.path;
+          const shortName = basename(f.path);
           return (
             <div
               key={f.id}

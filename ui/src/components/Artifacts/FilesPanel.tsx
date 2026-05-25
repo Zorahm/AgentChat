@@ -5,6 +5,7 @@ import type { ChatMessage } from "../../types/chat";
 import type { Artifact } from "../../types/artifact";
 import { parseArtifacts } from "../../utils/parseArtifacts";
 import { fileExtIcon } from "../../utils/toolIcons";
+import { basename } from "../../utils/basename";
 
 interface FilesPanelProps {
   messages: ChatMessage[];
@@ -44,7 +45,7 @@ function collectFiles(messages: ChatMessage[]): FileEntry[] {
         if (!a.path) continue;
         if (seen.has(a.path)) continue;
         seen.add(a.path);
-        const name = a.path.split("/").pop() ?? a.path;
+        const name = basename(a.path);
         files.push({
           name,
           path: a.path,

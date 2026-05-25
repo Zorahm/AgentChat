@@ -14,6 +14,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { parseArtifacts } from "../../utils/parseArtifacts";
 import { getLang } from "../../utils/getLang";
+import { basename } from "../../utils/basename";
 import { formatTime } from "../../utils/formatTime";
 import type { LiveFile } from "../../types/artifact";
 import { BookOpen } from "@phosphor-icons/react";
@@ -603,7 +604,7 @@ function BashToolStep({ call }: { call: ToolCall }) {
 
 function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile }) {
   const path = String(call.input?.path ?? "");
-  const fileName = path.split("/").pop() ?? path;
+  const fileName = basename(path);
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const lang = getLang(path);
   const isWriting = !!liveFile && !liveFile.done;
@@ -682,7 +683,7 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
 
 function EditFileStep({ call }: { call: ToolCall }) {
   const path = String(call.input?.path ?? "");
-  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const fileName = basename(path);
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const isEditing = call.status === "running";
   const isError = call.status === "error";
