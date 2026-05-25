@@ -64,7 +64,18 @@ export function ModelSelector({
   thinkingEnabled, onThinkingToggle,
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(true);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  const toggleOpen = () => {
+    if (!open && wrapRef.current) {
+      const rect = wrapRef.current.getBoundingClientRect();
+      // Open downward when there's more room below the pill than above it,
+      // so the composer near the top of the projects page isn't clipped.
+      setDropUp(rect.top > window.innerHeight - rect.bottom);
+    }
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -83,7 +94,7 @@ export function ModelSelector({
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <button
           className="ms-pill"
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           title={model}
         >
           <span className="ms-pill-dot" />
@@ -94,7 +105,7 @@ export function ModelSelector({
       </div>
 
       {open && (
-        <div className="ms-dropdown">
+        <div className={`ms-dropdown${dropUp ? "" : " ms-dropdown--down"}`}>
           {groups.map((g) => (
             <div key={g.provider} className="ms-group">
               <div className="ms-group-label">{g.label}</div>

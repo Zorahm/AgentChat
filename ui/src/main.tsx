@@ -10,6 +10,7 @@ import "./styles/panels.css";
 import "./styles/tiptap.css";
 import "./styles/settings-v2.css";
 import "./styles/onboarding.css";
+import "./styles/projects.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

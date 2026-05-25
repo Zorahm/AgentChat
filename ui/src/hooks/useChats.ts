@@ -38,7 +38,14 @@ export interface UseChatResult {
   liveFiles: LiveFile[];
   isStreaming: boolean;
   error: string | null;
-  newChat: () => void;
+  newChat: (projectId?: string) => void;
+  startProjectChat: (
+    projectId: string,
+    text: string,
+    model?: string,
+    attachments?: AttachmentInfo[],
+    html?: string,
+  ) => void;
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
@@ -291,13 +298,14 @@ function makeDirSlug(): string {
   return `chat-${id}-${ts}`;
 }
 
-function makeSession(): ChatSession {
+function makeSession(projectId?: string): ChatSession {
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     title: "Новый чат",
     root: [],
     createdAt: Date.now(),
     dirSlug: makeDirSlug(),
+    projectId: projectId || undefined,
   };
 }
 
@@ -317,6 +325,7 @@ interface ChatSummaryDTO {
   id: string;
   title: string;
   dir_slug: string;
+  project_id?: string;
   created_at: number;
   updated_at: number;
 }
@@ -332,7 +341,9 @@ function summaryToSession(s: ChatSummaryDTO): ChatSession {
     title: s.title,
     root: [],
     createdAt: s.created_at,
+    updatedAt: s.updated_at,
     dirSlug: s.dir_slug || undefined,
+    projectId: s.project_id || undefined,
   };
 }
 
@@ -342,8 +353,10 @@ function fullToSession(f: ChatFullDTO): ChatSession {
     title: f.title,
     root: migrateTreeNodes(f.root ?? []),
     createdAt: f.created_at,
+    updatedAt: f.updated_at,
     dirSlug: f.dir_slug || undefined,
     mcpEnabledServers: Array.isArray(f.mcp_enabled) ? f.mcp_enabled : [],
+    projectId: f.project_id || undefined,
   };
 }
 
@@ -380,6 +393,7 @@ async function createChatRemote(s: ChatSession): Promise<ChatSession> {
         root: s.root,
         created_at: s.createdAt,
         mcp_enabled: s.mcpEnabledServers ?? [],
+        project_id: s.projectId ?? "",
       }),
     });
     if (r.ok) return fullToSession(await r.json());
@@ -395,6 +409,7 @@ async function putChatRemote(s: ChatSession): Promise<void> {
       title: s.title,
       root: s.root,
       mcp_enabled: s.mcpEnabledServers ?? [],
+      project_id: s.projectId ?? "",
     };
     // Never overwrite a non-empty dir_slug with an empty string — this
     // would break WSL folder cleanup on deletion.
@@ -441,6 +456,7 @@ function snapshot(s: ChatSession): string {
     d: s.dirSlug ?? "",
     r: s.root,
     m: s.mcpEnabledServers ?? [],
+    p: s.projectId ?? "",
   });
 }
 
@@ -820,6 +836,14 @@ export function useChats(): UseChatResult {
   const lastSavedRef = useRef<Map<string, string>>(new Map());
   /** Per-session pending save timer. */
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /** First message queued by startProjectChat, fired once the new chat is active. */
+  const pendingSendRef = useRef<{
+    sessionId: string;
+    content: string;
+    model?: string;
+    attachments?: AttachmentInfo[];
+    html?: string;
+  } | null>(null);
 
   // ── Initial load + one-shot migration ─────────────────────────────────
   useEffect(() => {
@@ -1134,6 +1158,7 @@ export function useChats(): UseChatResult {
           chat_dir_slug: currentSession.dirSlug,
           chat_id: sid,
           mcp_enabled_servers: currentSession.mcpEnabledServers ?? [],
+          project_id: currentSession.projectId ?? undefined,
         },
         handler,
         (err: Error) => {
@@ -1146,6 +1171,16 @@ export function useChats(): UseChatResult {
     },
     [activeId, sessions, isStreaming, makeEventHandler],
   );
+
+  // Fire a queued project-chat first message once its session is active and
+  // present in state. Guarded + cleared immediately so it sends exactly once.
+  useEffect(() => {
+    const pending = pendingSendRef.current;
+    if (!pending || activeId !== pending.sessionId) return;
+    if (!sessions.some((s) => s.id === pending.sessionId)) return;
+    pendingSendRef.current = null;
+    sendMessage(pending.content, pending.model, pending.attachments, pending.html);
+  }, [activeId, sessions, sendMessage]);
 
   const retry = useCallback(() => {
     if (isStreaming || !activeSession) return;
@@ -1203,6 +1238,7 @@ export function useChats(): UseChatResult {
         chat_dir_slug: activeSession.dirSlug,
         chat_id: sid,
         mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
+        project_id: activeSession.projectId ?? undefined,
       },
       handler,
       (err: Error) => {
@@ -1283,6 +1319,7 @@ export function useChats(): UseChatResult {
           chat_dir_slug: activeSession.dirSlug,
           chat_id: sid,
           mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
+          project_id: activeSession.projectId ?? undefined,
         },
         handler,
         (err: Error) => {
@@ -1341,30 +1378,34 @@ export function useChats(): UseChatResult {
     setIsStreaming(false);
   }, [activeId, activeSession]);
 
-  const newChat = useCallback(() => {
-    // Check if there is ANY empty chat already
-    const existingEmpty = sessions.find((s) => s.root.length === 0 && (s.title === "Новый чат" || s.title === "New chat"));
-    
-    if (existingEmpty) {
-      if (existingEmpty.id === activeId) {
-        // We are already on it, just clear streaming/errors
-        sseRef.current?.close();
-        sseRef.current = null;
-        streamingTargetRef.current = null;
-        setIsStreaming(false);
-        setLiveFiles([]);
-        setError(null);
+  const newChat = useCallback((projectId?: string) => {
+    // For standalone chats, reuse an existing empty standalone chat rather than
+    // piling up blanks. Project chats always start fresh and bound to the project.
+    if (!projectId) {
+      const existingEmpty = sessions.find(
+        (s) => s.root.length === 0 && !s.projectId && (s.title === "Новый чат" || s.title === "New chat"),
+      );
+      if (existingEmpty) {
+        if (existingEmpty.id === activeId) {
+          // We are already on it, just clear streaming/errors
+          sseRef.current?.close();
+          sseRef.current = null;
+          streamingTargetRef.current = null;
+          setIsStreaming(false);
+          setLiveFiles([]);
+          setError(null);
+          return;
+        }
+        // Switch to it
+        switchChat(existingEmpty.id);
         return;
       }
-      // Switch to it
-      switchChat(existingEmpty.id);
-      return;
     }
     sseRef.current?.close();
     sseRef.current = null;
     streamingTargetRef.current = null;
     setIsStreaming(false);
-    const session = makeSession();
+    const session = makeSession(projectId);
     setSessions((prev) => [session, ...prev]);
     setActiveId(session.id);
     setLiveFiles([]);
@@ -1375,6 +1416,35 @@ export function useChats(): UseChatResult {
       lastSavedRef.current.set(session.id, snapshot(session));
     });
   }, [activeId, sessions]);
+
+  /** Create a fresh chat in a project and immediately send its first message.
+   * sendMessage reads activeId/sessions from its closure, so we can't call it
+   * synchronously after creation — queue the message and fire it from an effect
+   * once the new session has committed to state and become active. */
+  const startProjectChat = useCallback(
+    (
+      projectId: string,
+      text: string,
+      model?: string,
+      attachments?: AttachmentInfo[],
+      html?: string,
+    ) => {
+      sseRef.current?.close();
+      sseRef.current = null;
+      streamingTargetRef.current = null;
+      setIsStreaming(false);
+      const session = makeSession(projectId);
+      setSessions((prev) => [session, ...prev]);
+      setActiveId(session.id);
+      setLiveFiles([]);
+      setError(null);
+      void createChatRemote(session).then(() => {
+        lastSavedRef.current.set(session.id, snapshot(session));
+      });
+      pendingSendRef.current = { sessionId: session.id, content: text, model, attachments, html };
+    },
+    [],
+  );
 
   const switchChat = useCallback(
     (id: string) => {
@@ -1500,6 +1570,7 @@ export function useChats(): UseChatResult {
     isStreaming,
     error,
     newChat,
+    startProjectChat,
     switchChat,
     deleteChat,
     renameChat,

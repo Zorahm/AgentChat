@@ -1,13 +1,13 @@
 /** Chat input — TipTap editor with @mentions + file attachments. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, X, Plus } from "@phosphor-icons/react";
+import { ArrowUp, X, Plus, Paperclip } from "@phosphor-icons/react";
 import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
-import { MCPChip } from "./MCPChip";
+import { McpMenuSection } from "./MCPChip";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText } from "../../utils/mentions";
 import { MentionNodeView } from "./MentionNodeView";
@@ -60,7 +60,10 @@ export function ChatInput({
 }: ChatInputProps) {
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [plusUp, setPlusUp] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const plusRef = useRef<HTMLDivElement>(null);
   // Bind the mention popup's "attach file" action to our file input.
   const mentionSuggestion = useRef(
     buildMentionSuggestion({
@@ -292,7 +295,31 @@ export function ChatInput({
     setPendingFiles((prev) => [...prev, ...newPending]);
   }, []);
 
-  const handleFileAttach = useCallback(() => fileInputRef.current?.click(), []);
+  const togglePlus = useCallback(() => {
+    setPlusOpen((v) => {
+      if (!v && plusRef.current) {
+        const rect = plusRef.current.getBoundingClientRect();
+        // Open downward when there's more room below (composer near the top of
+        // the projects page); upward in chat where the composer sits at the bottom.
+        setPlusUp(rect.top > window.innerHeight - rect.bottom);
+      }
+      return !v;
+    });
+  }, []);
+
+  const openFilePicker = useCallback(() => {
+    setPlusOpen(false);
+    fileInputRef.current?.click();
+  }, []);
+
+  useEffect(() => {
+    if (!plusOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (plusRef.current && !plusRef.current.contains(e.target as Node)) setPlusOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [plusOpen]);
 
   const handleFileSelected = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -413,7 +440,22 @@ export function ChatInput({
 
         <div className="composer-bar">
           <div className="composer-left">
-            <button className="icon-btn" title="Attach files" onClick={handleFileAttach}><Plus /></button>
+            <div className="composer-plus" ref={plusRef}>
+              <button className="icon-btn" title="Добавить" onClick={togglePlus}><Plus /></button>
+              {plusOpen && (
+                <div className={`composer-plus-menu${plusUp ? "" : " composer-plus-menu--down"}`}>
+                  <button className="cpm-item" onClick={openFilePicker}>
+                    <Paperclip /> <span>Прикрепить файлы</span>
+                  </button>
+                  {onToggleMcpServer && (
+                    <McpMenuSection
+                      enabledIds={mcpEnabled ?? []}
+                      onToggle={onToggleMcpServer}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
             <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleFileSelected} />
 
             {(hasText || pendingFiles.length > 0) && (
@@ -425,12 +467,6 @@ export function ChatInput({
           </div>
 
           <div className="composer-right">
-            {onToggleMcpServer && (
-              <MCPChip
-                enabledIds={mcpEnabled ?? []}
-                onToggle={onToggleMcpServer}
-              />
-            )}
             <ModelSelector
               models={models}
               model={model}

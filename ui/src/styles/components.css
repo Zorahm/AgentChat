@@ -241,6 +241,11 @@ body.resizing { cursor: ew-resize !important; user-select: none; }
   display: block; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; line-height: 1.3;
 }
+.sb-chat-titlewrap {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.sb-chat-titlewrap .sb-chat-title { min-width: 0; }
+.sb-chat-proj-icon { flex-shrink: 0; color: var(--accent); font-size: 14px; }
 .sb-chat-item.has-actions .sb-chat-title { padding-right: 48px; }
 .sb-chat-item small {
   display: block; font-family: var(--font-mono); font-size: 10px;
@@ -1150,6 +1155,10 @@ body.resizing { cursor: ew-resize !important; user-select: none; }
   box-shadow: 0 14px 36px -12px rgba(20,20,18,.20), 0 0 0 1px var(--line);
   overflow: hidden; z-index: 30;
   display: flex; flex-direction: column;
+}
+/* Opens below the pill (used when the composer sits near the top of the page). */
+.ms-dropdown--down {
+  bottom: auto; top: 100%; margin-bottom: 0; margin-top: 6px;
 }
 
 .ms-group { padding: 6px 0; overflow-y: auto; }

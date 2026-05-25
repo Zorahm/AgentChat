@@ -12,6 +12,17 @@ import { RenderView, CodeView } from "./ArtifactViews";
 
 type ViewTab = "render" | "code";
 
+/* Minimal File System Access API shape — not in lib.dom.d.ts. Used for the
+ * native "Save As" dialog (Chromium / WebView2). */
+interface FsWritable {
+  write: (data: Blob) => Promise<void>;
+  close: () => Promise<void>;
+}
+interface FsFileHandle {
+  createWritable: () => Promise<FsWritable>;
+}
+type ShowSaveFilePicker = (opts?: { suggestedName?: string }) => Promise<FsFileHandle>;
+
 function isRenderable(ext: string): boolean {
   return RENDERABLE_EXTS.has(ext);
 }
@@ -210,6 +221,31 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
 
   const download = async () => {
     if (!filePath || !fileName) return;
+    const picker = (window as unknown as { showSaveFilePicker?: ShowSaveFilePicker }).showSaveFilePicker;
+
+    // Native "Save As" dialog when supported — call before any await to keep
+    // the click's user activation. Cancelling the dialog aborts silently.
+    if (picker) {
+      let handle: FsFileHandle;
+      try {
+        handle = await picker({ suggestedName: fileName });
+      } catch {
+        return; // user cancelled
+      }
+      try {
+        const res = await fetch(`${API_BASE}/files/serve?path=${encodeURIComponent(filePath)}`);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } catch {
+        // best-effort
+      }
+      return;
+    }
+
+    // Fallback (no picker support): browser default download.
     try {
       const res = await fetch(`${API_BASE}/files/serve?path=${encodeURIComponent(filePath)}`);
       if (!res.ok) return;
@@ -221,7 +257,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // silently ignore — download is best-effort
+      // best-effort
     }
   };
 

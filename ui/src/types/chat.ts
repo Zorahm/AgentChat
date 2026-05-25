@@ -74,10 +74,14 @@ export interface ChatSession {
   title: string;
   root: ChatNode[];
   createdAt: number;
+  /** Last activity timestamp (ms). Used for "Last message …" labels. */
+  updatedAt?: number;
   /** Working directory slug used by bash_tool: `~/AgentChat/chats/{dirSlug}/`. */
   dirSlug?: string;
   /** Client-side pin flag — stored in localStorage, not synced to backend. */
   pinned?: boolean;
   /** IDs of MCP servers enabled for this chat. Empty = no MCP. */
   mcpEnabledServers?: string[];
+  /** Project this chat belongs to. Empty/undefined = standalone chat. */
+  projectId?: string;
 }

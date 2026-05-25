@@ -11,8 +11,8 @@ interface SidebarProps {
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onPin: (id: string) => void;
-  activeView: "chat" | "skills" | "settings" | "allchats";
-  onNavigate: (view: "chat" | "skills" | "settings" | "allchats") => void;
+  activeView: "chat" | "skills" | "settings" | "allchats" | "projects";
+  onNavigate: (view: "chat" | "skills" | "settings" | "allchats" | "projects") => void;
   collapsed: boolean;
   onToggle: () => void;
   userName: string;
@@ -69,8 +69,11 @@ export function Sidebar({
     localStorage.setItem("aic-chat-order-v1", JSON.stringify(newOrder));
   }, []);
 
+  // All chats show in the sidebar; project chats are marked with a folder glyph.
+  const standalone = useMemo(() => sessions, [sessions]);
+
   const pinned = useMemo(() => {
-    const p = sessions.filter(s => s.pinned);
+    const p = standalone.filter(s => s.pinned);
     p.sort((a, b) => {
       const idxA = orderIds.indexOf(a.id);
       const idxB = orderIds.indexOf(b.id);
@@ -80,10 +83,10 @@ export function Sidebar({
       return b.createdAt - a.createdAt;
     });
     return p;
-  }, [sessions, orderIds]);
+  }, [standalone, orderIds]);
 
   const recent = useMemo(() => {
-    const r = sessions.filter(s => !s.pinned);
+    const r = standalone.filter(s => !s.pinned);
     r.sort((a, b) => {
       const idxA = orderIds.indexOf(a.id);
       const idxB = orderIds.indexOf(b.id);
@@ -93,7 +96,7 @@ export function Sidebar({
       return b.createdAt - a.createdAt;
     });
     return r.slice(0, RECENT_LIMIT);
-  }, [sessions, orderIds]);
+  }, [standalone, orderIds]);
 
   const allDisplayed = useMemo(() => [...pinned, ...recent], [pinned, recent]);
 
@@ -241,6 +244,13 @@ export function Sidebar({
             <Books size={16} />
           </button>
           <button
+            className={`sb-col-btn${activeView === "projects" ? " sb-col-btn--active" : ""}`}
+            onClick={() => onNavigate("projects")}
+            title="Проекты"
+          >
+            <FolderOpen size={16} />
+          </button>
+          <button
             className={`sb-col-btn${activeView === "settings" ? " sb-col-btn--active" : ""}`}
             onClick={() => onNavigate("settings")}
             title="Настройки"
@@ -319,10 +329,12 @@ export function Sidebar({
           <Books />
           <span>Навыки</span>
         </button>
-        <button className="sb-skills-btn sb-files-btn" disabled title="Скоро">
+        <button
+          className={`sb-skills-btn${activeView === "projects" ? " active" : ""}`}
+          onClick={() => onNavigate("projects")}
+        >
           <FolderOpen />
-          <span>Файлы</span>
-          <span className="sb-soon-badge">Скоро</span>
+          <span>Проекты</span>
         </button>
 
         <div className="sb-section-header">
@@ -335,6 +347,7 @@ export function Sidebar({
               key={s.id}
               session={s}
               active={s.id === activeId}
+              isProject={!!s.projectId}
               isDragOver={s.id === dragOverId}
               onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
               onDelete={() => onDelete(s.id)}
@@ -497,6 +510,7 @@ function ConfirmDialog({
 function ChatItem({
   session,
   active,
+  isProject,
   isDragOver,
   onSelect,
   onDelete,
@@ -509,6 +523,7 @@ function ChatItem({
 }: {
   session: ChatSession;
   active: boolean;
+  isProject?: boolean;
   isDragOver?: boolean;
   onSelect: () => void;
   onDelete: () => void;
@@ -604,7 +619,12 @@ function ChatItem({
           </>
         ) : (
           <>
-            <span className="sb-chat-title">{session.title}</span>
+            <span className="sb-chat-titlewrap">
+              {isProject && (
+                <FolderOpen className="sb-chat-proj-icon" weight="duotone" />
+              )}
+              <span className="sb-chat-title">{session.title}</span>
+            </span>
             <button
               className={`sb-pin-btn${session.pinned ? " sb-pin-btn--active" : ""}`}
               onClick={(e) => { e.stopPropagation(); handlePin(); }}

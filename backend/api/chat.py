@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 import litellm
@@ -13,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
+from agent.wsl_exec import wsl_write_bytes
 from api.schemas.chat import AttachmentInfo, ChatRequest
 from llm.client import LLMClient
 from mcp_integration.manager import MCPManager
@@ -225,6 +228,102 @@ def _format_user_content(
     return "\n".join(parts)
 
 
+# Total budget for extracted project-file text injected into the system prompt.
+# Bounds token cost when a project carries many or large documents.
+_PROJECT_TEXT_BUDGET = 60_000
+
+
+def _sandbox_file_path(chat_dir: str, name: str, shell: str) -> str:
+    """Where an un-extracted project file lands inside the chat sandbox."""
+    if shell == "powershell":
+        return f"{chat_dir}\\project_files\\{name}"
+    return f"{chat_dir}/project_files/{name}"
+
+
+async def _sync_unextracted_to_sandbox(
+    files: list[dict[str, Any]], chat_dir: str, shell: str
+) -> None:
+    """Copy project files that couldn't be auto-extracted into the chat sandbox
+    (``project_files/``) so the model can open them with read_file / bash.
+
+    Best-effort: a copy failure just means that one file won't be reachable —
+    the rest of the turn still proceeds.
+    """
+    if not chat_dir:
+        return
+    for f in files:
+        disk_path = f.get("disk_path") or ""
+        if not disk_path:
+            continue
+        try:
+            data = await asyncio.to_thread(Path(disk_path).read_bytes)
+        except OSError:
+            continue
+        target = _sandbox_file_path(chat_dir, f["name"], shell)
+        try:
+            if shell == "powershell":
+                p = Path(target)
+                await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
+                await asyncio.to_thread(p.write_bytes, data)
+            else:
+                await wsl_write_bytes(target, data)
+        except Exception:  # noqa: BLE001 — fallback copy is non-critical
+            continue
+
+
+def _build_project_block(project: dict[str, Any], chat_dir: str, shell: str) -> str:
+    """Render the project's instructions + extracted file text as a system-prompt
+    block. Un-extracted files are listed by their in-sandbox path so the model
+    can open them itself."""
+    name = project.get("name", "")
+    instructions = (project.get("instructions") or "").strip()
+    files = project.get("files", [])
+
+    lines: list[str] = [
+        f"# Проект: {name}",
+        "Этот чат принадлежит проекту. Соблюдай инструкции проекта и опирайся на "
+        "его файлы на протяжении всего диалога.",
+    ]
+    if instructions:
+        lines.append("\n## Инструкции проекта")
+        lines.append(instructions)
+
+    ok_files = [
+        f for f in files
+        if f.get("extract_status") == "ok" and (f.get("extracted_text") or "").strip()
+    ]
+    other_files = [f for f in files if f.get("extract_status") != "ok"]
+
+    if ok_files:
+        lines.append(
+            "\n## Файлы проекта (текст уже извлечён — НЕ открывай их повторно)"
+        )
+        budget = _PROJECT_TEXT_BUDGET
+        for f in ok_files:
+            text = f.get("extracted_text") or ""
+            if budget <= 0:
+                lines.append(f"\n--- {f['name']} ---\n[пропущено: исчерпан лимит контекста]")
+                continue
+            if len(text) > budget:
+                text = text[:budget] + "\n[…усечено]"
+            budget -= len(text)
+            lines.append(f"\n--- {f['name']} ---\n{text}")
+
+    if other_files:
+        lines.append(
+            "\n## Файлы проекта без авто-извлечения (открой сам при необходимости)"
+        )
+        lines.append(
+            "Текст из этих файлов не удалось извлечь автоматически. Они скопированы "
+            "в рабочую папку — прочитай их через read_file или bash_tool:"
+        )
+        for f in other_files:
+            path = _sandbox_file_path(chat_dir, f["name"], shell) if chat_dir else f["name"]
+            lines.append(f"- «{f['name']}» → {path}")
+
+    return "\n".join(lines)
+
+
 @router.post("")
 async def chat(
     request: Request,
@@ -273,16 +372,6 @@ async def chat(
     # Build fresh system prompt (includes current date + artifact instructions)
     system_prompt: str = app_state.system_prompt_factory()
 
-    config = AgentConfig(
-        model=lite_model,
-        system_prompt=system_prompt,
-        api_key=api_key,
-        api_base=api_base,
-        temperature=store.temperature,
-        max_iterations=store.max_iterations,
-        extra_body=extra_body,
-    )
-
     base_registry: ToolRegistry = app_state.tool_registry
     mcp_proxies = await _build_mcp_proxies(
         body.mcp_enabled_servers, store, app_state.mcp_manager
@@ -306,6 +395,32 @@ async def chat(
     active_shell = resolve_active_shell(store.shell_preference)
     home = USER_HOME if active_shell == "powershell" else WSL_USER_HOME
     chat_dir = _resolve_chat_cwd(body.chat_dir_slug, home, shell=active_shell)
+
+    # Project context: prepend the project's instructions + extracted file text
+    # to the system prompt, and copy any un-extracted files into the sandbox so
+    # the model can still open them by hand. Done after chat_dir is known.
+    if body.project_id:
+        project_ctx = app_state.project_store.get_project_context(body.project_id)
+        if project_ctx:
+            unextracted = [
+                f for f in project_ctx.get("files", [])
+                if f.get("extract_status") != "ok"
+            ]
+            await _sync_unextracted_to_sandbox(unextracted, chat_dir, active_shell)
+            block = _build_project_block(project_ctx, chat_dir, active_shell)
+            if block:
+                system_prompt = f"{system_prompt}\n\n{block}"
+
+    config = AgentConfig(
+        model=lite_model,
+        system_prompt=system_prompt,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=store.temperature,
+        max_iterations=store.max_iterations,
+        extra_body=extra_body,
+    )
+
     policy = SandboxPolicy(
         chat_dir=chat_dir,
         blocked_read_prefixes=get_blocked_read_prefixes(),

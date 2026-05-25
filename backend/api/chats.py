@@ -140,6 +140,7 @@ class ChatSummary(BaseModel):
     id: str
     title: str
     dir_slug: str
+    project_id: str = ""
     created_at: int
     updated_at: int
 
@@ -160,6 +161,7 @@ class ChatCreate(BaseModel):
     root: list[Any] = Field(default_factory=list)
     created_at: int | None = None
     mcp_enabled: list[str] = Field(default_factory=list)
+    project_id: str = ""
 
 
 class ChatUpdate(BaseModel):
@@ -169,6 +171,7 @@ class ChatUpdate(BaseModel):
     dir_slug: str | None = None
     root: list[Any] | None = None
     mcp_enabled: list[str] | None = None
+    project_id: str | None = None
 
 
 @router.get("", response_model=list[ChatSummary])
@@ -266,6 +269,7 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
         root=body.root,
         created_at=body.created_at,
         mcp_enabled=body.mcp_enabled,
+        project_id=body.project_id,
     )
 
     # Fire-and-forget: init the chat dir + npm init -y.
@@ -288,6 +292,7 @@ async def update_chat(request: Request, chat_id: str, body: ChatUpdate) -> ChatF
         dir_slug=body.dir_slug,
         root=body.root,
         mcp_enabled=body.mcp_enabled,
+        project_id=body.project_id,
     )
     if row is None:
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")

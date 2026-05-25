@@ -10,6 +10,7 @@ import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
+import { ProjectsView } from "./components/Projects/ProjectsView";
 import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
@@ -22,7 +23,7 @@ const PANEL_DEFAULT = 600;
 
 export function App() {
   const chats = useChats();
-  const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects">("chat");
   const [settingsTab, setSettingsTab] = useState<NavTab>("main");
   const [model, setModel] = useState("openai/gpt-4o");
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -162,7 +163,7 @@ export function App() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
-  const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats") => {
+  const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects") => {
     if (v === "skills") {
       setSettingsTab("skills");
       setView("settings");
@@ -183,7 +184,7 @@ export function App() {
         setTimeout(fetchSettings, 300);
         return;
       }
-      if (v === "settings" || v === "skills" || v === "chat" || v === "allchats") handleNavigate(v);
+      if (v === "settings" || v === "skills" || v === "chat" || v === "allchats" || v === "projects") handleNavigate(v);
     };
     window.addEventListener("navigate", handler);
     return () => window.removeEventListener("navigate", handler);
@@ -296,27 +297,45 @@ export function App() {
           avatarUrl={avatarUrl}
         />
 
-        <ChatView
-          activeId={chats.activeId}
-          state={chatState}
-          chatTitle={shortTitle}
-          dirSlug={chats.activeDirSlug}
-          onSend={handleSend}
-          onStop={chats.abort}
-          onRetry={chats.retry}
-          onEdit={chats.editMessage}
-          onSwitchVariant={chats.switchVariant}
-          branchNodes={chats.branchNodes}
-          onToggleFiles={handleToggleFiles}
-          models={visibleModels}
-          model={model}
-          onModelChange={handleModelChange}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingToggle={() => setThinkingEnabled((v) => !v)}
-          mcpEnabled={chats.activeMcpEnabled}
-          onToggleMcpServer={chats.toggleMcpServer}
-        />
-        {panelOpen && !openFilePath && (
+        {view === "projects" ? (
+          <ProjectsView
+            sessions={chats.sessions}
+            models={visibleModels}
+            model={model}
+            onModelChange={handleModelChange}
+            thinkingEnabled={thinkingEnabled}
+            onThinkingToggle={() => setThinkingEnabled((v) => !v)}
+            onClose={() => handleNavigate("chat")}
+            onOpenChat={(id) => { chats.switchChat(id); handleNavigate("chat"); }}
+            onStartChat={(pid, text, atts, html) => {
+              chats.startProjectChat(pid, text, model, atts, html);
+              handleNavigate("chat");
+            }}
+            onDeleteChat={chats.deleteChat}
+          />
+        ) : (
+          <ChatView
+            activeId={chats.activeId}
+            state={chatState}
+            chatTitle={shortTitle}
+            dirSlug={chats.activeDirSlug}
+            onSend={handleSend}
+            onStop={chats.abort}
+            onRetry={chats.retry}
+            onEdit={chats.editMessage}
+            onSwitchVariant={chats.switchVariant}
+            branchNodes={chats.branchNodes}
+            onToggleFiles={handleToggleFiles}
+            models={visibleModels}
+            model={model}
+            onModelChange={handleModelChange}
+            thinkingEnabled={thinkingEnabled}
+            onThinkingToggle={() => setThinkingEnabled((v) => !v)}
+            mcpEnabled={chats.activeMcpEnabled}
+            onToggleMcpServer={chats.toggleMcpServer}
+          />
+        )}
+        {view === "chat" && panelOpen && !openFilePath && (
           <FilesPanel
             messages={chats.messages}
             onOpenFile={(path) => {
@@ -326,7 +345,7 @@ export function App() {
             onClose={() => setGeneralPanelOpen(false)}
           />
         )}
-        {openFilePath && (
+        {view === "chat" && openFilePath && (
           <ArtifactsSidePanel
             key={chats.activeId}
             messages={chats.messages}

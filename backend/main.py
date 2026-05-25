@@ -46,6 +46,7 @@ from mcp_integration.config import MCPServerConfig, MCPServerUpdate
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
+from store.project_store import ProjectStore
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
 from tools.read_file import ReadFileTool
@@ -70,6 +71,7 @@ else:
 
 SETTINGS_FILE = AGENTS_DIR / "settings.json"
 CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
+PROJECT_DB_FILE = AGENTS_DIR / "projects.db"
 # Cross-agent shared locations per the Agent Skills convention.
 USER_AGENTS_DIR = Path.home() / ".agents"
 USER_AGENTS_SKILLS_DIR = USER_AGENTS_DIR / "skills"
@@ -713,6 +715,7 @@ def create_app() -> FastAPI:
     models_fetcher = ModelsFetcher()
     settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
     chat_store = ChatStore(CHAT_DB_FILE)
+    project_store = ProjectStore(PROJECT_DB_FILE)
 
     # --- tools ---
     registry = ToolRegistry()
@@ -765,6 +768,7 @@ def create_app() -> FastAPI:
     app.state.skill_installer = installer
     app.state.settings_store = settings_store
     app.state.chat_store = chat_store
+    app.state.project_store = project_store
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
