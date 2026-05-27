@@ -58,12 +58,12 @@ async def install_skill_file(request: Request, file: UploadFile) -> list[SkillIn
     installer = request.app.state.skill_installer
     data = await file.read(_MAX_ARCHIVE_BYTES + 1)
     if not data:
-        raise HTTPException(status_code=400, detail="Пустой файл")
+        raise HTTPException(status_code=400, detail="Empty file")
     if len(data) > _MAX_ARCHIVE_BYTES:
-        raise HTTPException(status_code=413, detail="Файл больше 50 МБ")
+        raise HTTPException(status_code=413, detail="File exceeds 50 MB")
     name = file.filename or "skill.zip"
     if not name.lower().endswith((".skill", ".zip")):
-        raise HTTPException(status_code=400, detail="Ожидается .skill или .zip архив")
+        raise HTTPException(status_code=400, detail="Expected a .skill or .zip archive")
     try:
         entries = installer.install_from_archive(data, name)
     except ValueError as exc:

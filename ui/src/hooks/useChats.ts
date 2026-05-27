@@ -16,6 +16,8 @@ import type { ChatSession } from "../types/chat";
 import type { ToolCall, ProcessStep } from "../types/tool-call";
 import type { LiveFile } from "../types/artifact";
 import { API_BASE } from "../utils/apiBase";
+import { safeStringify } from "../utils/safeJson";
+import { i18n } from "../i18n";
 
 // ── Public types ───────────────────────────────────────────────────────────
 
@@ -50,7 +52,7 @@ export interface UseChatResult {
   deleteChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
   pinChat: (id: string) => void;
-  sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[], html?: string) => void;
+  sendMessage: (text: string, model?: string, attachments?: AttachmentInfo[], html?: string, thinkingEnabled?: boolean, effort?: string) => void;
   retry: () => void;
   editMessage: (userNodeId: string, content: string, displayHtml?: string) => void;
   switchVariant: (nodeId: string, idx: number) => void;
@@ -299,19 +301,23 @@ function makeDirSlug(): string {
 }
 
 function makeSession(projectId?: string): ChatSession {
+  // Guard against a non-string projectId — e.g. a click handler wired as
+  // `onClick={onNew}` forwards the MouseEvent here, and a DOM event is a
+  // deeply circular object that poisons every JSON.stringify of the session.
+  const pid = typeof projectId === "string" && projectId ? projectId : undefined;
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: "Новый чат",
+    title: i18n.t("chat.newChatTitle"),
     root: [],
     createdAt: Date.now(),
     dirSlug: makeDirSlug(),
-    projectId: projectId || undefined,
+    projectId: pid,
   };
 }
 
 function deriveTitle(msgs: ChatMessage[]): string {
   const first = msgs.find((m) => m.role === "user");
-  if (!first) return "Новый чат";
+  if (!first) return i18n.t("chat.newChatTitle");
   const t = first.content.replace(/\s+/g, " ").trim();
   return t.length > 50 ? t.slice(0, 48) + "…" : t;
 }
@@ -383,18 +389,25 @@ async function fetchChatFull(id: string): Promise<ChatSession | null> {
 
 async function createChatRemote(s: ChatSession): Promise<ChatSession> {
   try {
+    const { json, hadCycle } = safeStringify({
+      id: s.id,
+      title: s.title,
+      dir_slug: s.dirSlug ?? "",
+      root: s.root,
+      created_at: s.createdAt,
+      mcp_enabled: s.mcpEnabledServers ?? [],
+      project_id: s.projectId ?? "",
+    });
+    // A cyclic payload is corrupt — sending it would fail backend validation
+    // (422). Skip the create and keep the local copy rather than POST garbage.
+    if (hadCycle) {
+      warnCyclicTree("createChatRemote (create skipped)", s);
+      return s;
+    }
     const r = await fetch(`${API_BASE}/chats`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: s.id,
-        title: s.title,
-        dir_slug: s.dirSlug ?? "",
-        root: s.root,
-        created_at: s.createdAt,
-        mcp_enabled: s.mcpEnabledServers ?? [],
-        project_id: s.projectId ?? "",
-      }),
+      body: json,
     });
     if (r.ok) return fullToSession(await r.json());
   } catch {
@@ -414,10 +427,17 @@ async function putChatRemote(s: ChatSession): Promise<void> {
     // Never overwrite a non-empty dir_slug with an empty string — this
     // would break WSL folder cleanup on deletion.
     if (s.dirSlug) body.dir_slug = s.dirSlug;
+    const { json, hadCycle } = safeStringify(body);
+    // A cyclic tree is corrupt; don't clobber the last good server copy with
+    // a cycle-broken payload. Skip this write and keep the previous version.
+    if (hadCycle) {
+      warnCyclicTree("putChatRemote (save skipped)", s);
+      return;
+    }
     await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: json,
     });
   } catch {
     /* will retry on next change */
@@ -448,16 +468,64 @@ async function maybeMigrateLocalStorage(): Promise<void> {
   // wants to recover. The migration flag prevents re-import on next load.
 }
 
+/** Pinpoint where a chat tree first re-references a node — the corruption that
+ * makes serialization cycle or blow up exponentially. Uses a flat visited-set
+ * (so it catches both true cycles AND duplicate-parent DAGs) and is bounded by
+ * a visit cap so the diagnostic itself can never hang. Returns a description
+ * with the offending node id + structural path, or null if the tree is sound. */
+function describeTreeCorruption(root: ChatNode[]): string | null {
+  const seen = new Set<ChatNode>();
+  let visits = 0;
+  const stack: Array<{ node: ChatNode; path: string }> = root.map((n, i) => ({
+    node: n,
+    path: `root[${i}]`,
+  }));
+  while (stack.length > 0) {
+    if (++visits > 200_000) return "tree exceeds 200k nodes — runaway/exponential structure";
+    const { node, path } = stack.pop()!;
+    if (seen.has(node)) {
+      return `node ${node.id} (${node.role}) re-referenced at ${path} — duplicate parent or back-edge`;
+    }
+    seen.add(node);
+    if (node.role === "user") {
+      node.variants.forEach((v, vi) => {
+        if (v.child) stack.push({ node: v.child, path: `${path}.v[${vi}].child` });
+      });
+    } else {
+      node.variants.forEach((v, vi) => {
+        v.children.forEach((c, ci) =>
+          stack.push({ node: c, path: `${path}.v[${vi}].children[${ci}]` }),
+        );
+      });
+    }
+  }
+  return null;
+}
+
+/** Diagnostic for Bug B (a corrupt — cyclic or exponentially-shared — chat
+ * tree). The corruption is created at runtime by some tree edit; logging the
+ * offending chat + the exact node/path lets us trace the source on next repro. */
+function warnCyclicTree(where: string, s: ChatSession): void {
+  console.error(
+    `[useChats] corrupt chat tree at ${where} — chat ${s.id} ("${s.title}"). ` +
+      `Anomaly: ${describeTreeCorruption(s.root) ?? "(in a non-root field)"}. ` +
+      `Persistence of the corrupt payload is skipped. Please report the steps that led here.`,
+  );
+}
+
 /** Stable JSON snapshot for change detection. Skips ChatSession identity
- * fields the backend doesn't care about. */
+ * fields the backend doesn't care about. Cycle-tolerant: never throws (a throw
+ * here, run inside a render effect, would blank the whole app). */
 function snapshot(s: ChatSession): string {
-  return JSON.stringify({
+  const { json, hadCycle } = safeStringify({
     t: s.title,
     d: s.dirSlug ?? "",
     r: s.root,
     m: s.mcpEnabledServers ?? [],
     p: s.projectId ?? "",
   });
+  if (hadCycle) warnCyclicTree("snapshot", s);
+  return json;
 }
 
 // ── Tree helpers ───────────────────────────────────────────────────────────
@@ -465,9 +533,12 @@ function snapshot(s: ChatSession): string {
 /** Walk the active branch and return flat ChatMessage[] for UI. */
 function currentBranch(session: ChatSession): ChatMessage[] {
   const out: ChatMessage[] = [];
+  const seen = new Set<ChatNode>();
   let next: ChatNode | undefined = session.root[0];
 
   while (next) {
+    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
+    seen.add(next);
     if (next.role === "user") {
       const uv = next.variants[next.activeVariantIdx];
       if (!uv) break;
@@ -501,9 +572,12 @@ function currentBranch(session: ChatSession): ChatMessage[] {
 /** Walk the active branch and return raw ChatNode[] for variant-aware rendering. */
 function currentBranchNodes(session: ChatSession): ChatNode[] {
   const out: ChatNode[] = [];
+  const seen = new Set<ChatNode>();
   let next: ChatNode | undefined = session.root[0];
 
   while (next) {
+    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
+    seen.add(next);
     out.push(next);
     if (next.role === "user") {
       const uv = next.variants[next.activeVariantIdx];
@@ -528,8 +602,11 @@ function findBranchTail(session: ChatSession): BranchTail {
   let assistantNode: AssistantNode | null = null;
   let activeVariant: AssistantVariant | null = null;
 
+  const seen = new Set<ChatNode>();
   let next: ChatNode | undefined = session.root[0];
   while (next) {
+    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
+    seen.add(next);
     if (next.role === "user") {
       userNode = next;
       assistantNode = null;
@@ -551,8 +628,11 @@ function findLastAssistantInBranch(session: ChatSession): {
   variantId: string;
 } | null {
   let last: { nodeId: string; variantId: string } | null = null;
+  const seen = new Set<ChatNode>();
   let next: ChatNode | undefined = session.root[0];
   while (next) {
+    if (seen.has(next)) return last; // corrupt cyclic tree — stop instead of hanging
+    seen.add(next);
     if (next.role === "assistant") {
       const v = next.variants[next.activeVariantIdx];
       if (!v) return last;
@@ -1076,7 +1156,7 @@ export function useChats(): UseChatResult {
   // ── Public API ──────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    (content: string, model?: string, attachments?: AttachmentInfo[], html?: string) => {
+    (content: string, model?: string, attachments?: AttachmentInfo[], html?: string, thinkingEnabled?: boolean, effort?: string) => {
       if ((!content.trim() && (!attachments || attachments.length === 0)) || isStreaming) return;
 
       sseRef.current?.close();
@@ -1159,6 +1239,8 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: currentSession.mcpEnabledServers ?? [],
           project_id: currentSession.projectId ?? undefined,
+          thinking_enabled: thinkingEnabled,
+          effort: effort,
         },
         handler,
         (err: Error) => {
@@ -1378,12 +1460,15 @@ export function useChats(): UseChatResult {
     setIsStreaming(false);
   }, [activeId, activeSession]);
 
-  const newChat = useCallback((projectId?: string) => {
+  const newChat = useCallback((projectIdArg?: string) => {
+    // Ignore anything that isn't a real project id — e.g. a MouseEvent forwarded
+    // by `onClick={onNew}`. (makeSession guards too; this keeps the branching sane.)
+    const projectId = typeof projectIdArg === "string" && projectIdArg ? projectIdArg : undefined;
     // For standalone chats, reuse an existing empty standalone chat rather than
     // piling up blanks. Project chats always start fresh and bound to the project.
     if (!projectId) {
       const existingEmpty = sessions.find(
-        (s) => s.root.length === 0 && !s.projectId && (s.title === "Новый чат" || s.title === "New chat"),
+        (s) => s.root.length === 0 && !s.projectId && s.title === i18n.t("chat.newChatTitle"),
       );
       if (existingEmpty) {
         if (existingEmpty.id === activeId) {

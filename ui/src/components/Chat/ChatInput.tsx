@@ -11,6 +11,7 @@ import { McpMenuSection } from "./MCPChip";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText } from "../../utils/mentions";
 import { MentionNodeView } from "./MentionNodeView";
+import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../utils/apiBase";
 
 interface ChatInputProps {
@@ -23,6 +24,8 @@ interface ChatInputProps {
   onModelChange: (model: string) => void;
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
+  effortLevel: string | null;
+  onEffortChange: (v: string | null) => void;
   placeholder?: string;
   fillText?: string;
   onFillTextConsumed?: () => void;
@@ -53,11 +56,13 @@ const LARGE_TEXT_CHARS = 20_000;
 export function ChatInput({
   onSend, onStop, disabled, isStreaming,
   models, model, onModelChange, thinkingEnabled, onThinkingToggle,
-  placeholder = "Message…",
+  effortLevel, onEffortChange,
+  placeholder,
   fillText, onFillTextConsumed,
   dirSlug,
   mcpEnabled, onToggleMcpServer,
 }: ChatInputProps) {
+  const { t } = useTranslation();
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [plusOpen, setPlusOpen] = useState(false);
@@ -215,7 +220,7 @@ export function ChatInput({
       }),
     ],
     editorProps: {
-      attributes: { class: "tiptap-editor", "data-placeholder": placeholder },
+      attributes: { class: "tiptap-editor", "data-placeholder": placeholder ?? t("chat.placeholder") },
       handlePaste: (view, event) => handlePasteRef.current(view, event),
     },
     onUpdate: ({ editor: ed }) => {
@@ -407,7 +412,7 @@ export function ChatInput({
                 return (
                   <div key={pf.id} className={`ca-card-img${pf.uploading ? " ca-card--up" : ""}`}>
                     <img src={pf.dataUrl} alt={pf.name} />
-                    <button className="ca-x" onClick={() => removeFile(pf.id)} title="Remove">×</button>
+                    <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>
                   </div>
                 );
               }
@@ -424,8 +429,8 @@ export function ChatInput({
                   </div>
                   <div className="ca-badge">{ext}</div>
                   {pf.uploading
-                    ? <span className="ca-spin">⟳</span>
-                    : <button className="ca-x" onClick={() => removeFile(pf.id)} title="Remove">×</button>
+                      ? <span className="ca-spin">⟳</span>
+                      : <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>
                   }
                 </div>
               );
@@ -435,17 +440,17 @@ export function ChatInput({
 
         <div className="tiptap-wrap">
           <EditorContent editor={editor} />
-          {textLen === 0 && <div className="tiptap-ph">{placeholder}</div>}
+          {textLen === 0 && <div className="tiptap-ph">{placeholder ?? t("chat.placeholder")}</div>}
         </div>
 
         <div className="composer-bar">
           <div className="composer-left">
             <div className="composer-plus" ref={plusRef}>
-              <button className="icon-btn" title="Добавить" onClick={togglePlus}><Plus /></button>
+              <button className="icon-btn" title={t("chat.add")} onClick={togglePlus}><Plus /></button>
               {plusOpen && (
                 <div className={`composer-plus-menu${plusUp ? "" : " composer-plus-menu--down"}`}>
                   <button className="cpm-item" onClick={openFilePicker}>
-                    <Paperclip /> <span>Прикрепить файлы</span>
+                    <Paperclip /> <span>{t("chat.attachFiles")}</span>
                   </button>
                   {onToggleMcpServer && (
                     <McpMenuSection
@@ -460,7 +465,7 @@ export function ChatInput({
 
             {(hasText || pendingFiles.length > 0) && (
               <span className="composer-token-count">
-                {pendingFiles.length > 0 && `${pendingFiles.length} files · `}
+                {pendingFiles.length > 0 && `${pendingFiles.length} ${t("chat.files", { count: pendingFiles.length })} · `}
                 ~{Math.ceil(textLen / 3.5)} tokens
               </span>
             )}
@@ -473,16 +478,18 @@ export function ChatInput({
               onChange={onModelChange}
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
+              effortLevel={effortLevel}
+              onEffortChange={onEffortChange}
             />
 
             {isStreaming ? (
-              <button className="send-btn stop-btn" onClick={onStop} title="Stop"><X /></button>
+              <button className="send-btn stop-btn" onClick={onStop} title={t("chat.stop")}><X /></button>
             ) : (
               <button
                 className="send-btn"
                 onClick={handleSend}
                 disabled={disabled || (!hasText && pendingFiles.length === 0)}
-                title="Send"
+                title={t("chat.send")}
               ><ArrowUp /></button>
             )}
           </div>

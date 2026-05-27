@@ -1,5 +1,5 @@
 # Build the Python backend into a single exe sidecar for Tauri.
-# Output: src-tauri/binaries/backend-x86_64-pc-windows-msvc.exe
+# Output: src-tauri/binaries/agentchat-backend-x86_64-pc-windows-msvc.exe
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
@@ -17,12 +17,24 @@ python -c "import tiktoken; [tiktoken.get_encoding(e) for e in ('cl100k_base','p
 Write-Host "==> tiktoken cache: $tiktokenCache"
 Get-ChildItem $tiktokenCache | ForEach-Object { Write-Host "    $($_.Name)" }
 
+Write-Host "==> Ensuring built UI (ui/dist) to bundle for remote/phone serving..."
+$uiDist = Join-Path $root "ui\dist"
+if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
+    Write-Host "    ui/dist missing — running 'npm run build'..."
+    Push-Location (Join-Path $root "ui")
+    npm run build
+    Pop-Location
+}
+if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
+    throw "ui/dist/index.html not found after build — cannot bundle UI into backend."
+}
+
 Write-Host "==> Running PyInstaller..."
 Set-Location (Join-Path $root "backend")
 
 pyinstaller run.py `
     --onefile `
-    --name backend `
+    --name agentchat-backend `
     --distpath (Join-Path $root "src-tauri\binaries") `
     --workpath (Join-Path $root "build\pyinstaller-work") `
     --specpath (Join-Path $root "build\pyinstaller-spec") `
@@ -43,13 +55,14 @@ pyinstaller run.py `
     --hidden-import uvicorn.lifespan.off `
     --hidden-import anyio._backends._asyncio `
     --hidden-import python_multipart `
-    --add-data "${tiktokenCache};tiktoken_cache"
+    --add-data "${tiktokenCache};tiktoken_cache" `
+    --add-data "${uiDist};ui_dist"
 
 Set-Location $root
 
 Write-Host "==> Renaming to Tauri target triple..."
-$src = Join-Path $binDir "backend.exe"
-$dst = Join-Path $binDir "backend-x86_64-pc-windows-msvc.exe"
+$src = Join-Path $binDir "agentchat-backend.exe"
+$dst = Join-Path $binDir "agentchat-backend-x86_64-pc-windows-msvc.exe"
 if (Test-Path $dst) { Remove-Item $dst -Force }
 Rename-Item $src $dst
 

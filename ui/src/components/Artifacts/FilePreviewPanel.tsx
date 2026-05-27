@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LiveFile } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { basename } from "../../utils/basename";
+import { useTranslation } from "react-i18next";
 
 interface FilePreviewPanelProps {
   files: LiveFile[];
@@ -13,6 +14,7 @@ interface FilePreviewPanelProps {
 }
 
 export function FilePreviewPanel({ files, closed, onClose, onOpenFile }: FilePreviewPanelProps) {
+  const { t } = useTranslation();
   const [activeId, setActiveId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolled = useRef(false);
@@ -67,7 +69,7 @@ export function FilePreviewPanel({ files, closed, onClose, onOpenFile }: FilePre
     return (
       <aside className="preview">
         <div className="pv-placeholder">
-          {closed ? "Preview closed — click Open on a file" : "Files created by the agent will appear here"}
+          {closed ? t("artifacts.panelClosed") : t("artifacts.noFiles")}
         </div>
       </aside>
     );
@@ -94,15 +96,15 @@ export function FilePreviewPanel({ files, closed, onClose, onOpenFile }: FilePre
           );
         })}
         <div style={{ flex: 1 }} />
-        <button className="pv-close-btn" onClick={onClose} title="Close panel">×</button>
+        <button className="pv-close-btn" onClick={onClose} title={t("artifacts.closePanel")}>×</button>
       </div>
 
       {active && (
         <>
           <div className="pv-head">
             <span>📄 {active.path}</span>
-            {!active.done && <span className="pv-writing">writing</span>}
-            {active.done && <span style={{ color: "var(--accent-2)" }}>✓ done</span>}
+            {!active.done && <span className="pv-writing">{t("artifacts.statusWriting")}</span>}
+            {active.done && <span style={{ color: "var(--accent-2)" }}>✓ {t("artifacts.statusDone")}</span>}
           </div>
           <div className="pv-code" ref={scrollRef} onScroll={handleScroll}>
             {lines.map((line, i) => (
@@ -119,8 +121,8 @@ export function FilePreviewPanel({ files, closed, onClose, onOpenFile }: FilePre
             )}
           </div>
           <div className="pv-foot">
-            <span>{getLang(active.path)} · {lines.length} lines{!active.done && " · auto-scroll"}</span>
-            <span>{active.content.length.toLocaleString()} chars</span>
+            <span>{getLang(active.path)} · {lines.length} {t("artifacts.lines")}{!active.done && ` · ${t("artifacts.autoScroll")}`}</span>
+            <span>{active.content.length.toLocaleString()} {t("artifacts.chars")}</span>
           </div>
         </>
       )}

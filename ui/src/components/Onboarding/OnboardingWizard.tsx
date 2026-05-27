@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../../utils/apiBase";
+import { useTranslation } from "react-i18next";
 
 interface ProviderConfig {
   id: string;
@@ -41,6 +42,7 @@ type Step = 1 | 2 | 3 | 4;
 const ANTHROPIC_SKILLS_SOURCE = "anthropics/skills";
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [userName, setUserName] = useState("");
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
@@ -67,7 +69,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           setSelectedProvider(d.providers[0].id);
         }
       })
-      .catch(() => setError("Не удалось подключиться к бэкенду"));
+      .catch(() => setError(t("onboarding.connectionError")));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshModels = useCallback(async () => {
@@ -111,7 +113,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setStep(2);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      setError(e instanceof Error ? e.message : t("onboarding.saveError"));
     } finally {
       setSaving(false);
     }
@@ -120,7 +122,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   // ── Step 2: provider + key + model ──
   const handleSaveKey = async () => {
     if (!selectedProvider || !apiKey.trim()) {
-      setError("Выберите провайдера и введите ключ");
+      setError(t("onboarding.validationProvider"));
       return;
     }
     setError(null);
@@ -135,7 +137,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       setApiKey("");
       await refreshModels();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось сохранить ключ");
+      setError(e instanceof Error ? e.message : t("onboarding.keySaveError"));
     } finally {
       setSaving(false);
     }
@@ -143,7 +145,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   const handleNextFromProvider = async () => {
     if (!defaultModel) {
-      setError("Выберите модель по умолчанию");
+      setError(t("onboarding.validationModel"));
       return;
     }
     setError(null);
@@ -157,7 +159,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setStep(3);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось сохранить");
+      setError(e instanceof Error ? e.message : t("onboarding.modelSaveError"));
     } finally {
       setSaving(false);
     }
@@ -195,22 +197,22 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       let current = wsl;
       if (!current || !current.wsl_installed || !current.distro_running) {
         if (!current || !current.wsl_installed || !current.default_distro) {
-          appendLog("Запускаю установку WSL + Ubuntu (потребуется UAC)…");
+          appendLog(t("onboarding.wslStarting"));
           const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
           const d = await r.json();
           if (d.output) appendLog(d.output);
-          if (!d.success) throw new Error("Не удалось запустить установку WSL");
+          if (!d.success) throw new Error(t("onboarding.wslStartError"));
         }
-        appendLog("Жду готовности дистрибутива (первый запуск может занять до 10 минут)…");
+        appendLog(t("onboarding.wslWaiting"));
         const ready = await pollDistroReady();
-        if (!ready) throw new Error("WSL не запустился за 10 минут — попробуй вручную через PowerShell");
+        if (!ready) throw new Error(t("onboarding.wslTimeout"));
         current = ready;
       }
 
-      appendLog("Устанавливаю Node, Python, pandoc, LibreOffice, poppler-utils, docx…");
+      appendLog(t("onboarding.wslInstallingDeps"));
       const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
       const d = await r.json();
-      if (!r.ok || !d.success) throw new Error(d.output ?? "Не удалось запустить установку");
+      if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslInstallError"));
 
       // Poll the background install task — backend updates _install_log as apt progresses.
       let lastLog = "";
@@ -233,9 +235,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           /* transient network error — keep polling */
         }
       }
-      appendLog("✓ Готово");
+      appendLog(t("onboarding.wslDone"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Сетевая ошибка");
+      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
     } finally {
       setWslBusy(null);
       await refreshWsl();
@@ -255,7 +257,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       if (!r.ok) throw new Error(d.detail ?? `HTTP ${r.status}`);
       setSkillsInstalled(Array.isArray(d) ? d.length : 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось установить");
+      setError(e instanceof Error ? e.message : t("onboarding.skillsError"));
     } finally {
       setSkillsInstalling(false);
     }
@@ -273,7 +275,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       onComplete();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось завершить");
+      setError(e instanceof Error ? e.message : t("onboarding.completeError"));
       setSaving(false);
     }
   };
@@ -285,12 +287,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     <div className="ob-overlay">
       <div className="ob-card">
         <div className="ob-header">
-          <h2>Добро пожаловать в AgentChat</h2>
+          <h2>{t("onboarding.welcome")}</h2>
           <div className="ob-steps">
-            <span className={step === 1 ? "active" : step > 1 ? "done" : ""}>1 · Имя</span>
-            <span className={step === 2 ? "active" : step > 2 ? "done" : ""}>2 · Провайдер</span>
-            <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>3 · WSL</span>
-            <span className={step === 4 ? "active" : ""}>4 · Скиллы</span>
+            <span className={step === 1 ? "active" : step > 1 ? "done" : ""}>{t("onboarding.stepName")}</span>
+            <span className={step === 2 ? "active" : step > 2 ? "done" : ""}>{t("onboarding.stepProvider")}</span>
+            <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>{t("onboarding.stepWsl")}</span>
+            <span className={step === 4 ? "active" : ""}>{t("onboarding.stepSkills")}</span>
           </div>
         </div>
 
@@ -298,21 +300,21 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
         {step === 1 && (
           <div className="ob-body">
-            <h3>Как к вам обращаться?</h3>
-            <p className="ob-sub">Имя будет передано модели в системном промпте.</p>
+            <h3>{t("onboarding.step1Title")}</h3>
+            <p className="ob-sub">{t("onboarding.step1Description")}</p>
             <input
               autoFocus
               className="ob-input"
               type="text"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
-              placeholder="Имя"
+              placeholder={t("onboarding.step1Placeholder")}
               onKeyDown={(e) => e.key === "Enter" && handleNextFromName()}
             />
             <div className="ob-actions">
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>Пропустить</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>{t("onboarding.skip")}</button>
               <button className="ob-btn" onClick={handleNextFromName} disabled={saving}>
-                {saving ? "Сохраняю…" : "Далее"}
+                {saving ? t("onboarding.saving") : t("onboarding.next")}
               </button>
             </div>
           </div>
@@ -320,10 +322,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
         {step === 2 && (
           <div className="ob-body">
-            <h3>Подключите провайдера и выберите модель</h3>
-            <p className="ob-sub">Введите API-ключ хотя бы одного провайдера. Список моделей обновится автоматически.</p>
+            <h3>{t("onboarding.step2Title")}</h3>
+            <p className="ob-sub">{t("onboarding.step2Description")}</p>
 
-            <label className="ob-label">Провайдер</label>
+            <label className="ob-label">{t("onboarding.step2Provider")}</label>
             <select
               className="ob-select"
               value={selectedProvider}
@@ -337,7 +339,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             </select>
 
             <label className="ob-label" style={{ marginTop: 12 }}>
-              API ключ {selectedProviderObj?.api_key_set ? "(уже установлен — можно перезаписать)" : ""}
+              {t("onboarding.step2ApiKey")} {selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}
             </label>
             <div style={{ display: "flex", gap: 8 }}>
               <input
@@ -345,22 +347,22 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={selectedProviderObj?.api_key_set ? "•••• новый ключ" : "sk-…"}
+                placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
                 style={{ flex: 1 }}
               />
               <button className="ob-btn" onClick={handleSaveKey} disabled={saving || !apiKey.trim()}>
-                Сохранить ключ
+                {t("onboarding.step2SaveKey")}
               </button>
             </div>
 
             <label className="ob-label" style={{ marginTop: 16 }}>
-              Модель по умолчанию
+              {t("onboarding.step2DefaultModel")}
               <button
                 className="ob-btn ob-btn--ghost ob-btn--small"
                 onClick={refreshModels}
                 style={{ marginLeft: 8 }}
               >
-                Обновить
+                {t("onboarding.step2Refresh")}
               </button>
             </label>
             <select
@@ -368,19 +370,19 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               value={defaultModel}
               onChange={(e) => setDefaultModel(e.target.value)}
             >
-              <option value="">— выберите —</option>
+              <option value="">{t("onboarding.step2SelectModel")}</option>
               {providerModels.map((m) => (
                 <option key={m.id} value={m.id}>{m.name ?? m.id}</option>
               ))}
             </select>
             {providerModels.length === 0 && (
-              <p className="ob-sub2">Список пуст. Сохраните ключ и нажмите «Обновить».</p>
+              <p className="ob-sub2">{t("onboarding.step2NoModels")}</p>
             )}
 
             <div className="ob-actions">
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(1)}>Назад</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(1)}>{t("onboarding.back")}</button>
               <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
-                {saving ? "…" : "Далее"}
+                {saving ? "…" : t("onboarding.next")}
               </button>
             </div>
           </div>
@@ -388,26 +390,24 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
         {step === 3 && (
           <div className="ob-body">
-            <h3>WSL и системные библиотеки</h3>
+            <h3>{t("onboarding.step3Title")}</h3>
             <p className="ob-sub">
-              Bash-инструмент агента работает внутри WSL. Один клик ставит Ubuntu и весь набор
-              библиотек для офисных форматов: Node.js, Python 3, <code>pandoc</code>,
-              <code> LibreOffice</code>, <code>poppler-utils</code> и npm-пакет <code>docx</code>.
+              {t("onboarding.step3Description")}
             </p>
 
             {wsl === null ? (
-              <p className="ob-sub2">Проверяю состояние WSL…</p>
+              <p className="ob-sub2">{t("onboarding.checkingWsl")}</p>
             ) : (
               <div className="ob-wsl-grid">
-                <WSLRow label="WSL + дистрибутив" ok={wsl.wsl_installed && wsl.distro_running}
-                  value={wsl.distro_running ? (wsl.default_distro ?? "запущен") : wsl.wsl_installed ? "не запускается" : "не установлен"} />
-                <WSLRow label="Node.js" ok={!!wsl.node} value={wsl.node ?? "—"} />
-                <WSLRow label="Python 3" ok={!!wsl.python} value={wsl.python ?? "—"} />
-                <WSLRow label="pandoc" ok={!!wsl.pandoc} value={wsl.pandoc ?? "—"} />
-                <WSLRow label="LibreOffice" ok={!!wsl.libreoffice} value={wsl.libreoffice ?? "—"} />
-                <WSLRow label="poppler-utils" ok={wsl.poppler} value={wsl.poppler ? "установлен" : "—"} />
-                <WSLRow label="docx (npm -g)" ok={wsl.docx} value={wsl.docx ? "установлен" : "—"} />
-                <WSLRow label="DNS" ok={wsl.dns_ok} value={wsl.dns_ok ? "работает" : "сломан (починю при установке)"} />
+                <WSLRow label={t("onboarding.wslDistro")} ok={wsl.wsl_installed && wsl.distro_running}
+                  value={wsl.distro_running ? (wsl.default_distro ?? t("onboarding.wslRunning")) : wsl.wsl_installed ? t("onboarding.wslNotRunning") : t("onboarding.wslNotInstalled")} />
+                <WSLRow label={t("onboarding.wslNode")} ok={!!wsl.node} value={wsl.node ?? "—"} />
+                <WSLRow label={t("onboarding.wslPython")} ok={!!wsl.python} value={wsl.python ?? "—"} />
+                <WSLRow label={t("onboarding.wslPandoc")} ok={!!wsl.pandoc} value={wsl.pandoc ?? "—"} />
+                <WSLRow label={t("onboarding.wslLibreOffice")} ok={!!wsl.libreoffice} value={wsl.libreoffice ?? "—"} />
+                <WSLRow label={t("onboarding.wslPoppler")} ok={wsl.poppler} value={wsl.poppler ? t("onboarding.wslPoppler") : "—"} />
+                <WSLRow label={t("onboarding.wslDocx")} ok={wsl.docx} value={wsl.docx ? t("onboarding.wslDocx") : "—"} />
+                <WSLRow label={t("onboarding.wslDns")} ok={wsl.dns_ok} value={wsl.dns_ok ? t("onboarding.wslDnsWorking") : t("onboarding.wslDnsBroken")} />
               </div>
             )}
 
@@ -419,12 +419,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <div className="ob-wsl-actions">
                   {!allOk && (
                     <button className="ob-btn" onClick={installAll} disabled={wslBusy !== null}>
-                      {wslBusy === "all" ? "Установка…" : "Установить WSL"}
+                      {wslBusy === "all" ? t("onboarding.installingWsl") : t("onboarding.installWsl")}
                     </button>
                   )}
-                  {allOk && <span className="ob-success">Всё на месте.</span>}
+                  {allOk && <span className="ob-success">{t("onboarding.allSet")}</span>}
                   <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>
-                    Проверить ещё раз
+                    {t("onboarding.recheck")}
                   </button>
                 </div>
               );
@@ -435,49 +435,49 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             )}
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>Назад</button>
-              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null}>Далее</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>{t("onboarding.back")}</button>
+              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null}>{t("onboarding.next")}</button>
             </div>
           </div>
         )}
 
         {step === 4 && (
           <div className="ob-body">
-            <h3>Скиллы от Anthropic</h3>
+            <h3>{t("onboarding.step4Title")}</h3>
             <p className="ob-sub">
-              Готовый набор инструментов, расширяющий модель: создание документов и работа с офисными форматами.
+              {t("onboarding.step4Description")}
             </p>
             <ul className="ob-bullets">
-              <li><b>Word</b> (.docx) — отчёты, документы со стилями и таблицами</li>
-              <li><b>Excel</b> (.xlsx) — таблицы, формулы, формат ячеек</li>
-              <li><b>PowerPoint</b> (.pptx) — презентации со слайдами и шаблонами</li>
-              <li><b>PDF</b> — генерация и парсинг</li>
-              <li><b>Создание скиллов</b> — мета-скилл для написания своих</li>
+              <li>{t("onboarding.skillDocx")}</li>
+              <li>{t("onboarding.skillXlsx")}</li>
+              <li>{t("onboarding.skillPptx")}</li>
+              <li>{t("onboarding.skillPdf")}</li>
+              <li>{t("onboarding.skillCreate")}</li>
             </ul>
             <p className="ob-sub2">
-              Источник: <code>github.com/{ANTHROPIC_SKILLS_SOURCE}</code>. Установка займёт 10–30 секунд.
+              {t("onboarding.skillsSource")}
             </p>
 
             {skillsInstalled !== null && (
               <div className="ob-success">
-                Установлено: <b>{skillsInstalled}</b> {skillsInstalled === 1 ? "скилл" : "скиллов"}.
+                {t("onboarding.skillsInstalled", { count: skillsInstalled })}
               </div>
             )}
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>Назад</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.back")}</button>
               {skillsInstalled === null ? (
                 <>
                   <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>
-                    Пропустить
+                    {t("onboarding.skipSkills")}
                   </button>
                   <button className="ob-btn" onClick={installAnthropicSkills} disabled={skillsInstalling || saving}>
-                    {skillsInstalling ? "Устанавливаю…" : "Установить"}
+                    {skillsInstalling ? t("onboarding.installingSkills") : t("onboarding.installSkills")}
                   </button>
                 </>
               ) : (
                 <button className="ob-btn" onClick={finish} disabled={saving}>
-                  {saving ? "Завершаю…" : "Готово"}
+                  {saving ? t("onboarding.finishing") : t("onboarding.finish")}
                 </button>
               )}
             </div>

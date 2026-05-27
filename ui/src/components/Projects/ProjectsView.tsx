@@ -3,6 +3,7 @@
 
 import { useCallback, useState } from "react";
 import { Plus, FolderOpen, X, Trash } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
 import { useProjects } from "../../hooks/useProjects";
 import type { ModelItem } from "../Chat/ChatView";
 import type { ChatSession, AttachmentInfo } from "../../types/chat";
@@ -15,6 +16,8 @@ interface ProjectsViewProps {
   onModelChange: (model: string) => void;
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
+  effortLevel: string | null;
+  onEffortChange: (v: string | null) => void;
   onClose: () => void;
   onOpenChat: (id: string) => void;
   onStartChat: (
@@ -33,11 +36,14 @@ export function ProjectsView({
   onModelChange,
   thinkingEnabled,
   onThinkingToggle,
+  effortLevel,
+  onEffortChange,
   onClose,
   onOpenChat,
   onStartChat,
   onDeleteChat,
 }: ProjectsViewProps) {
+  const { t } = useTranslation();
   const api = useProjects();
   const [openId, setOpenId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -47,7 +53,7 @@ export function ProjectsView({
   const handleCreate = useCallback(async () => {
     if (busy) return;
     setBusy(true);
-    const proj = await api.createProject(newName.trim() || "Новый проект");
+    const proj = await api.createProject(newName.trim() || t("projects.defaultName"));
     setBusy(false);
     setNewName("");
     if (proj) setOpenId(proj.id);
@@ -64,6 +70,8 @@ export function ProjectsView({
         onModelChange={onModelChange}
         thinkingEnabled={thinkingEnabled}
         onThinkingToggle={onThinkingToggle}
+        effortLevel={effortLevel}
+        onEffortChange={onEffortChange}
         onBack={() => setOpenId(null)}
         onOpenChat={onOpenChat}
         onStartChat={onStartChat}
@@ -75,21 +83,20 @@ export function ProjectsView({
   return (
     <div className="proj-page">
       <header className="proj-head">
-        <h1 className="proj-title">Проекты</h1>
-        <button className="proj-icon-btn" onClick={onClose} title="К чатам">
+        <h1 className="proj-title">{t("projects.title")}</h1>
+        <button className="proj-icon-btn" onClick={onClose} title={t("projects.backToChats")}>
           <X weight="bold" />
         </button>
       </header>
 
       <p className="proj-sub">
-        У проекта есть свой промпт и файлы. Они автоматически передаются модели в
-        каждом чате проекта — файлы Word/PDF/Excel сразу как текст.
+        {t("projects.description")}
       </p>
 
       <div className="proj-create">
         <input
           className="proj-input"
-          placeholder="Название нового проекта"
+          placeholder={t("projects.newPlaceholder")}
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
@@ -97,14 +104,14 @@ export function ProjectsView({
           }}
         />
         <button className="proj-btn proj-btn--primary" onClick={() => void handleCreate()} disabled={busy}>
-          <Plus weight="bold" /> Создать
+          <Plus weight="bold" /> {t("projects.create")}
         </button>
       </div>
 
       {api.projects.length === 0 ? (
         <div className="proj-empty">
           <FolderOpen size={40} weight="thin" />
-          <span>Пока нет проектов. Создайте первый выше.</span>
+          <span>{t("projects.empty")}</span>
         </div>
       ) : (
         <div className="proj-grid">
@@ -116,14 +123,14 @@ export function ProjectsView({
                 </div>
                 <div className="proj-card-name">{p.name}</div>
                 <div className="proj-card-meta">
-                  {p.file_count} {fileWord(p.file_count)}
-                  {p.instructions.trim() ? " · есть промпт" : ""}
+                  {p.file_count} {t("projects.files", { count: p.file_count })}
+                  {p.instructions.trim() ? " · " + t("projects.hasPrompt") : ""}
                 </div>
               </button>
               <button
                 className="proj-card-del"
                 onClick={() => setConfirmId(p.id)}
-                title="Удалить проект"
+                title={t("projects.deleteProject")}
               >
                 <Trash />
               </button>
@@ -135,10 +142,10 @@ export function ProjectsView({
       {confirmId && (
         <div className="proj-confirm-overlay" onClick={() => setConfirmId(null)}>
           <div className="proj-confirm" onClick={(e) => e.stopPropagation()}>
-            <h3>Удалить проект?</h3>
-            <p>Файлы проекта будут удалены. Чаты останутся, но потеряют связь с проектом.</p>
+            <h3>{t("projects.deleteConfirm")}</h3>
+            <p>{t("projects.deleteMessage")}</p>
             <div className="proj-confirm-actions">
-              <button className="proj-btn" onClick={() => setConfirmId(null)}>Отмена</button>
+              <button className="proj-btn" onClick={() => setConfirmId(null)}>{t("projects.cancel")}</button>
               <button
                 className="proj-btn proj-btn--danger"
                 onClick={() => {
@@ -147,7 +154,7 @@ export function ProjectsView({
                   void api.deleteProject(id);
                 }}
               >
-                Удалить
+                {t("projects.delete")}
               </button>
             </div>
           </div>
@@ -157,10 +164,4 @@ export function ProjectsView({
   );
 }
 
-function fileWord(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "файл";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "файла";
-  return "файлов";
-}
+

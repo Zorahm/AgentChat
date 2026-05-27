@@ -9,6 +9,8 @@ class ModelConfig(BaseModel):
     id: str
     name: str | None = None
     thinking: bool | None = None
+    thinking_types: list[str] | None = None
+    effort_levels: list[str] | None = None
 
 
 class ProviderConfig(BaseModel):
@@ -36,11 +38,18 @@ class SettingsData(BaseModel):
     max_iterations: int = 50
     user_name: str = ""
     theme: str = "system"
+    # "" = not chosen yet; the UI then follows OS-locale detection.
+    language: str = ""
     onboarding_completed: bool = False
     unrestricted_mode: bool = False
     # "auto" — use WSL if available, fall back to PowerShell on Windows.
     # "wsl" — force WSL (errors if missing). "powershell" — force PowerShell.
     shell_preference: str = "auto"
+    # When true the backend binds 0.0.0.0 (reachable from other devices) and
+    # requires a Bearer token for every non-loopback /api request. The token
+    # itself is NOT exposed here — read it from the loopback-only
+    # GET /api/remote-access endpoint.
+    remote_access_enabled: bool = False
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
 
 
@@ -50,12 +59,28 @@ class SettingsUpdate(BaseModel):
     max_iterations: int | None = None
     user_name: str | None = None
     theme: str | None = None
+    language: str | None = None
     onboarding_completed: bool | None = None
     unrestricted_mode: bool | None = None
     shell_preference: str | None = None
+    remote_access_enabled: bool | None = None
 
 
 class ProviderUpdate(BaseModel):
     api_key: str | None = None
     api_base: str | None = None
     enabled: bool | None = None
+
+
+class RemoteAccessInfo(BaseModel):
+    """Pairing info for connecting a phone to this backend.
+
+    Served only to loopback clients (the desktop app) so the token is never
+    handed to a remote caller.
+    """
+
+    enabled: bool
+    token: str
+    port: int
+    # Best-effort http://<ip>:<port> candidates (LAN, and Tailscale when found).
+    urls: list[str] = Field(default_factory=list)

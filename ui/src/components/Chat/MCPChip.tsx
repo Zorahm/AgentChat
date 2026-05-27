@@ -2,6 +2,7 @@
  * Returns null when there are no usable (enabled) servers. */
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Plugs } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 
@@ -19,6 +20,7 @@ interface McpMenuSectionProps {
 }
 
 export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<ServerLite[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -40,9 +42,9 @@ export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
 
   return (
     <div className="cpm-mcp">
-      <div className="cpm-mcp-head"><Plugs size={13} /> MCP-серверы</div>
+      <div className="cpm-mcp-head"><Plugs size={13} /> {t("chat.mcp.servers")}</div>
       {loading && usable.length === 0 ? (
-        <div className="cpm-mcp-empty">Загрузка…</div>
+        <div className="cpm-mcp-empty">{t("chat.mcp.loading")}</div>
       ) : (
         usable.map((s) => {
           const on = enabledSet.has(s.id);

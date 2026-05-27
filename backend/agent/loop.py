@@ -42,12 +42,12 @@ followed by a digit. Escape with `\\$` if context is ambiguous."""
 
 _FILE_READING_ADDENDUM = """## Reading attached files
 When the user attaches a binary file, the message includes its absolute path
-(`Файл доступен по пути: ...`). Use `bash_tool` to extract content — do not
+(`File available at: ...`). Use `bash_tool` to extract content — do not
 parse archives by hand (no zipfile / no XML scraping) unless every tool below
 has failed.
 
 When a text file is too large to be included inline (>50KB), the message
-will say `Файл длинный — не читай его целиком` and give you a path. Use
+    will say `File is long — do not read it in one go` and give you a path. Use
 `read_file` with `offset` and `limit` to read it in manageable chunks
 (e.g., read_file path="/path/to/file" offset=1 limit=200 for the first
 200 lines, then offset=201 limit=200 for the next, and so on).
@@ -75,10 +75,10 @@ Never claim a file is unreadable until at least one extractor has been tried.
 If `apt-get`, `pip`, or `npm` fail with hostname errors ("Could not resolve
 host", "Temporary failure in name resolution") — this is a known WSL DNS
 breakage. Do NOT try to patch `/etc/resolv.conf` yourself; it is bind-mounted
-and your edits will be reverted on next launch. Stop and tell the user:
-"DNS в WSL сломан. Открой Settings → Shell или Onboarding и нажми кнопку
-«Починить DNS» — она прописывает Cloudflare/Google nameservers и
-перезапускает дистрибутив." Then wait for them to fix it before continuing."""
+    and your edits will be reverted on next launch. Stop and tell the user:
+"WSL DNS is broken. Open Settings → Shell (or the Onboarding wizard) and click
+the \"Fix DNS\" button — it writes Cloudflare/Google nameservers and restarts
+the WSL distro." Then wait for them to fix it before continuing."""
 
 
 _ARTIFACTS_ADDENDUM = """## Delivering files to the user
@@ -105,7 +105,7 @@ so the path is stable and viewable. Do NOT base64 image data into chat text
 — emit the artifact tag instead.
 
 ### Images you can't see
-If the user attaches an image and the message says `(модель без vision …)`,
+    If the user attaches an image and the message says `(model without vision ...)`,
 your model has no vision capability — you do NOT see pixel content. That
 does NOT mean you can't help. You still have the absolute path and full
 filesystem access, so you can:
@@ -261,56 +261,84 @@ class AgentLoop:
             interceptor = FileTagInterceptor()
             # Collect tag-based operation results to feed back to the agent
             tag_results: list[dict[str, Any]] = []
+            # Set when a <file>/<edit> op fails mid-stream. We then cut the model
+            # off so it can't keep writing prose on top of a failed write, and
+            # re-prompt immediately with the error instead of after it finishes.
+            tag_aborted = False
 
-            async for chunk in self.llm.completion_stream(
+            stream = self.llm.completion_stream(
                 model=self.config.model,
                 messages=self._build_messages(),
                 tools=tool_defs_or_none,
                 extra_body=self.config.extra_body,
-            ):
-                delta = chunk.choices[0].delta  # type: ignore[union-attr]
+            )
+            try:
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta  # type: ignore[union-attr]
 
-                if getattr(delta, "reasoning_content", None):
-                    chunk_text: str = delta.reasoning_content
-                    accumulated_reasoning += chunk_text
-                    yield {"type": "reasoning", "content": chunk_text}
+                    if getattr(delta, "reasoning_content", None):
+                        chunk_text: str = delta.reasoning_content
+                        accumulated_reasoning += chunk_text
+                        yield {"type": "reasoning", "content": chunk_text}
 
-                if delta.content:
-                    for event in interceptor.feed(delta.content):
-                        if event["type"] == "token":
-                            accumulated_content += event["content"]
-                        elif event["type"] == "tool_end":
-                            if "_path" in event:
-                                await _write_file_from_tag(event, self._policy)
+                    if delta.content:
+                        for event in interceptor.feed(delta.content):
+                            etype = event.get("type")
+                            if etype == "token":
+                                accumulated_content += event["content"]
+                                yield event
+                                continue
+                            if etype == "tool_end":
+                                # Perform the on-disk write/edit for completed tags.
+                                # The interceptor's own validation failures (bad
+                                # path, unclosed block) also surface here, without
+                                # the _path / _edit_path marker.
+                                if "_path" in event:
+                                    await _write_file_from_tag(event, self._policy)
+                                elif "_edit_path" in event:
+                                    await _edit_file_from_tag(event, self._policy)
+                                yield event
+                                success = bool(event.get("success", True))
                                 tag_results.append({
                                     "output": str(event.get("output", "")),
-                                    "success": bool(event.get("success", True)),
+                                    "success": success,
                                 })
-                            elif "_edit_path" in event:
-                                await _edit_file_from_tag(event, self._policy)
-                                tag_results.append({
-                                    "output": str(event.get("output", "")),
-                                    "success": bool(event.get("success", True)),
-                                })
-                        yield event
+                                if not success:
+                                    tag_aborted = True
+                                    break
+                                continue
+                            yield event
+                        if tag_aborted:
+                            break
 
-                if delta.tool_calls:
-                    self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
-                    for event in emit_write_file_chunks(tool_call_state, wf_state):
-                        yield event
+                    if delta.tool_calls:
+                        self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
+                        for event in emit_write_file_chunks(tool_call_state, wf_state):
+                            yield event
+            finally:
+                # Promptly close the upstream HTTP stream — matters when we break
+                # out early on an aborted tag rather than draining to completion.
+                await stream.aclose()
 
-            # Flush any text buffered at stream end
-            for event in interceptor.flush():
-                accumulated_content += event.get("content", "")
-                if event.get("type") == "tool_end":
-                    tag_results.append({
-                        "output": str(event.get("output", "")),
-                        "success": bool(event.get("success", True)),
-                    })
-                yield event
+            if not tag_aborted:
+                # Flush any text buffered at stream end. Skipped on abort: the
+                # interceptor is parked mid-tag and flush would emit a spurious
+                # "tag never closed" error on top of the real failure.
+                for event in interceptor.flush():
+                    accumulated_content += event.get("content", "")
+                    if event.get("type") == "tool_end":
+                        tag_results.append({
+                            "output": str(event.get("output", "")),
+                            "success": bool(event.get("success", True)),
+                        })
+                    yield event
 
             # Build final tool calls list (sorted by index)
             tool_calls = [tool_call_state[i] for i in sorted(tool_call_state)]
+            if tag_aborted:
+                # Stream was cut short on a failed <file>/<edit>; drop any partial
+                # tool calls and fall through to the re-prompt below.
+                tool_calls = []
 
             if not tool_calls:
                 # ── terminal response ──
@@ -322,6 +350,12 @@ class AgentLoop:
                 # Feed tag-based results back so the agent sees errors and can retry
                 if tag_results:
                     feedback = "\n".join(r["output"] for r in tag_results if r["output"])
+                    if feedback and tag_aborted:
+                        feedback = (
+                            "Your message was stopped early because a file operation "
+                            "failed. Fix the problem below, then continue your reply.\n\n"
+                            + feedback
+                        )
                     if feedback:
                         self.messages.append({"role": "user", "content": feedback})
                     if any(not r["success"] for r in tag_results):

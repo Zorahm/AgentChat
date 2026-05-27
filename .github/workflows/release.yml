@@ -79,7 +79,7 @@ jobs:
           $staging = "portable-staging"
           New-Item -ItemType Directory -Force $staging | Out-Null
           Copy-Item "src-tauri\target\release\AgentChat.exe" "$staging\"
-          Copy-Item "src-tauri\binaries\backend-x86_64-pc-windows-msvc.exe" "$staging\"
+          Copy-Item "src-tauri\binaries\agentchat-backend-x86_64-pc-windows-msvc.exe" "$staging\"
           $zip = "AgentChat_${version}_x64_portable.zip"
           Compress-Archive -Path "$staging\*" -DestinationPath $zip
           Write-Host "Portable: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"

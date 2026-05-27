@@ -31,7 +31,7 @@ _PLAIN_TEXT_EXTS = {
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_CHARS:
         return text
-    return text[:_MAX_CHARS] + f"\n\n[…усечено: показаны первые {_MAX_CHARS} символов]"
+    return text[:_MAX_CHARS] + f"\n\n[...truncated: showing first {_MAX_CHARS} characters]"
 
 
 def extract_text(data: bytes, filename: str, mime_type: str = "") -> tuple[str, ExtractStatus]:
@@ -86,7 +86,7 @@ def _extract_xlsx(data: bytes) -> str:
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     out = io.StringIO()
     for ws in wb.worksheets:
-        out.write(f"# Лист: {ws.title}\n")
+        out.write(f"# Sheet: {ws.title}\n")
         writer = csv.writer(out)
         for row in ws.iter_rows(values_only=True):
             if any(cell is not None for cell in row):
@@ -114,7 +114,7 @@ def _extract_pptx(data: bytes) -> str:
     prs = Presentation(io.BytesIO(data))
     parts: list[str] = []
     for idx, slide in enumerate(prs.slides, start=1):
-        parts.append(f"# Слайд {idx}")
+        parts.append(f"# Slide {idx}")
         for shape in slide.shapes:
             if shape.has_text_frame:
                 for para in shape.text_frame.paragraphs:

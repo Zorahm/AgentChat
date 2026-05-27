@@ -1,6 +1,7 @@
 /** Chat column — header + scrolled message list + composer. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FolderOpen } from "@phosphor-icons/react";
 import type { AgentChatState } from "../../hooks/useChats";
 import { ChatInput } from "./ChatInput";
@@ -13,6 +14,8 @@ export interface ModelItem {
   id: string;
   name?: string | null;
   thinking?: boolean | null;
+  thinking_types?: string[] | null;
+  effort_levels?: string[] | null;
 }
 
 interface ChatViewProps {
@@ -32,6 +35,8 @@ interface ChatViewProps {
   onModelChange: (model: string) => void;
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
+  effortLevel: string | null;
+  onEffortChange: (v: string | null) => void;
   mcpEnabled: string[];
   onToggleMcpServer: (serverId: string) => void;
 }
@@ -75,8 +80,10 @@ export function ChatView({
   activeId, state, chatTitle, dirSlug, onSend, onStop, onRetry, onEdit, onSwitchVariant, branchNodes, onToggleFiles,
   models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
+  effortLevel, onEffortChange,
   mcpEnabled, onToggleMcpServer,
 }: ChatViewProps) {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const [userName, setUserName] = useState<string>("");
@@ -123,13 +130,13 @@ export function ChatView({
           <div>
             <div className="chat-head-title">{chatTitle}</div>
             <div className="chat-head-subtitle">
-              {state.messages.length} msgs
-              {toolCallCount > 0 && ` · ${toolCallCount} tool calls`}
-              {state.isStreaming && " · streaming"}
+              {t("chat.msgs", { count: state.messages.length })}
+              {toolCallCount > 0 && ` · ${t("chat.toolCalls", { count: toolCallCount })}`}
+              {state.isStreaming && ` · ${t("chat.streaming")}`}
             </div>
           </div>
           {hasFiles && (
-            <button className="chat-head-btn" onClick={onToggleFiles} title="Файлы чата">
+            <button className="chat-head-btn" onClick={onToggleFiles} title={t("chat.chatFiles")}>
               <FolderOpen />
             </button>
           )}
@@ -158,7 +165,9 @@ export function ChatView({
               onModelChange={onModelChange}
               thinkingEnabled={thinkingEnabled}
               onThinkingToggle={onThinkingToggle}
-              placeholder="Как я могу помочь?"
+              effortLevel={effortLevel}
+              onEffortChange={onEffortChange}
+              placeholder={t("chat.howCanIHelp")}
               dirSlug={dirSlug}
               mcpEnabled={mcpEnabled}
               onToggleMcpServer={onToggleMcpServer}
@@ -202,7 +211,7 @@ export function ChatView({
             })}
             {state.error && (
               <div className="msg msg-assistant" style={{ color: "var(--accent)" }}>
-                Error: {state.error}
+                {t("chat.error")}: {state.error}
               </div>
             )}
           </div>
@@ -217,6 +226,8 @@ export function ChatView({
             onModelChange={onModelChange}
             thinkingEnabled={thinkingEnabled}
             onThinkingToggle={onThinkingToggle}
+            effortLevel={effortLevel}
+            onEffortChange={onEffortChange}
             dirSlug={dirSlug}
             mcpEnabled={mcpEnabled}
             onToggleMcpServer={onToggleMcpServer}

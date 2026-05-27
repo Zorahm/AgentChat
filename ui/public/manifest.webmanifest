@@ -1,0 +1,14 @@
+{
+  "name": "AgentChat",
+  "short_name": "AgentChat",
+  "description": "Agentic AI chat — remote client for your AgentChat backend.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0e0e10",
+  "theme_color": "#0e0e10",
+  "icons": [
+    { "src": "/dots.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -2,6 +2,7 @@
  *  Uses @phosphor-icons/react icons directly. */
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText, Folder, SquaresFour, Globe } from "@phosphor-icons/react";
 
 export interface MentionItemData {
@@ -21,6 +22,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 export const MentionPopup = forwardRef<any, any>((props, ref) => {
+  const { t } = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const items = props.items as MentionItemData[];
 
@@ -65,12 +67,12 @@ export const MentionPopup = forwardRef<any, any>((props, ref) => {
   }, [items]);
 
   if (items.length === 0) {
-    return <div className="mp-pop"><div className="mp-empty">Ничего не найдено</div></div>;
+    return <div className="mp-pop"><div className="mp-empty">{t("chat.mention.nothingFound")}</div></div>;
   }
 
   return (
     <div className="mp-pop">
-      <div className="mp-head">упомянуть</div>
+      <div className="mp-head">{t("chat.mention.heading")}</div>
       {items.map((item, i) => (
         <div
           key={item.key}

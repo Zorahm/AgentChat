@@ -34,7 +34,15 @@ if __name__ == "__main__":
     try:
         import uvicorn
         from main import app
-        uvicorn.run(app, host="127.0.0.1", port=8787, log_level="warning")
+
+        # Bind to all interfaces only when remote access is enabled, so the
+        # backend stays localhost-only by default. AGENTCHAT_HOST overrides.
+        host = os.environ.get("AGENTCHAT_HOST")
+        if not host:
+            store = getattr(app.state, "settings_store", None)
+            host = "0.0.0.0" if (store and store.remote_access_enabled) else "127.0.0.1"
+        port = int(os.environ.get("AGENTCHAT_PORT", "8787"))
+        uvicorn.run(app, host=host, port=port, log_level="warning")
     except BaseException as exc:
         _log_crash(exc)
         traceback.print_exc()

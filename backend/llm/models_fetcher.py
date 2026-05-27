@@ -96,7 +96,7 @@ class ModelsFetcher:
     async def _fetch_one(self, p: ProviderConfig) -> ProviderResult:
         result = ProviderResult(provider_id=p.id, status="ok", fetched_at=time.time())
         try:
-            models = await _fetch_provider_model_ids(p)
+            models = await _fetch_provider_models(p)
         except Exception as exc:
             result.status = "error"
             result.error = _short_err(exc)
@@ -104,11 +104,13 @@ class ModelsFetcher:
 
         result.models = [
             ModelConfig(
-                id=f"{p.id}/{mid}",
-                name=_format_model_name(mname),
-                thinking=True if looks_thinking(mid) else None,
+                id=f"{p.id}/{m['id']}",
+                name=_format_model_name(m.get("name", m["id"])),
+                thinking=m.get("thinking"),
+                thinking_types=m.get("thinking_types"),
+                effort_levels=m.get("effort_levels"),
             )
-            for mid, mname in models
+            for m in models
         ]
         return result
 
@@ -153,12 +155,11 @@ def _format_model_name(raw: str) -> str:
     return " ".join(parts)
 
 
-async def _fetch_provider_model_ids(p: ProviderConfig) -> list[tuple[str, str]]:
-    """Return list of (model_id, display_name) tuples."""
+async def _fetch_provider_models(p: ProviderConfig) -> list[dict[str, Any]]:
+    """Return list of model info dicts with id, name, thinking, thinking_types, effort_levels."""
     if not p.api_base:
         raise ValueError("api_base not configured")
     if not p.api_key and p.id not in {"lmstudio", "litellm_proxy"}:
-        # local providers don't require a real key
         raise ValueError("api_key not set")
 
     base = p.api_base.rstrip("/")
@@ -182,20 +183,52 @@ async def _fetch_provider_model_ids(p: ProviderConfig) -> list[tuple[str, str]]:
         resp.raise_for_status()
         data: Any = resp.json()
 
-    return _extract_model_ids(p.id, data)
+    return _extract_models(p.id, data)
 
 
-def _extract_model_ids(provider_id: str, data: Any) -> list[tuple[str, str]]:
-    """Return list of (model_id, display_name) tuples from provider response."""
+def _extract_models(provider_id: str, data: Any) -> list[dict[str, Any]]:
+    """Return list of model info dicts from provider response."""
     if provider_id == "gemini":
         entries = data.get("models", []) if isinstance(data, dict) else []
-        out: list[tuple[str, str]] = []
+        out: list[dict[str, Any]] = []
         for m in entries:
             name = m.get("name", "")
             if name.startswith("models/"):
                 name = name[len("models/"):]
             if name:
-                out.append((name, m.get("displayName", name)))
+                out.append({
+                    "id": name,
+                    "name": m.get("displayName", name),
+                    "thinking": True if looks_thinking(name) else None,
+                })
+        return out
+
+    if provider_id == "anthropic" and isinstance(data, dict) and isinstance(data.get("data"), list):
+        out = []
+        for m in data["data"]:
+            if not isinstance(m, dict) or not m.get("id"):
+                continue
+            mid = m["id"]
+            caps = m.get("capabilities", {})
+            thinking_cap = caps.get("thinking", {})
+            thinking_supported = thinking_cap.get("supported", False)
+            thinking_types_raw = thinking_cap.get("types", {})
+            thinking_types = [
+                t for t in ("enabled", "adaptive")
+                if thinking_types_raw.get(t, {}).get("supported", False)
+            ]
+            effort_cap = caps.get("effort", {})
+            effort_levels = [
+                lvl for lvl in ("low", "medium", "high", "max", "xhigh")
+                if effort_cap.get(lvl, {}).get("supported", False)
+            ] if effort_cap.get("supported", False) else None
+            out.append({
+                "id": mid,
+                "name": m.get("display_name", mid),
+                "thinking": True if thinking_supported else (True if looks_thinking(mid) else None),
+                "thinking_types": thinking_types if thinking_types else None,
+                "effort_levels": effort_levels,
+            })
         return out
 
     # OpenAI-compatible: {"data": [{"id": "...", "name": "..."}, ...]}
@@ -203,19 +236,31 @@ def _extract_model_ids(provider_id: str, data: Any) -> list[tuple[str, str]]:
     if isinstance(data, dict):
         if isinstance(data.get("data"), list):
             return [
-                (m["id"], m.get("name") or m["id"])
+                {
+                    "id": m["id"],
+                    "name": m.get("name") or m["id"],
+                    "thinking": True if looks_thinking(m["id"]) else None,
+                }
                 for m in data["data"]
                 if isinstance(m, dict) and m.get("id")
             ]
         if isinstance(data.get("models"), list):
             return [
-                (m["id"], m.get("name") or m["id"])
+                {
+                    "id": m["id"],
+                    "name": m.get("name") or m["id"],
+                    "thinking": True if looks_thinking(m["id"]) else None,
+                }
                 for m in data["models"]
                 if isinstance(m, dict) and m.get("id")
             ]
     if isinstance(data, list):
         return [
-            (m["id"], m.get("name") or m["id"])
+            {
+                "id": m["id"],
+                "name": m.get("name") or m["id"],
+                "thinking": True if looks_thinking(m["id"]) else None,
+            }
             for m in data if isinstance(m, dict) and m.get("id")
         ]
     return []

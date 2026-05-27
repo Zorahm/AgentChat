@@ -9,6 +9,7 @@ import { parseArtifacts } from "../../utils/parseArtifacts";
 import { API_BASE } from "../../utils/apiBase";
 import { basename } from "../../utils/basename";
 import { RenderView, CodeView } from "./ArtifactViews";
+import { useTranslation } from "react-i18next";
 
 type ViewTab = "render" | "code";
 
@@ -79,6 +80,7 @@ function editedPaths(messages: ChatMessage[]): Set<string> {
 }
 
 export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose, onResizeStart }: Props) {
+  const { t } = useTranslation();
   const artifacts = collectArtifacts(messages);
   const artifactsRef = useRef<Artifact[]>([]);
   artifactsRef.current = artifacts;
@@ -273,7 +275,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     return (
       <aside className="art-panel">
         <div className="art-resize-handle" onMouseDown={onResizeStart} />
-        <div className="art-panel-placeholder">Artifacts will appear here</div>
+        <div className="art-panel-placeholder">{t("artifacts.placeholder")}</div>
       </aside>
     );
   }
@@ -288,7 +290,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
             <button
               className={`ap-tab-btn${tab === "render" ? " active" : ""}`}
               onClick={() => setTab("render")}
-              title="Preview"
+              title={t("artifacts.preview")}
             >
               <Eye />
             </button>
@@ -297,7 +299,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
             <button
               className={`ap-tab-btn${tab === "code" ? " active" : ""}`}
               onClick={() => setTab("code")}
-              title="Code"
+              title={t("artifacts.code")}
             >
               <Code />
             </button>
@@ -315,16 +317,16 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
                 className="ap-split-btn__main"
                 onClick={download}
                 disabled={content === null}
-                title="Download"
+                title={t("artifacts.download")}
               >
                 <DownloadSimple size={14} />
-                <span>Download</span>
+                <span>{t("artifacts.download")}</span>
               </button>
               <button
                 className="ap-split-btn__arrow"
                 onClick={() => setDropOpen((o) => !o)}
                 disabled={content === null}
-                title="More"
+                title={t("artifacts.more")}
               >
                 <CaretDown size={10} />
               </button>
@@ -333,15 +335,15 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
               <div className="ap-drop-menu">
                 <button className="ap-drop-item" onClick={copy}>
                   <Copy size={13} />
-                  Copy
+                  {t("artifacts.copy")}
                 </button>
               </div>
             )}
           </div>
-          <button className="ap-icon-btn" onClick={refresh} title="Refresh">
+          <button className="ap-icon-btn" onClick={refresh} title={t("artifacts.refresh")}>
             <ArrowClockwise size={15} />
           </button>
-          <button className="ap-icon-btn ap-icon-btn--close" onClick={onClose} title="Close">
+          <button className="ap-icon-btn ap-icon-btn--close" onClick={onClose} title={t("artifacts.close")}>
             <X size={15} />
           </button>
         </div>
@@ -351,7 +353,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
         {isWritingSelected && (
           <div className="art-writing-placeholder">
             <div className="art-writing-dot" />
-            Файл записывается…
+            {t("artifacts.writing")}
           </div>
         )}
         {!isWritingSelected && selected && tab === "render" && (

@@ -9,8 +9,10 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
+import secrets
 import shutil
 import sys
 import tempfile
@@ -23,13 +25,15 @@ from typing import Any, Callable
 # ProactorEventLoop. Uvicorn's default loop selection sometimes hands us a
 # SelectorEventLoop, which then raises NotImplementedError() with an empty
 # message when we try to spawn wsl.exe — that surfaces as a silent failure
-# in the UI ("× ошибка" + empty output). Force the right policy at import
+# in the UI ("error" icon + empty output). Force the right policy at import
 # time so the policy is set before uvicorn builds its loop.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.router import api_router
 from api.schemas.settings import (
@@ -86,6 +90,50 @@ WSL_USER_HOME = f"/home/{USER_NAME.lower()}" if USER_NAME else "/home/user"
 # Tauri bundle identifier — keeps Local AppData/com.zorahm.agentchat off-limits
 # to the model alongside the agents settings/db folder.
 TAURI_LOCAL_DIR = Path(os.environ.get("LOCALAPPDATA", USER_HOME)) / "com.zorahm.agentchat"
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _is_loopback_client(request: Request) -> bool:
+    """True when the request originates from this machine (the desktop app).
+
+    Loopback clients are exempt from remote-access token checks; everything
+    else (LAN / Tailscale / phone) must present the Bearer token.
+    """
+    client = request.client
+    if client is None:
+        return False
+    host = client.host or ""
+    if host in _LOOPBACK_HOSTS:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def resolve_ui_dist() -> Path | None:
+    """Locate the built UI (ui/dist) to serve to remote/phone clients.
+
+    The installed app passes the bundled path via ``AGENTCHAT_UI_DIST``; in dev
+    we fall back to the repo's ``ui/dist`` (present after ``npm run build``).
+    Returns ``None`` when no built UI exists, in which case static serving is
+    skipped (dev runs the UI from Vite, the desktop webview from its own bundle).
+    """
+    candidates: list[Path] = []
+    env = os.environ.get("AGENTCHAT_UI_DIST")
+    if env:
+        candidates.append(Path(env))
+    # PyInstaller --onefile extracts bundled data under sys._MEIPASS (see
+    # build-backend.ps1: --add-data "...;ui_dist").
+    meipass = getattr(_sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "ui_dist")
+    candidates.append(BASE_DIR.parent / "ui" / "dist")
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
 
 
 def _wsl_form(win_path: Path) -> str:
@@ -362,9 +410,14 @@ class SettingsStore:
         self._max_iterations = 50
         self._user_name = ""
         self._theme = "system"
+        self._language = ""
         self._onboarding_completed = False
         self._unrestricted_mode = False
         self._shell_preference = "auto"
+        self._remote_access_enabled = False
+        # Long-lived shared secret for remote (phone) access. Generated lazily
+        # the first time remote access is enabled; persisted in settings.json.
+        self._remote_token = ""
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -416,6 +469,9 @@ class SettingsStore:
             th = global_block.get("theme")
             if isinstance(th, str):
                 self._theme = th
+            lang = global_block.get("language")
+            if isinstance(lang, str):
+                self._language = lang
             ob = global_block.get("onboarding_completed")
             if isinstance(ob, bool):
                 self._onboarding_completed = ob
@@ -425,6 +481,12 @@ class SettingsStore:
             sp = global_block.get("shell_preference")
             if isinstance(sp, str) and sp in ("auto", "wsl", "powershell"):
                 self._shell_preference = sp
+            ra = global_block.get("remote_access_enabled")
+            if isinstance(ra, bool):
+                self._remote_access_enabled = ra
+            rt = global_block.get("remote_token")
+            if isinstance(rt, str):
+                self._remote_token = rt
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -477,9 +539,12 @@ class SettingsStore:
                 "max_iterations": self._max_iterations,
                 "user_name": self._user_name,
                 "theme": self._theme,
+                "language": self._language,
                 "onboarding_completed": self._onboarding_completed,
                 "unrestricted_mode": self._unrestricted_mode,
                 "shell_preference": self._shell_preference,
+                "remote_access_enabled": self._remote_access_enabled,
+                "remote_token": self._remote_token,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -523,9 +588,11 @@ class SettingsStore:
             max_iterations=self._max_iterations,
             user_name=self._user_name,
             theme=self._theme,
+            language=self._language,
             onboarding_completed=self._onboarding_completed,
             unrestricted_mode=self._unrestricted_mode,
             shell_preference=self._shell_preference,
+            remote_access_enabled=self._remote_access_enabled,
             mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
         )
 
@@ -540,6 +607,8 @@ class SettingsStore:
             self._user_name = patch.user_name
         if patch.theme is not None:
             self._theme = patch.theme
+        if patch.language is not None:
+            self._language = patch.language
         if patch.onboarding_completed is not None:
             self._onboarding_completed = patch.onboarding_completed
         if patch.unrestricted_mode is not None:
@@ -550,6 +619,12 @@ class SettingsStore:
                     f"shell_preference must be one of auto|wsl|powershell, got {patch.shell_preference!r}"
                 )
             self._shell_preference = patch.shell_preference
+        if patch.remote_access_enabled is not None:
+            self._remote_access_enabled = patch.remote_access_enabled
+            # Mint a token the first time remote access is switched on; reuse it
+            # afterwards so paired phones keep working across toggles.
+            if patch.remote_access_enabled and not self._remote_token:
+                self._remote_token = secrets.token_urlsafe(32)
         self._save()
         return self.get()
 
@@ -693,6 +768,14 @@ class SettingsStore:
     def shell_preference(self) -> str:
         return self._shell_preference
 
+    @property
+    def remote_access_enabled(self) -> bool:
+        return self._remote_access_enabled
+
+    @property
+    def remote_token(self) -> str:
+        return self._remote_token
+
 
 # ---------------------------------------------------------------------------
 # app factory
@@ -747,7 +830,7 @@ def create_app() -> FastAPI:
     # Tauri v2 on Windows serves the webview from http://tauri.localhost (HTTP).
     # macOS/Linux use https://tauri.localhost or the tauri:// custom scheme.
     # If the production scheme is missing here, fetch() in the installed app
-    # is blocked by the browser and the UI hangs on "Загрузка…" forever.
+    # is blocked by the browser and the UI hangs on "Loading..." forever.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -762,6 +845,33 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # --- remote access guard ---
+    # Protects /api/* only. The static SPA shell stays public so a phone can
+    # load index.html (and read its ?token=) before it has a token to send.
+    # Loopback (the local desktop app) is always exempt; any other origin must
+    # present the Bearer token, and only while remote access is enabled.
+    @app.middleware("http")
+    async def remote_access_guard(request: Request, call_next: Callable) -> Any:
+        path = request.url.path
+        if request.method != "OPTIONS" and path.startswith("/api/") and not _is_loopback_client(
+            request
+        ):
+            store = request.app.state.settings_store
+            if not store.remote_access_enabled:
+                return JSONResponse(
+                    {"detail": "Remote access is disabled on this backend."},
+                    status_code=401,
+                )
+            expected = store.remote_token
+            header = request.headers.get("authorization", "")
+            token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+            if not expected or not token or not secrets.compare_digest(token, expected):
+                return JSONResponse(
+                    {"detail": "Invalid or missing remote access token."},
+                    status_code=401,
+                )
+        return await call_next(request)
 
     # --- attach state for route handlers ---
     app.state.skill_reader = reader
@@ -783,6 +893,14 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # --- static UI (remote/phone clients) ---
+    # Serve the built SPA from the same origin as the API so phones never hit
+    # CORS. Mounted last so /api/* routes always win. Skipped when no build
+    # exists (dev uses Vite; the desktop webview uses its own bundle).
+    ui_dist = resolve_ui_dist()
+    if ui_dist is not None:
+        app.mount("/", StaticFiles(directory=str(ui_dist), html=True), name="ui")
 
     return app
 

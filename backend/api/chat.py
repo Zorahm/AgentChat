@@ -156,9 +156,9 @@ def _format_user_content(
         kb = a.size / 1024
         size_str = f"{kb:.0f}KB" if kb < 1024 else f"{kb / 1024:.1f}MB"
         return (
-            f"\nФайл «{a.name}» ({size_str}, {lines} строк) сохранён: {a.path}\n"
-            "Файл длинный — не читай его целиком. Используй read_file с offset "
-            "и limit для постраничного чтения (например: offset=1, limit=200)."
+            f"\nFile \"{a.name}\" ({size_str}, {lines} lines) saved: {a.path}\n"
+            "File is long — do not read it in one go. Use read_file with offset "
+            "and limit for paginated reading (e.g. offset=1, limit=200)."
         )
 
     def _fmt_text_file(a: AttachmentInfo) -> str:
@@ -166,9 +166,9 @@ def _format_user_content(
         kb = a.size / 1024
         size_str = f"{kb:.0f}KB" if kb < 1024 else f"{kb / 1024:.1f}MB"
         return (
-            f"\nТекстовый файл «{a.name}» ({size_str}) сохранён: {a.path}\n"
-            "Читай его инструментом read_file с offset и limit для постраничного чтения "
-            "(например: offset=1, limit=200). Не читай весь файл сразу."
+            f"\nText file \"{a.name}\" ({size_str}) saved: {a.path}\n"
+            "Use read_file with offset and limit for paginated reading "
+            "(e.g. offset=1, limit=200). Do not read the entire file at once."
         )
 
     use_vision = vision and any(img.data_url for img in images)
@@ -183,13 +183,13 @@ def _format_user_content(
             if bf.mime_type == "text/plain" and bf.path:
                 text_parts.append(_fmt_text_file(bf))
             else:
-                text_parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
+                text_parts.append(f"\nFile available at: {bf.path}\n(use read_file or bash_tool to read it)")
         for img in images:
             if img.path:
                 text_parts.append(
-                    f"\nИзображение «{img.name}» сохранено: {img.path}\n"
-                    "(можно прочитать/обработать через bash_tool — convert, "
-                    "ffmpeg, python+PIL и т.п.)"
+                    f"\nImage \"{img.name}\" saved: {img.path}\n"
+                    "(readable/processable via bash_tool — convert, "
+                    "ffmpeg, python+PIL, etc.)"
                 )
         text_parts.append(f"\n---\n{text}")
 
@@ -212,18 +212,18 @@ def _format_user_content(
     for of_ in offloaded_files:
         parts.append(_fmt_offloaded(of_))
     for bf in binary_files:
-        parts.append(f"\nФайл доступен по пути: {bf.path}\n(используй read_file или bash_tool для чтения)")
+        parts.append(f"\nFile available at: {bf.path}\n(use read_file or bash_tool to read it)")
     for img in images:
         if img.path:
             note = (
-                "(модель без vision — содержимое картинки не видно, но файл "
-                "доступен: можно перемещать, копировать, встраивать в .docx/.pdf, "
-                "конвертировать через convert/ffmpeg/PIL, читать метаданные через "
-                "`identify` или `exiftool`)"
+                "(model without vision — pixel content is not visible, but the file "
+                "is accessible: can move, copy, embed into .docx/.pdf, "
+                "convert via convert/ffmpeg/PIL, read metadata via "
+                "`identify` or `exiftool`)"
                 if not vision
-                else "(используй bash_tool для обработки)"
+                else "(use bash_tool to process)"
             )
-            parts.append(f"\nИзображение «{img.name}»: {img.path}\n{note}")
+            parts.append(f"\nImage \"{img.name}\": {img.path}\n{note}")
     parts.append(f"\n---\n{text}")
     return "\n".join(parts)
 
@@ -280,12 +280,12 @@ def _build_project_block(project: dict[str, Any], chat_dir: str, shell: str) -> 
     files = project.get("files", [])
 
     lines: list[str] = [
-        f"# Проект: {name}",
-        "Этот чат принадлежит проекту. Соблюдай инструкции проекта и опирайся на "
-        "его файлы на протяжении всего диалога.",
+        f"# Project: {name}",
+        "This chat belongs to a project. Follow the project instructions and "
+        "refer to its files throughout the conversation.",
     ]
     if instructions:
-        lines.append("\n## Инструкции проекта")
+        lines.append("\n## Project instructions")
         lines.append(instructions)
 
     ok_files = [
@@ -296,30 +296,30 @@ def _build_project_block(project: dict[str, Any], chat_dir: str, shell: str) -> 
 
     if ok_files:
         lines.append(
-            "\n## Файлы проекта (текст уже извлечён — НЕ открывай их повторно)"
+            "\n## Project files (text already extracted — do NOT re-read them)"
         )
         budget = _PROJECT_TEXT_BUDGET
         for f in ok_files:
             text = f.get("extracted_text") or ""
             if budget <= 0:
-                lines.append(f"\n--- {f['name']} ---\n[пропущено: исчерпан лимит контекста]")
+                lines.append(f"\n--- {f['name']} ---\n[skipped: context budget exhausted]")
                 continue
             if len(text) > budget:
-                text = text[:budget] + "\n[…усечено]"
+                text = text[:budget] + "\n[...truncated]"
             budget -= len(text)
             lines.append(f"\n--- {f['name']} ---\n{text}")
 
     if other_files:
         lines.append(
-            "\n## Файлы проекта без авто-извлечения (открой сам при необходимости)"
+            "\n## Project files without auto-extraction (open manually when needed)"
         )
         lines.append(
-            "Текст из этих файлов не удалось извлечь автоматически. Они скопированы "
-            "в рабочую папку — прочитай их через read_file или bash_tool:"
+            "Text from these files could not be extracted automatically. They have been copied "
+            "to the working folder — read them via read_file or bash_tool:"
         )
         for f in other_files:
             path = _sandbox_file_path(chat_dir, f["name"], shell) if chat_dir else f["name"]
-            lines.append(f"- «{f['name']}» → {path}")
+            lines.append(f"- \"{f['name']}\" → {path}")
 
     return "\n".join(lines)
 
@@ -358,16 +358,35 @@ async def chat(
     api_key = provider.api_key if provider else None
     api_base = provider.api_base if provider else None
 
-    # Remap opencode/ prefix to openai/ for LiteLLM compatibility
+    # LiteLLM only routes by a fixed set of native provider prefixes. OpenAI-
+    # compatible endpoints — user-added custom providers (LM Studio, vLLM, …) and
+    # the opencode built-in — carry OUR provider id as the prefix, which LiteLLM
+    # can't resolve ("LLM Provider NOT provided. You passed model=<id>/<model>").
+    # Strip our prefix and re-tag as `openai/<model>` so LiteLLM uses its OpenAI-
+    # compatible client together with api_base. split('/', 1)[1] preserves the
+    # raw model id even when it itself contains slashes (e.g. HF-style org/name).
     lite_model = model
-    if provider is not None and provider.id == "opencode" and "/" in model:
+    needs_openai_prefix = provider is not None and (provider.custom or provider.id == "opencode")
+    if needs_openai_prefix and "/" in model:
         lite_model = f"openai/{model.split('/', 1)[1]}"
+        # Local OpenAI-compatible servers usually accept any key, but LiteLLM's
+        # openai client requires one to be present — supply a harmless placeholder.
+        if not api_key:
+            api_key = "sk-noop"
 
     # Resolve thinking control
     model_cfg = store.get_model_config(model)
     extra_body: dict[str, Any] | None = None
-    if model_cfg is not None and model_cfg.thinking is False:
+    if body.thinking_enabled is False:
         extra_body = {"thinking": {"type": "disabled"}}
+    elif model_cfg is not None and model_cfg.thinking is False:
+        extra_body = {"thinking": {"type": "disabled"}}
+
+    if body.effort and model_cfg is not None and model_cfg.effort_levels:
+        if body.effort in model_cfg.effort_levels:
+            if extra_body is None:
+                extra_body = {}
+            extra_body["reasoning_effort"] = body.effort
 
     # Build fresh system prompt (includes current date + artifact instructions)
     system_prompt: str = app_state.system_prompt_factory()

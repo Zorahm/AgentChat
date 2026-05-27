@@ -95,9 +95,9 @@ class BashTool(BaseTool):
         if ps_present and _looks_like_wsl_setup_failure(wsl_out):
             ps_out = await self._exec_powershell(command)
             return (
-                "[bash_tool] WSL не настроен (нет рабочего дистрибутива). "
-                "Команда перезапущена в PowerShell — настройте WSL или переключитесь "
-                "на PowerShell в Settings → Терминал.\n\n" + ps_out
+                "[bash_tool] WSL has no working distro installed. "
+                "Command re-ran in PowerShell — set up WSL or switch to PowerShell "
+                "mode in Settings → Shell.\n\n" + ps_out
             )
         return wsl_out
 
@@ -123,7 +123,7 @@ class BashTool(BaseTool):
         except FileNotFoundError:
             return (
                 "[bash_tool error] wsl.exe not found in PATH — install WSL "
-                "(Settings → Терминал) or switch to PowerShell mode."
+                "(Settings → Shell) or switch to PowerShell mode."
             )
         except subprocess.TimeoutExpired:
             return "[bash_tool error] command timed out after 300s."

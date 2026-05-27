@@ -6,6 +6,7 @@ import type { Artifact } from "../../types/artifact";
 import { parseArtifacts } from "../../utils/parseArtifacts";
 import { fileExtIcon } from "../../utils/toolIcons";
 import { basename } from "../../utils/basename";
+import { useTranslation } from "react-i18next";
 
 interface FilesPanelProps {
   messages: ChatMessage[];
@@ -60,6 +61,7 @@ function collectFiles(messages: ChatMessage[]): FileEntry[] {
 }
 
 export function FilesPanel({ messages, onOpenFile, onClose }: FilesPanelProps) {
+  const { t } = useTranslation();
   const files = collectFiles(messages);
   const attached = files.filter((f) => f.source === "attachment");
   const created = files.filter((f) => f.source === "artifact");
@@ -67,15 +69,15 @@ export function FilesPanel({ messages, onOpenFile, onClose }: FilesPanelProps) {
   return (
     <aside className="files-panel">
       <div className="fp-head">
-        <span className="fp-head-title">Файлы чата</span>
-        <button className="fp-head-close" onClick={onClose} title="Закрыть">
+        <span className="fp-head-title">{t("filesPanel.title")}</span>
+        <button className="fp-head-close" onClick={onClose} title={t("filesPanel.close")}>
           <X size={15} weight="bold" />
         </button>
       </div>
       <div className="fp-scroll">
         {attached.length > 0 && (
           <>
-            <div className="fp-section-title">Прикреплённые</div>
+            <div className="fp-section-title">{t("filesPanel.attached")}</div>
             {attached.map((f) => (
               <div
                 key={f.path}
@@ -92,7 +94,7 @@ export function FilesPanel({ messages, onOpenFile, onClose }: FilesPanelProps) {
 
         {created.length > 0 && (
           <>
-            <div className="fp-section-title">Созданные</div>
+            <div className="fp-section-title">{t("filesPanel.created")}</div>
             {created.map((f) => (
               <div
                 key={f.path}
@@ -108,7 +110,7 @@ export function FilesPanel({ messages, onOpenFile, onClose }: FilesPanelProps) {
         )}
 
         {files.length === 0 && (
-          <div className="fp-empty">Нет файлов в этом чате</div>
+          <div className="fp-empty">{t("filesPanel.empty")}</div>
         )}
       </div>
     </aside>

@@ -22,7 +22,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # In-process background install task — single concurrent install at most.
 # install-deps used to block the HTTP request for 5–30 minutes, leaving the
-# frontend stuck on "Установка…" with no visible activity (uvicorn's access
+# frontend stuck on a "Installing..." spinner with no visible activity (uvicorn's access
 # log only fires on response). Moving it off the request thread fixes both.
 _install_task: asyncio.Task[None] | None = None
 _install_log: list[str] = []
@@ -284,7 +284,7 @@ async def install_distro() -> InstallResult:
         return InstallResult(success=False, output=err or out or "PowerShell exited with non-zero status")
     return InstallResult(
         success=True,
-        output="Запущен установщик WSL. Дождитесь окончания установки и первого входа в дистрибутив.",
+        output="WSL installer launched. Wait for the installation and first-distro-setup to finish.",
     )
 
 
@@ -307,18 +307,18 @@ async def _run_install_deps() -> None:
         _install_log.append(line)
 
     try:
-        emit("Старт: проверяю DNS в WSL…")
+        emit("Starting: checking DNS inside WSL...")
         if not await _wsl_dns_works():
-            emit("DNS сломан — применяю фикс (resolv.conf + wsl.conf, затем wsl --shutdown).")
+            emit("DNS broken — applying fix (resolv.conf + wsl.conf, then wsl --shutdown).")
             ok, log = await _apply_dns_fix()
             if log:
                 emit(log)
             if not ok:
-                _install_error = "DNS fix failed — apt не сможет резолвить хосты."
+                _install_error = "DNS fix failed — apt won't be able to resolve hosts."
                 return
-            emit("DNS починен.")
+            emit("DNS fixed.")
 
-        emit("apt update + ставлю Node, Python, pandoc, LibreOffice, poppler-utils. Это 5–10 минут.")
+        emit("Running apt update + installing Node, Python, pandoc, LibreOffice, poppler-utils. This takes 5-10 minutes.")
         # `--no-install-recommends` keeps footprint reasonable — without it
         # pandoc pulls texlive (several hundred MB) and libreoffice pulls
         # fonts and clipart that aren't needed for headless conversion.
@@ -340,12 +340,12 @@ async def _run_install_deps() -> None:
         if tail:
             emit(tail[-2000:])  # cap to keep memory bounded
         if code != 0:
-            _install_error = f"apt вернул код {code} — см. лог."
+            _install_error = f"apt returned exit code {code} — see log for details."
             return
-        emit("✓ Готово. Все библиотеки установлены.")
+        emit("✓ Done. All libraries installed.")
     except Exception as exc:  # pragma: no cover — defensive
         logger.exception("install-deps background task failed")
-        _install_error = f"Неожиданная ошибка: {exc}"
+        _install_error = f"Unexpected error: {exc}"
 
 
 @router.post("/install-deps", response_model=InstallResult)
@@ -364,13 +364,13 @@ async def install_deps() -> InstallResult:
     if _install_task and not _install_task.done():
         return InstallResult(
             success=True,
-            output="Установка уже идёт — следи за прогрессом в этом окне.",
+            output="Install is already running — watch the progress in this window.",
         )
     logger.info("install-deps: scheduling background task")
     _install_task = asyncio.create_task(_run_install_deps())
     return InstallResult(
         success=True,
-        output="Установка запущена в фоне. Это 5–10 минут.",
+        output="Install started in the background. This takes 5-10 minutes.",
     )
 
 

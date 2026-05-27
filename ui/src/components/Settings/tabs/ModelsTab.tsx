@@ -1,42 +1,179 @@
-import type { SettingsData } from "../SettingsPanel";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import type { SettingsData, ModelConfig } from "../SettingsPanel";
 
 const MAX_ITER_MIN = 1;
 const MAX_ITER_MAX = 500;
+const DEBOUNCE_MS = 250;
 
-export function ModelsTab({ settings, loading, onUpdate, onRefresh }: {
-  settings: SettingsData; loading: boolean;
+interface ModelsTabProps {
+  settings: SettingsData;
+  loading: boolean;
   onUpdate: (p: Record<string, unknown>) => void;
   onRefresh: () => void;
-}) {
-  return <>
-    <div className="st2-row-between">
-      <div>
-        <h3 className="st2-h">Модели</h3>
-        <p className="st2-sub">Список загружается из /models у каждого провайдера.</p>
+}
+
+export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabProps) {
+  const { t } = useTranslation();
+
+  const [localTemp, setLocalTemp] = useState(settings.temperature);
+  const tempTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    if (!dragging.current) setLocalTemp(settings.temperature);
+  }, [settings.temperature]);
+
+  const handleTempChange = useCallback((v: number) => {
+    setLocalTemp(v);
+    if (tempTimer.current) clearTimeout(tempTimer.current);
+    tempTimer.current = setTimeout(() => onUpdate({ temperature: v }), DEBOUNCE_MS);
+  }, [onUpdate]);
+
+  useEffect(() => () => { if (tempTimer.current) clearTimeout(tempTimer.current); }, []);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, ModelConfig[]>();
+    for (const m of settings.models) {
+      const slash = m.id.indexOf("/");
+      const provider = slash > 0 ? m.id.slice(0, slash) : "other";
+      const arr = map.get(provider) ?? [];
+      arr.push(m);
+      map.set(provider, arr);
+    }
+    return map;
+  }, [settings.models]);
+
+  const temp = localTemp;
+  const tempLabel = temp <= 0.3 ? t("settings.models.tempPrecise") : temp <= 1.0 ? t("settings.models.tempBalanced") : t("settings.models.tempCreative");
+
+  return (
+    <div className="st2-main">
+      <div className="st2-models-head">
+        <div>
+          <h3 className="st2-h">{t("settings.models.title")}</h3>
+          <p className="st2-sub">{t("settings.models.description")}</p>
+        </div>
+        <button className="st2-btn" onClick={onRefresh} disabled={loading}>
+          <ArrowClockwise className={loading ? "spin" : ""} weight="bold" />
+          {loading ? t("settings.models.refreshing") : t("settings.models.refresh")}
+        </button>
       </div>
-      <button className="st2-btn" onClick={onRefresh} disabled={loading}>
-        {loading ? "Обновляю…" : "Обновить"}
-      </button>
+
+      {/* 01 Default model */}
+      <section>
+        <div className="st2-mh">
+          <span className="st2-mn">01</span>
+          <h2>{t("settings.models.defaultModel")}</h2>
+        </div>
+        <p className="st2-md">
+          {t("settings.models.defaultModelHint")}
+        </p>
+        <div className="st2-mrows">
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.models.defaultModel")}</p>
+              <p className="d">{t("settings.models.defaultModelHint")}</p>
+            </div>
+            <div className="st2-mctl">
+              <select
+                className="st2-models-select"
+                value={settings.default_model}
+                onChange={(e) => onUpdate({ default_model: e.target.value })}
+              >
+                {settings.models.length === 0 && (
+                  <option value="">{t("settings.models.noModels")}</option>
+                )}
+                {Array.from(grouped.entries()).map(([provider, models]) => (
+                  <optgroup key={provider} label={provider}>
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name ?? m.id}{m.thinking ? " · thinking" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 02 Generation parameters */}
+      <section>
+        <div className="st2-mh">
+          <span className="st2-mn">02</span>
+          <h2>{t("settings.models.generationParams")}</h2>
+        </div>
+        <p className="st2-md">
+          {t("settings.models.generationParamsHint")}
+        </p>
+        <div className="st2-mrows">
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.models.temperature")}</p>
+              <p className="d">{t("settings.models.temperatureHint")}</p>
+            </div>
+            <div className="st2-mctl">
+              <div className="st2-temp">
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  value={localTemp}
+                  onChange={(e) => handleTempChange(Number(e.target.value))}
+                  onPointerDown={() => { dragging.current = true; }}
+                  onPointerUp={() => { dragging.current = false; }}
+                  className="st2-temp-slider"
+                />
+                <div className="st2-temp-value">
+                  <span className="st2-temp-num">{temp.toFixed(2)}</span>
+                  <span className="st2-temp-label">{tempLabel}</span>
+                </div>
+                <div className="st2-temp-scale">
+                  <span>{t("settings.models.tempPrecise")}</span>
+                  <span>{t("settings.models.tempBalanced")}</span>
+                  <span>{t("settings.models.tempCreative")}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.models.maxIterations")}</p>
+              <p className="d">
+                {t("settings.models.maxIterationsHint", { min: MAX_ITER_MIN, max: MAX_ITER_MAX })}
+              </p>
+            </div>
+            <div className="st2-mctl">
+              <div className="st2-iter">
+                <input
+                  type="number"
+                  min={MAX_ITER_MIN}
+                  max={MAX_ITER_MAX}
+                  className="st2-iter-input"
+                  value={settings.max_iterations}
+                  onChange={(e) => onUpdate({ max_iterations: Number(e.target.value) })}
+                />
+                <div className="st2-iter-presets">
+                  {[25, 50, 100, 200].map((v) => (
+                    <button
+                      key={v}
+                      className={`st2-iter-preset${settings.max_iterations === v ? " active" : ""}`}
+                      onClick={() => onUpdate({ max_iterations: v })}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
-    <div className="st2-section">
-      <h4>Модель по умолчанию</h4>
-      <select className="st2-select" value={settings.default_model}
-        onChange={(e) => onUpdate({ default_model: e.target.value })}>
-        {settings.models.length === 0 && <option value="">— нет моделей —</option>}
-        {settings.models.map((m) => <option key={m.id} value={m.id}>{m.name ?? m.id}</option>)}
-      </select>
-    </div>
-    <div className="st2-section">
-      <h4>Температура · {settings.temperature}</h4>
-      <input type="range" min={0} max={2} step={0.1} value={settings.temperature}
-        onChange={(e) => onUpdate({ temperature: Number(e.target.value) })}
-        style={{ width: "100%", maxWidth: 300 }} />
-    </div>
-    <div className="st2-section">
-      <h4>Макс. итераций агента (tool use)</h4>
-      <input type="number" min={MAX_ITER_MIN} max={MAX_ITER_MAX} className="st2-num" value={settings.max_iterations}
-        onChange={(e) => onUpdate({ max_iterations: Number(e.target.value) })} />
-      <p className="st2-sub2">от {MAX_ITER_MIN} до {MAX_ITER_MAX}</p>
-    </div>
-  </>;
+  );
 }

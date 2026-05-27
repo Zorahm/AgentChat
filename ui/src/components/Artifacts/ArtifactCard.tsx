@@ -3,12 +3,14 @@
 import { File } from "@phosphor-icons/react";
 import type { Artifact } from "../../types/artifact";
 import { basename } from "../../utils/basename";
+import { useTranslation } from "react-i18next";
 
 interface ArtifactCardProps {
   artifact: Artifact;
 }
 
 export function ArtifactCard({ artifact }: ArtifactCardProps) {
+  const { t } = useTranslation();
   if (artifact.type === "tool") return null;
 
   const path = artifact.path ?? "";
@@ -32,7 +34,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
         {ext && <span className="art-card-ext">{ext}</span>}
       </div>
       <button className="art-card-btn" onClick={handleOpen}>
-        Открыть
+        {t("artifacts.open")}
       </button>
     </div>
   );

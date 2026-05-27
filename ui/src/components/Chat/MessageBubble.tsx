@@ -1,6 +1,7 @@
 /** Single message bubble — user or assistant with process block, markdown, artifacts. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp, PencilSimple, X } from "@phosphor-icons/react";
 import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
@@ -262,6 +263,7 @@ interface InlineEditorProps {
 }
 
 function InlineEditor({ initialText, onSave, onCancel }: InlineEditorProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState(initialText);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -305,21 +307,21 @@ function InlineEditor({ initialText, onSave, onCancel }: InlineEditorProps) {
         value={text}
         onChange={handleInput}
         onKeyDown={handleKey}
-        placeholder="Отредактируй сообщение…"
+        placeholder={t("chat.editMessagePlaceholder")}
       />
       <div className="msg-edit-actions">
-        <button className="msg-edit-btn" onClick={onCancel} title="Отмена (Esc)">
+        <button className="msg-edit-btn" onClick={onCancel} title={t("chat.cancelEsc")}>
           <X />
-          <span>Отмена</span>
+          <span>{t("chat.cancel")}</span>
         </button>
         <button
           className="msg-edit-btn msg-edit-btn--primary"
           onClick={() => canSave && onSave(trimmed)}
           disabled={!canSave}
-          title="Отправить (Ctrl+Enter)"
+          title={t("chat.sendCtrlEnter")}
         >
           <Check />
-          <span>Отправить</span>
+          <span>{t("chat.send")}</span>
         </button>
       </div>
     </div>
@@ -334,13 +336,14 @@ function VariantNav({ total, current, onPrev, onNext }: {
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="msg-variant-nav">
       <button
         className="msg-variant-arrow"
         disabled={current <= 1}
         onClick={onPrev}
-        title="Предыдущий вариант"
+        title={t("chat.previousVariant")}
       >
         <CaretLeft />
       </button>
@@ -349,7 +352,7 @@ function VariantNav({ total, current, onPrev, onNext }: {
         className="msg-variant-arrow"
         disabled={current >= total}
         onClick={onNext}
-        title="Следующий вариант"
+        title={t("chat.nextVariant")}
       >
         <CaretRight />
       </button>
@@ -366,6 +369,7 @@ function MsgActions({ content, onRetry, onEdit, canEdit, compact }: {
   canEdit?: boolean;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -388,22 +392,22 @@ function MsgActions({ content, onRetry, onEdit, canEdit, compact }: {
 
   return (
     <div className={`msg-actions${compact ? " msg-actions--compact" : ""}`}>
-      <button className="msg-act-btn" title={copied ? "Скопировано" : "Копировать"} onClick={handleCopy}>
-        {copied ? <Check /> : <Copy />}
+      <button className="msg-act-btn" title={copied ? t("chat.copied") : t("chat.copy")} onClick={handleCopy}>
+        {copied ? <Check size={18} /> : <Copy size={18} />}
       </button>
       {onEdit && (
         <button
           className="msg-act-btn"
-          title={canEdit ? "Редактировать" : "Подожди ответ"}
+          title={canEdit ? t("chat.edit") : t("chat.waitForResponse")}
           onClick={() => canEdit && onEdit()}
           disabled={!canEdit}
         >
-          <PencilSimple />
+          <PencilSimple size={18} />
         </button>
       )}
       {onRetry && (
-        <button className="msg-act-btn" title="Повторить" onClick={() => onRetry()}>
-          <ArrowClockwise />
+        <button className="msg-act-btn" title={t("chat.retry")} onClick={() => onRetry()}>
+          <ArrowClockwise size={18} />
         </button>
       )}
     </div>
@@ -426,45 +430,45 @@ function splitStepGroups(steps: ProcessStep[]): ProcessStep[][] {
   return groups;
 }
 
-const TOOL_VERBS_PRESENT: Record<string, string> = {
-  bash_tool: "выполняет команду",
-  read_file: "читает файл",
-  read_photo: "смотрит фото",
-  write_file: "пишет файл",
-  edit_file: "редактирует файл",
-  read_skill: "читает скилл",
-  web_search: "ищет в вебе",
-};
-const TOOL_VERBS_PAST: Record<string, string> = {
-  bash_tool: "выполнил команду",
-  read_file: "прочитал файл",
-  read_photo: "посмотрел фото",
-  write_file: "записал файл",
-  edit_file: "отредактировал файл",
-  read_skill: "прочитал скилл",
-  web_search: "поискал в вебе",
-};
-
-function buildProcessTitle(steps: ProcessStep[], streaming: boolean): string {
+function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const tools = steps.filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool");
   const hasThoughts = steps.some((s) => s.type === "thought");
 
+  const TOOL_VERBS_PRESENT: Record<string, string> = {
+    bash_tool: t("chat.tools.bash.present"),
+    read_file: t("chat.tools.readFile.present"),
+    read_photo: t("chat.tools.readPhoto.present"),
+    write_file: t("chat.tools.writeFile.present"),
+    edit_file: t("chat.tools.editFile.present"),
+    read_skill: t("chat.tools.readSkill.present"),
+    web_search: t("chat.tools.webSearch.present"),
+  };
+  const TOOL_VERBS_PAST: Record<string, string> = {
+    bash_tool: t("chat.tools.bash.past"),
+    read_file: t("chat.tools.readFile.past"),
+    read_photo: t("chat.tools.readPhoto.past"),
+    write_file: t("chat.tools.writeFile.past"),
+    edit_file: t("chat.tools.editFile.past"),
+    read_skill: t("chat.tools.readSkill.past"),
+    web_search: t("chat.tools.webSearch.past"),
+  };
+
   if (tools.length === 0) {
-    return streaming ? "Думает…" : "Подумал";
+    return streaming ? t("chat.process.thinking") : t("chat.process.thought");
   }
 
   const verbMap = streaming ? TOOL_VERBS_PRESENT : TOOL_VERBS_PAST;
   const seen = new Set<string>();
   const verbs: string[] = [];
-  for (const t of tools) {
-    if (seen.has(t.call.name)) continue;
-    seen.add(t.call.name);
-    verbs.push(verbMap[t.call.name] ?? t.call.name);
+  for (const tool of tools) {
+    if (seen.has(tool.call.name)) continue;
+    seen.add(tool.call.name);
+    verbs.push(verbMap[tool.call.name] ?? tool.call.name);
   }
 
   let phrase = verbs.join(", ");
   if (hasThoughts) {
-    phrase = (streaming ? "Думает, " : "Подумал, ") + phrase;
+    phrase = (streaming ? t("chat.process.thinkingWith") : t("chat.process.thoughtWith")) + phrase;
   } else {
     phrase = phrase.charAt(0).toUpperCase() + phrase.slice(1);
   }
@@ -478,6 +482,7 @@ function ProcessBlock({
   isStreaming: boolean;
   liveFiles: LiveFile[];
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   // Auto-open while streaming so the live preview is visible
@@ -485,7 +490,7 @@ function ProcessBlock({
 
   const toolCalls = steps.filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool");
   const totalMs = toolCalls.reduce((sum, s) => sum + (s.call.durationMs ?? 0), 0);
-  const title = buildProcessTitle(steps, isStreaming);
+  const title = buildProcessTitle(steps, isStreaming, t);
 
   return (
     <div className="thinking">
@@ -495,7 +500,7 @@ function ProcessBlock({
         </span>
         <span className="thinking-lbl">{title}</span>
         {toolCalls.length > 0 && !isStreaming && totalMs > 0 && (
-          <span className="thinking-meta">{(totalMs / 1000).toFixed(1)} с</span>
+          <span className="thinking-meta">{(totalMs / 1000).toFixed(1)}{t("chat.process.seconds")}</span>
         )}
         <span className="thinking-chev">{open ? <CaretDown /> : <CaretRight />}</span>
       </div>
@@ -542,6 +547,7 @@ function ProcessBlock({
 }
 
 function BashToolStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const command = String(call.input?.command ?? "");
   const firstLine = command.split("\n")[0] ?? "";
@@ -557,12 +563,12 @@ function BashToolStep({ call }: { call: ToolCall }) {
         <div className={`bash-step${expanded ? " expanded" : ""}`}>
           <div className="bash-head" onClick={() => setExpanded((v) => !v)}>
             <span className="bash-head-tag">bash</span>
-            <span className="bash-head-cmd">{preview || "(пустая команда)"}</span>
+            <span className="bash-head-cmd">{preview || t("chat.bash.emptyCommand")}</span>
             {isRunning && <span className="bash-status running">⟳</span>}
-            {isError && <span className="bash-status err">✗ ошибка</span>}
-            {isCancelled && <span className="bash-status cancelled">⏹ отменено</span>}
+            {isError && <span className="bash-status err">✗ {t("chat.bash.error")}</span>}
+            {isCancelled && <span className="bash-status cancelled">⏹ {t("chat.bash.cancelled")}</span>}
             {!isRunning && !isError && !isCancelled && call.durationMs != null && (
-              <span className="bash-status">{(call.durationMs / 1000).toFixed(1)}с</span>
+              <span className="bash-status">{(call.durationMs / 1000).toFixed(1)}{t("chat.bash.seconds")}</span>
             )}
             <span className="bash-chev">{expanded ? <CaretUp /> : <CaretDown />}</span>
           </div>
@@ -590,7 +596,7 @@ function BashToolStep({ call }: { call: ToolCall }) {
 
               {!isRunning && call.output && (
                 <div className="bash-card">
-                  <div className="bash-card-lbl">Output</div>
+                  <div className="bash-card-lbl">{t("chat.bash.output")}</div>
                   <pre className="bash-output">{call.output}</pre>
                 </div>
               )}
@@ -603,6 +609,7 @@ function BashToolStep({ call }: { call: ToolCall }) {
 }
 
 function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile }) {
+  const { t } = useTranslation();
   const path = String(call.input?.path ?? "");
   const fileName = basename(path);
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -649,11 +656,11 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
       <span className="thinking-gic">{fileExtIcon(ext)}</span>
       <div className="thinking-content">
         <div className="tc-write-label">
-          {isWriting ? "Записываю" : "Записал"}
-          <button className="tc-write-badge" onClick={openInPanel} title="Открыть в панели">
+          {isWriting ? t("chat.writeFile.writing") : t("chat.writeFile.wrote")}
+          <button className="tc-write-badge" onClick={openInPanel} title={t("chat.writeFile.openInPanel")}>
             {fileName}
           </button>
-          {call.status === "error" && <span className="tc-write-err">ошибка</span>}
+          {call.status === "error" && <span className="tc-write-err">{t("chat.writeFile.error")}</span>}
         </div>
 
         {showLivePreview && (
@@ -682,6 +689,7 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
 }
 
 function EditFileStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
   const path = String(call.input?.path ?? "");
   const fileName = basename(path);
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -703,13 +711,13 @@ function EditFileStep({ call }: { call: ToolCall }) {
       <span className="thinking-gic">{fileExtIcon(ext)}</span>
       <div className="thinking-content">
         <div className="tc-write-label">
-          {isEditing ? "Редактирую" : "Отредактировал"}
-          <button className="tc-write-badge" onClick={openInPanel} title="Открыть файл">
+          {isEditing ? t("chat.editFile.editing") : t("chat.editFile.edited")}
+          <button className="tc-write-badge" onClick={openInPanel} title={t("chat.editFile.openFile")}>
             {fileName}
           </button>
           {isError && (
             <span className="tc-write-err" title={call.output}>
-              {call.output?.slice(0, 80) || "ошибка"}
+              {call.output?.slice(0, 80) || t("chat.editFile.error")}
             </span>
           )}
           {!isEditing && !isError && stats && (
@@ -726,16 +734,8 @@ function EditFileStep({ call }: { call: ToolCall }) {
 
 /* ── Iterations exhausted card ─────────────── */
 
-function pluralIterations(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "итераций";
-  if (mod10 === 1) return "итерация";
-  if (mod10 >= 2 && mod10 <= 4) return "итерации";
-  return "итераций";
-}
-
 function IterationsExhaustedCard({ count }: { count: number }) {
+  const { t } = useTranslation();
   const newLimit = count * 2;
 
   const handleContinue = () => {
@@ -751,15 +751,15 @@ function IterationsExhaustedCard({ count }: { count: number }) {
       <div className="iter-exhausted-info">
         <Warning className="iter-exhausted-icon" weight="fill" size={16} />
         <span className="iter-exhausted-text">
-          Агент остановлен — исчерпано {count} {pluralIterations(count)}
+          {t("chat.iterations.stopped", { count })}
         </span>
       </div>
       <div className="iter-exhausted-actions">
         <button className="iter-exhausted-btn iter-exhausted-btn--primary" onClick={handleContinue}>
-          Продолжить (увеличить до {newLimit})
+          {t("chat.iterations.continue", { count: newLimit })}
         </button>
         <button className="iter-exhausted-btn" onClick={handleSettings}>
-          Настройки
+          {t("chat.iterations.settings")}
         </button>
       </div>
     </div>
@@ -769,10 +769,11 @@ function IterationsExhaustedCard({ count }: { count: number }) {
 /* ── helpers ────────────────────────────────── */
 
 function SkillReadStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
   const skillName = String(call.input?.name ?? "");
   const label = call.status === "running"
-    ? `Reading the ${skillName} skill`
-    : `Read the ${skillName} skill`;
+    ? t("chat.skill.reading", { skillName })
+    : t("chat.skill.read", { skillName });
 
   const handleClick = () => {
     const filePath = call.filePath;
@@ -793,7 +794,7 @@ function SkillReadStep({ call }: { call: ToolCall }) {
       </button>
       {!call.filePath && call.status !== "running" && (
         <span className="skill-read-duration">
-          {call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)}s` : ""}
+          {call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)}${t("chat.skill.seconds")}` : ""}
         </span>
       )}
     </div>
@@ -831,6 +832,7 @@ function fileType(name: string, mime: string): string {
 }
 
 function ThoughtStep({ content }: { content: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > 200;
   const preview = content.slice(0, 200).replace(/\n+/g, " ").trimEnd();
@@ -843,7 +845,7 @@ function ThoughtStep({ content }: { content: string }) {
           <>
             {preview}{"… "}
             <button className="thought-expand-btn" onClick={() => setExpanded(true)}>
-              развернуть
+              {t("chat.thought.expand")}
             </button>
           </>
         ) : (
@@ -851,7 +853,7 @@ function ThoughtStep({ content }: { content: string }) {
             {content}
             {isLong && (
               <> <button className="thought-expand-btn" onClick={() => setExpanded(false)}>
-                свернуть
+                {t("chat.thought.collapse")}
               </button></>
             )}
           </>

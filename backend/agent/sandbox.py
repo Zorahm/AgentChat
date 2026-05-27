@@ -62,8 +62,8 @@ class SandboxPolicy:
         for blocked in self.blocked_read_prefixes:
             if _is_under(norm, _normalize(blocked)):
                 return (
-                    f"Sandbox: чтение из системной папки агента запрещено ({path}). "
-                    "Включи 'Unrestricted mode' в Settings, если правда нужно."
+                    f"Sandbox: reading from the agent system folder is blocked ({path}). "
+                    "Enable 'Unrestricted mode' in Settings if you really need it."
                 )
 
         for allowed in self.allowed_read_prefixes:
@@ -72,8 +72,8 @@ class SandboxPolicy:
 
         if not self.chat_dir:
             return (
-                "Sandbox: чтение запрещено — для этого чата нет рабочей папки. "
-                "Создай новый чат или включи 'Unrestricted mode' в Settings."
+                "Sandbox: reading blocked — this chat has no working folder. "
+                "Create a new chat or enable 'Unrestricted mode' in Settings."
             )
 
         # Path-namespace check: a Windows path in WSL mode (or vice versa)
@@ -84,17 +84,17 @@ class SandboxPolicy:
         path_is_posix = path.startswith("/")
         if chat_is_posix != path_is_posix:
             return (
-                f"Sandbox: путь '{path}' в чужой ФС — текущая папка чата "
-                f"{self.chat_dir}. Прикрепи файл через @-меню."
+                f"Sandbox: path '{path}' is on a different filesystem — chat folder is "
+                f"{self.chat_dir}. Attach the file via the @-menu."
             )
 
         if not _is_under(norm, _normalize(self.chat_dir)):
             return (
-                f"Sandbox: read_file разрешён только внутри папки чата "
-                f"({self.chat_dir}). Файл '{path}' за её пределами. "
-                "Чтобы дать модели доступ к файлу с диска — прикрепи его "
-                "через @-меню в чате (тогда он окажется в uploads/). "
-                "Альтернатива — включить 'Unrestricted mode' в Settings."
+                f"Sandbox: read_file is only allowed inside the chat folder "
+                f"({self.chat_dir}). File '{path}' is outside it. "
+                "To grant the model access to a file from your disk, attach it "
+                "via the @-menu in the chat (it will be placed in uploads/). "
+                "Alternatively, enable 'Unrestricted mode' in Settings."
             )
         return None
 
@@ -106,8 +106,8 @@ class SandboxPolicy:
             return None
         if not self.chat_dir:
             return (
-                "Sandbox: нет рабочей папки чата (chat_dir_slug отсутствует). "
-                "Создай новый чат или включи 'Unrestricted mode'."
+                "Sandbox: no chat working folder (chat_dir_slug is missing). "
+                "Create a new chat or enable 'Unrestricted mode'."
             )
         # Path must be absolute in the matching namespace: WSL ("/…") for the
         # bash shell, Windows drive letter for PowerShell. Anything else is
@@ -115,19 +115,19 @@ class SandboxPolicy:
         if self.shell == "powershell":
             if not (len(path) >= 3 and path[1] == ":" and path[2] in ("\\", "/")):
                 return (
-                    f"Sandbox: запись разрешена только в папку чата ({self.chat_dir}). "
-                    f"Путь '{path}' не Windows-абсолютный."
+                    f"Sandbox: writes are only allowed inside the chat folder ({self.chat_dir}). "
+                    f"Path '{path}' is not a Windows absolute path."
                 )
         else:
             if not path.startswith("/"):
                 return (
-                    f"Sandbox: запись разрешена только в папку чата ({self.chat_dir}). "
-                    f"Путь '{path}' не WSL-абсолютный."
+                    f"Sandbox: writes are only allowed inside the chat folder ({self.chat_dir}). "
+                    f"Path '{path}' is not a WSL absolute path."
                 )
         if not _is_under(_normalize(path), _normalize(self.chat_dir)):
             return (
-                f"Sandbox: запись разрешена только в {self.chat_dir}; путь '{path}' "
-                "за пределами. Включи 'Unrestricted mode' для произвольных записей."
+                f"Sandbox: writes are only allowed inside {self.chat_dir}; path '{path}' "
+                "is outside. Enable 'Unrestricted mode' for arbitrary writes."
             )
         return None
 

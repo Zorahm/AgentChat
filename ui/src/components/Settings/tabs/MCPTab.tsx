@@ -1,6 +1,7 @@
 /** MCP settings tab — server list with inline config editing. */
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Plugs, Trash, CaretDown, CaretRight, ArrowsClockwise,
   Upload, FolderOpen, Plus, X, CheckCircle, XCircle,
@@ -68,6 +69,7 @@ function formToConfig(form: ConfigForm): MCPTransportConfig {
 /* ── MCPTab ───────────────────────────────────────────────────────────── */
 
 export function MCPTab() {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<ServerView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +85,7 @@ export function MCPTab() {
       if (!r.ok) { setError(`HTTP ${r.status}`); return; }
       setServers(await r.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Сеть");
+      setError(e instanceof Error ? e.message : t("settings.mcp.errorNetwork"));
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ export function MCPTab() {
   useEffect(() => { reload(); }, [reload]);
 
   const onDelete = async (id: string) => {
-    if (!confirm(`Удалить MCP-сервер '${id}'?`)) return;
+    if (!confirm(t("settings.mcp.deleteConfirm", { id }))) return;
     const r = await fetch(`${API_BASE}/mcp/servers/${id}`, { method: "DELETE" });
     if (!r.ok) { setError(`HTTP ${r.status}`); return; }
     if (expanded === id) setExpanded(null);
@@ -114,25 +116,25 @@ export function MCPTab() {
       <div className="st2-row-between">
         <div>
           <h3 className="st2-h">
-            <Plugs size={18} weight="duotone" style={{ verticalAlign: "-3px" }} /> MCP-серверы
+            <Plugs size={18} weight="duotone" style={{ verticalAlign: "-3px" }} /> {t("settings.mcp.title")}
           </h3>
           <p className="st2-sub">
-            Внешние Model Context Protocol серверы. Включай нужные кнопкой 🔌 рядом с моделью в чате.
+            {t("settings.mcp.description")}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button
             className="st2-btn"
-            title="Открыть папку конфига"
+            title={t("settings.mcp.openConfigFolder")}
             onClick={() => fetch(`${API_BASE}/mcp/config-dir/open`, { method: "POST" }).catch(() => {})}
           >
             <FolderOpen size={14} />
           </button>
           <button className="st2-btn" onClick={() => setImporting(true)}>
-            <Upload size={14} /> Импорт
+            <Upload size={14} /> {t("settings.mcp.import")}
           </button>
           <button className="st2-btn" onClick={reload} disabled={loading}>
-            <ArrowsClockwise size={14} /> {loading ? "…" : "Обновить"}
+            <ArrowsClockwise size={14} /> {loading ? "…" : t("settings.mcp.refresh")}
           </button>
         </div>
       </div>
@@ -141,7 +143,7 @@ export function MCPTab() {
 
       {servers.length === 0 && !loading && (
         <p className="st2-sub" style={{ color: "var(--muted)", marginTop: 0 }}>
-          Нет серверов. Добавьте через форму или импортируйте из <code>claude_desktop_config.json</code>.
+          {t("settings.mcp.empty")}
         </p>
       )}
 
@@ -167,7 +169,7 @@ export function MCPTab() {
         />
       ) : (
         <button className="mcp-add-btn" onClick={() => setAdding(true)}>
-          <Plus size={14} /> Добавить сервер
+          <Plus size={14} /> {t("settings.mcp.addServer")}
         </button>
       )}
 
@@ -189,6 +191,7 @@ function KVEditor({ pairs, onChange, keyPh = "KEY", valPh = "value" }: {
   keyPh?: string;
   valPh?: string;
 }) {
+  const { t } = useTranslation();
   const upd = (i: number, f: "key" | "value", v: string) =>
     onChange(pairs.map((p, j) => j === i ? { ...p, [f]: v } : p));
   return (
@@ -204,7 +207,7 @@ function KVEditor({ pairs, onChange, keyPh = "KEY", valPh = "value" }: {
         </div>
       ))}
       <button className="mcp-kv-add" onClick={() => onChange([...pairs, { key: "", value: "" }])}>
-        <Plus size={11} /> Добавить
+        <Plus size={11} /> {t("settings.mcp.add")}
       </button>
     </div>
   );
@@ -220,6 +223,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
   onToggleEnabled: (v: boolean) => void;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<ConfigForm>(() => configToForm(server.config));
   const [name, setName] = useState(server.name);
   const [saving, setSaving] = useState(false);
@@ -249,7 +253,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
       }
       onChanged();
     } catch (e) {
-      setSaveErr(e instanceof Error ? e.message : "Ошибка");
+      setSaveErr(e instanceof Error ? e.message : t("settings.mcp.errorNetwork"));
     } finally {
       setSaving(false);
     }
@@ -266,7 +270,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
       else setTestError(j.error ?? `HTTP ${r.status}`);
       onChanged();
     } catch (e) {
-      setTestError(e instanceof Error ? e.message : "Сеть");
+      setTestError(e instanceof Error ? e.message : t("settings.mcp.errorNetwork"));
     } finally {
       setTesting(false);
     }
@@ -289,7 +293,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
         <span className="mcp-summary">{summary}</span>
         <label className="mcp-toggle" onClick={(e) => e.stopPropagation()}>
           <input type="checkbox" checked={server.enabled} onChange={(e) => onToggleEnabled(e.target.checked)} />
-          <span>вкл</span>
+          <span>{t("settings.mcp.enabled")}</span>
         </label>
         {open ? <CaretDown size={13} className="mcp-chevron" /> : <CaretRight size={13} className="mcp-chevron" />}
       </div>
@@ -301,7 +305,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
           )}
 
           <label className="mcp-field">
-            <span>Название</span>
+            <span>{t("settings.mcp.name")}</span>
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </label>
 
@@ -315,13 +319,13 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
 
           <div className="mcp-actions">
             <button className="st2-btn st2-btn--primary" onClick={save} disabled={saving}>
-              {saving ? "Сохраняю…" : "Сохранить"}
+              {saving ? t("settings.mcp.saving") : t("settings.mcp.save")}
             </button>
             <button className="st2-btn" onClick={test} disabled={testing || !server.enabled}>
-              {testing ? "Проверка…" : "Проверить"}
+              {testing ? t("settings.mcp.testing") : t("settings.mcp.test")}
             </button>
             <button className="st2-btn st2-btn--danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
-              <Trash size={13} /> Удалить
+              <Trash size={13} /> {t("settings.mcp.delete")}
             </button>
           </div>
 
@@ -332,7 +336,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
             <div className="mcp-test-ok">
               <CheckCircle size={14} weight="fill" />
               <span>
-                {testTools.length === 0 ? "Подключено, инструментов нет" : `${testTools.length} инструментов`}
+                {testTools.length === 0 ? t("settings.mcp.connectedNoTools") : t("settings.mcp.connectedWithTools", { count: testTools.length })}
                 {testTools.length > 0 && (
                   <ul className="mcp-tool-list">
                     {testTools.map((t) => (
@@ -355,27 +359,28 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
 /* ── StdioFields / HttpFields ─────────────────────────────────────────── */
 
 function StdioFields({ form, onChange }: { form: StdioForm; onChange: (f: ConfigForm) => void }) {
+  const { t } = useTranslation();
   return (
     <>
       <label className="mcp-field">
-        <span>Команда</span>
-        <input value={form.command} onChange={(e) => onChange({ ...form, command: e.target.value })} placeholder="npx" />
+        <span>{t("settings.mcp.command")}</span>
+        <input value={form.command} onChange={(e) => onChange({ ...form, command: e.target.value })} placeholder={t("settings.mcp.commandPlaceholder")} />
       </label>
       <label className="mcp-field">
-        <span>Аргументы <span className="mcp-hint">(по строке)</span></span>
-        <textarea rows={3} value={form.argsText} onChange={(e) => onChange({ ...form, argsText: e.target.value })} placeholder={"-y\n@modelcontextprotocol/server-github"} />
+        <span>{t("settings.mcp.args")}</span>
+        <textarea rows={3} value={form.argsText} onChange={(e) => onChange({ ...form, argsText: e.target.value })} placeholder={t("settings.mcp.argsPlaceholder")} />
       </label>
       <div className="mcp-field">
-        <span>Переменные среды</span>
-        <KVEditor pairs={form.env} onChange={(env) => onChange({ ...form, env })} keyPh="КЛЮЧ" valPh="значение" />
+        <span>{t("settings.mcp.env")}</span>
+        <KVEditor pairs={form.env} onChange={(env) => onChange({ ...form, env })} keyPh={t("settings.mcp.key")} valPh={t("settings.mcp.value")} />
       </div>
       <div className="mcp-field">
-        <span>Среда выполнения</span>
+        <span>{t("settings.mcp.runtime")}</span>
         <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
           {(["host", "wsl"] as const).map((r) => (
             <label key={r} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 400 }}>
               <input type="radio" checked={form.runtime === r} onChange={() => onChange({ ...form, runtime: r })} />
-              {r === "host" ? "Windows-хост" : "WSL"}
+              {r === "host" ? t("settings.mcp.windows") : t("settings.mcp.wsl")}
             </label>
           ))}
         </div>
@@ -385,15 +390,16 @@ function StdioFields({ form, onChange }: { form: StdioForm; onChange: (f: Config
 }
 
 function HttpFields({ form, onChange }: { form: HttpForm; onChange: (f: ConfigForm) => void }) {
+  const { t } = useTranslation();
   return (
     <>
       <label className="mcp-field">
-        <span>URL</span>
-        <input value={form.url} onChange={(e) => onChange({ ...form, url: e.target.value })} placeholder="https://mcp.example.com/sse" />
+        <span>{t("settings.mcp.url")}</span>
+        <input value={form.url} onChange={(e) => onChange({ ...form, url: e.target.value })} placeholder={t("settings.mcp.urlPlaceholder")} />
       </label>
       <div className="mcp-field">
-        <span>Заголовки</span>
-        <KVEditor pairs={form.headers} onChange={(headers) => onChange({ ...form, headers })} keyPh="Authorization" valPh="Bearer ..." />
+        <span>{t("settings.mcp.headers")}</span>
+        <KVEditor pairs={form.headers} onChange={(headers) => onChange({ ...form, headers })} keyPh={t("settings.mcp.authKey")} valPh={t("settings.mcp.authValue")} />
       </div>
     </>
   );
@@ -406,6 +412,7 @@ function AddServerForm({ existingIds, onCancel, onAdded }: {
   onCancel: () => void;
   onAdded: () => void;
 }) {
+  const { t } = useTranslation();
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<"stdio" | "http">("stdio");
@@ -428,11 +435,11 @@ function AddServerForm({ existingIds, onCancel, onAdded }: {
   const submit = async () => {
     setErr(null);
     const trimId = id.trim();
-    if (!trimId || !name.trim()) { setErr("ID и название обязательны"); return; }
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(trimId)) { setErr("ID: латиница/цифры, _ -"); return; }
-    if (existingIds.has(trimId)) { setErr("Такой ID уже есть"); return; }
-    if (form.transport === "stdio" && !form.command.trim()) { setErr("Команда обязательна"); return; }
-    if (form.transport === "http" && !form.url.trim()) { setErr("URL обязателен"); return; }
+    if (!trimId || !name.trim()) { setErr(t("settings.mcp.validationIdName")); return; }
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(trimId)) { setErr(t("settings.mcp.validationIdFormat")); return; }
+    if (existingIds.has(trimId)) { setErr(t("settings.mcp.validationIdExists")); return; }
+    if (form.transport === "stdio" && !form.command.trim()) { setErr(t("settings.mcp.validationCommandRequired")); return; }
+    if (form.transport === "http" && !form.url.trim()) { setErr(t("settings.mcp.validationUrlRequired")); return; }
 
     setSaving(true);
     try {
@@ -455,18 +462,18 @@ function AddServerForm({ existingIds, onCancel, onAdded }: {
   return (
     <div className="mcp-add-form">
       <div className="mcp-add-form-head">
-        <span>Новый сервер</span>
+        <span>{t("settings.mcp.newServer")}</span>
         <button className="mcp-add-form-close" onClick={onCancel}><X size={14} /></button>
       </div>
 
       <div className="mcp-add-grid">
         <label className="mcp-field">
-          <span>Название</span>
-          <input value={name} onChange={(e) => onNameChange(e.target.value)} placeholder="GitHub MCP" />
+          <span>{t("settings.mcp.name")}</span>
+          <input value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={t("settings.mcp.namePlaceholder")} />
         </label>
         <label className="mcp-field">
-          <span>ID</span>
-          <input value={id} onChange={(e) => setId(e.target.value)} placeholder="github" />
+          <span>{t("settings.mcp.id")}</span>
+          <input value={id} onChange={(e) => setId(e.target.value)} placeholder={t("settings.mcp.idPlaceholder")} />
         </label>
       </div>
 
@@ -486,9 +493,9 @@ function AddServerForm({ existingIds, onCancel, onAdded }: {
 
       <div className="mcp-actions" style={{ marginTop: 14 }}>
         <button className="st2-btn st2-btn--primary" onClick={submit} disabled={saving}>
-          {saving ? "Добавляю…" : "Добавить"}
+          {saving ? t("settings.mcp.adding") : t("settings.mcp.add")}
         </button>
-        <button className="st2-btn" onClick={onCancel} disabled={saving}>Отмена</button>
+        <button className="st2-btn" onClick={onCancel} disabled={saving}>{t("settings.mcp.cancel")}</button>
       </div>
     </div>
   );
@@ -497,6 +504,7 @@ function AddServerForm({ existingIds, onCancel, onAdded }: {
 /* ── ImportModal ──────────────────────────────────────────────────────── */
 
 function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -505,7 +513,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
     setErr(null);
     let parsed: unknown;
     try { parsed = JSON.parse(text); }
-    catch { setErr("Не валидный JSON"); return; }
+    catch { setErr(t("settings.mcp.invalidJson")); return; }
 
     setSaving(true);
     try {
@@ -528,12 +536,11 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   return (
     <div className="mcp-add-form" style={{ marginTop: 12 }}>
       <div className="mcp-add-form-head">
-        <span>Импорт из JSON</span>
+        <span>{t("settings.mcp.importTitle")}</span>
         <button className="mcp-add-form-close" onClick={onClose}><X size={14} /></button>
       </div>
       <p className="st2-sub2">
-        Вставьте содержимое <code>claude_desktop_config.json</code> или объект <code>{`{ "mcpServers": { ... } }`}</code>.
-        Существующие серверы с тем же id будут перезаписаны.
+        {t("settings.mcp.importDescription")}
       </p>
       <textarea
         rows={10}
@@ -545,9 +552,9 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
       {err && <div className="st2-error" style={{ margin: "8px 0 0", position: "static" }}>{err}</div>}
       <div className="mcp-actions" style={{ marginTop: 12 }}>
         <button className="st2-btn st2-btn--primary" onClick={submit} disabled={saving}>
-          {saving ? "…" : "Импортировать"}
+          {saving ? "…" : t("settings.mcp.importButton")}
         </button>
-        <button className="st2-btn" onClick={onClose} disabled={saving}>Отмена</button>
+        <button className="st2-btn" onClick={onClose} disabled={saving}>{t("settings.mcp.importCancel")}</button>
       </div>
     </div>
   );

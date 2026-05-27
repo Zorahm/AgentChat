@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, Plus, Trash, PencilSimple, FileText, UploadSimple,
 } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
 import { ChatInput } from "../Chat/ChatInput";
 import type { ModelItem } from "../Chat/ChatView";
 import type { UseProjectsResult } from "../../hooks/useProjects";
@@ -21,6 +22,8 @@ interface ProjectDetailProps {
   onModelChange: (model: string) => void;
   thinkingEnabled: boolean;
   onThinkingToggle: () => void;
+  effortLevel: string | null;
+  onEffortChange: (v: string | null) => void;
   onBack: () => void;
   onOpenChat: (id: string) => void;
   onStartChat: (
@@ -35,8 +38,10 @@ interface ProjectDetailProps {
 export function ProjectDetail({
   projectId, api, sessions, models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
+  effortLevel, onEffortChange,
   onBack, onOpenChat, onStartChat, onDeleteChat,
 }: ProjectDetailProps) {
+  const { t } = useTranslation();
   const [project, setProject] = useState<ProjectFull | null>(null);
   const [name, setName] = useState("");
   const [editingInstr, setEditingInstr] = useState(false);
@@ -125,9 +130,9 @@ export function ProjectDetail({
       <div className="proj-detail">
         <div className="proj-detail-main">
           <button className="proj-back" onClick={onBack}>
-            <ArrowLeft weight="bold" /> Все проекты
+            <ArrowLeft weight="bold" /> {t("projects.allProjects")}
           </button>
-          <div className="proj-empty">Загрузка…</div>
+          <div className="proj-empty">{t("projects.loading")}</div>
         </div>
       </div>
     );
@@ -140,7 +145,7 @@ export function ProjectDetail({
       {/* ── Left: title, composer, chats ───────────────────────────── */}
       <div className="proj-detail-main">
         <button className="proj-back" onClick={onBack}>
-          <ArrowLeft weight="bold" /> Все проекты
+          <ArrowLeft weight="bold" /> {t("projects.allProjects")}
         </button>
 
         <div className="proj-title-row">
@@ -154,7 +159,7 @@ export function ProjectDetail({
           <button
             className="proj-icon-btn"
             onClick={() => setConfirmDelete(true)}
-            title="Удалить проект"
+            title={t("projects.deleteProject")}
           >
             <Trash />
           </button>
@@ -169,12 +174,14 @@ export function ProjectDetail({
           onModelChange={onModelChange}
           thinkingEnabled={thinkingEnabled}
           onThinkingToggle={onThinkingToggle}
-          placeholder="Чем помочь сегодня?"
+          effortLevel={effortLevel}
+          onEffortChange={onEffortChange}
+          placeholder={t("projects.chatPlaceholder")}
         />
 
-        <div className="proj-chats-head">Чаты проекта</div>
+        <div className="proj-chats-head">{t("projects.chatSectionTitle")}</div>
         {projectChats.length === 0 ? (
-          <div className="proj-files-empty">Чатов пока нет — начните новый выше.</div>
+          <div className="proj-files-empty">{t("projects.noChats")}</div>
         ) : (
           <ul className="proj-chats">
             {projectChats.map((c) => (
@@ -182,13 +189,13 @@ export function ProjectDetail({
                 <div className="proj-chat-info">
                   <div className="proj-chat-title">{c.title}</div>
                   <div className="proj-chat-time">
-                    Последнее сообщение {formatRelative(c.updatedAt ?? c.createdAt)}
+                    {t("projects.lastMessage")} {formatRelative(c.updatedAt ?? c.createdAt)}
                   </div>
                 </div>
                 <button
                   className="proj-icon-btn proj-icon-btn--sm proj-chat-del"
                   onClick={(e) => { e.stopPropagation(); onDeleteChat(c.id); }}
-                  title="Удалить чат"
+                  title={t("projects.deleteChat")}
                 >
                   <Trash />
                 </button>
@@ -202,8 +209,8 @@ export function ProjectDetail({
       <aside className="proj-detail-side">
         <div className="proj-card-panel">
           <div className="proj-card-head">
-            <span className="proj-card-title">Инструкции</span>
-            <button className="proj-icon-btn proj-icon-btn--sm" onClick={openInstrEditor} title="Редактировать">
+            <span className="proj-card-title">{t("projects.instructions")}</span>
+            <button className="proj-icon-btn proj-icon-btn--sm" onClick={openInstrEditor} title={t("projects.edit")}>
               <PencilSimple />
             </button>
           </div>
@@ -211,19 +218,19 @@ export function ProjectDetail({
             <p className="proj-card-text" onClick={openInstrEditor}>{instr}</p>
           ) : (
             <button className="proj-card-empty" onClick={openInstrEditor}>
-              Добавьте промпт — он передаётся модели в каждом чате проекта.
+              {t("projects.instructionsEmpty")}
             </button>
           )}
         </div>
 
         <div className="proj-card-panel">
           <div className="proj-card-head">
-            <span className="proj-card-title">Файлы</span>
+            <span className="proj-card-title">{t("projects.files")}</span>
             <button
               className="proj-icon-btn proj-icon-btn--sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              title="Добавить файлы"
+              title={t("projects.addFiles")}
             >
               {uploading ? <UploadSimple className="proj-spin" /> : <Plus weight="bold" />}
             </button>
@@ -237,7 +244,7 @@ export function ProjectDetail({
           </div>
           {project.files.length === 0 ? (
             <button className="proj-card-empty" onClick={() => fileInputRef.current?.click()}>
-              Word, PDF, Excel и текст сразу превращаются в текст для модели.
+              {t("projects.filesEmpty")}
             </button>
           ) : (
             <div className="proj-files-grid">
@@ -247,6 +254,7 @@ export function ProjectDetail({
                   file={f}
                   onOpen={() => void openFile(f)}
                   onDelete={() => void handleDeleteFile(f.id)}
+                  t={t}
                 />
               ))}
             </div>
@@ -258,9 +266,9 @@ export function ProjectDetail({
       {editingInstr && (
         <div className="proj-modal-overlay" onClick={() => setEditingInstr(false)}>
           <div className="proj-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="proj-modal-title">Инструкции проекта</h3>
+            <h3 className="proj-modal-title">{t("projects.instructionsModalTitle")}</h3>
             <p className="proj-modal-hint">
-              Например: «Отвечай кратко, на русском. Ты — ассистент по проекту X.»
+              {t("projects.instructionsHint")}
             </p>
             <textarea
               className="proj-modal-textarea"
@@ -270,13 +278,13 @@ export function ProjectDetail({
               autoFocus
             />
             <div className="proj-modal-actions">
-              <button className="proj-btn" onClick={() => setEditingInstr(false)}>Отмена</button>
+              <button className="proj-btn" onClick={() => setEditingInstr(false)}>{t("projects.cancel")}</button>
               <button
                 className="proj-btn proj-btn--primary"
                 onClick={() => void saveInstructions()}
                 disabled={savingInstr}
               >
-                {savingInstr ? "Сохранение…" : "Сохранить"}
+                {savingInstr ? t("projects.saving") : t("projects.save")}
               </button>
             </div>
           </div>
@@ -289,17 +297,17 @@ export function ProjectDetail({
           <div className="proj-modal proj-modal--wide" onClick={(e) => e.stopPropagation()}>
             <div className="proj-modal-filehead">
               <h3 className="proj-modal-title">{fileView.name}</h3>
-              <button className="proj-icon-btn proj-icon-btn--sm" onClick={() => setFileView(null)} title="Закрыть">
+              <button className="proj-icon-btn proj-icon-btn--sm" onClick={() => setFileView(null)} title={t("projects.close")}>
                 ×
               </button>
             </div>
             {fileLoading ? (
-              <div className="proj-files-empty">Загрузка…</div>
+              <div className="proj-files-empty">{t("projects.loading")}</div>
             ) : fileView.text.trim() ? (
               <pre className="proj-filetext">{fileView.text}</pre>
             ) : (
               <div className="proj-files-empty">
-                Текст не извлечён — модель откроет файл напрямую при необходимости.
+                {t("projects.fileTextEmpty")}
               </div>
             )}
           </div>
@@ -310,12 +318,12 @@ export function ProjectDetail({
       {confirmDelete && (
         <div className="proj-confirm-overlay" onClick={() => setConfirmDelete(false)}>
           <div className="proj-confirm" onClick={(e) => e.stopPropagation()}>
-            <h3>Удалить проект?</h3>
-            <p>Файлы проекта будут удалены. Чаты останутся, но потеряют связь с проектом.</p>
+            <h3>{t("projects.deleteConfirm")}</h3>
+            <p>{t("projects.deleteMessage")}</p>
             <div className="proj-confirm-actions">
-              <button className="proj-btn" onClick={() => setConfirmDelete(false)}>Отмена</button>
+              <button className="proj-btn" onClick={() => setConfirmDelete(false)}>{t("projects.cancel")}</button>
               <button className="proj-btn proj-btn--danger" onClick={() => void handleDeleteProject()}>
-                Удалить
+                {t("projects.delete")}
               </button>
             </div>
           </div>
@@ -326,36 +334,36 @@ export function ProjectDetail({
 }
 
 function FileChip(
-  { file, onOpen, onDelete }: { file: ProjectFileInfo; onOpen: () => void; onDelete: () => void },
+  { file, onOpen, onDelete, t }: { file: ProjectFileInfo; onOpen: () => void; onDelete: () => void; t: (key: string) => string },
 ) {
   const ext = file.name.includes(".")
     ? file.name.split(".").pop()!.toUpperCase().slice(0, 5)
     : "FILE";
   const meta = file.extract_status === "ok" && file.text_len > 0
-    ? `${file.text_len.toLocaleString("ru-RU")} симв.`
-    : formatSize(file.size);
+    ? `${file.text_len.toLocaleString()} ${t("projects.chars")}`
+    : formatSize(file.size, t);
   return (
-    <div className="proj-file-chip" onClick={onOpen} title="Открыть текст">
+    <div className="proj-file-chip" onClick={onOpen} title={t("projects.openText")}>
       <div className="proj-file-chip-top">
         <FileText className="proj-file-icon" />
         <button
           className="proj-file-chip-x"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Удалить файл"
+          title={t("projects.deleteFile")}
         >×</button>
       </div>
       <div className="proj-file-chip-name">{file.name}</div>
       <div className="proj-file-chip-meta">
         {meta}
-        {file.extract_status === "failed" && <span className="proj-badge proj-badge--warn">не извлечён</span>}
+        {file.extract_status === "failed" && <span className="proj-badge proj-badge--warn">{t("projects.notExtracted")}</span>}
       </div>
       <span className="proj-file-chip-badge">{ext}</span>
     </div>
   );
 }
 
-function formatSize(bytes: number): string {
+function formatSize(bytes: number, t?: (key: string) => string): string {
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(0)} КБ`;
-  return `${(kb / 1024).toFixed(1)} МБ`;
+  if (kb < 1024) return `${kb.toFixed(0)} ${t ? t("projects.kb") : "KB"}`;
+  return `${(kb / 1024).toFixed(1)} ${t ? t("projects.mb") : "MB"}`;
 }

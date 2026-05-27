@@ -7,6 +7,7 @@ import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import type { Artifact } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { API_BASE } from "../../utils/apiBase";
+import { useTranslation } from "react-i18next";
 
 function useDarkMode(): boolean {
   const [isDark, setIsDark] = useState(
@@ -31,9 +32,10 @@ export function RenderView({
   content: string | null;
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const ext = artifact.path?.split(".").pop()?.toLowerCase() ?? "";
 
-  if (loading) return <div className="art-state">Loading…</div>;
+  if (loading) return <div className="art-state">{t("artifacts.loading")}</div>;
 
   if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
     const src = `${API_BASE}/files/serve?path=${encodeURIComponent(artifact.path ?? "")}`;
@@ -52,8 +54,8 @@ export function RenderView({
   if (["docx", "doc", "pptx", "ppt", "xlsx", "xls"].includes(ext)) {
     return (
       <div className="art-state">
-        Превью недоступно для {ext.toUpperCase()}
-        <small>нажмите «Скачать», чтобы открыть в нативном приложении</small>
+        {t("artifacts.previewUnavailable")} {ext.toUpperCase()}
+        <small>{t("artifacts.downloadHint")}</small>
       </div>
     );
   }
@@ -61,8 +63,8 @@ export function RenderView({
   if (content === null) {
     return (
       <div className="art-state">
-        File not available
-        <small>click ↺ to refresh</small>
+        {t("artifacts.fileNotAvailable")}
+        <small>{t("artifacts.refreshHint")}</small>
       </div>
     );
   }
@@ -104,19 +106,19 @@ export function RenderView({
   }
 
   if (ext === "csv") {
-    return <CsvTable content={content} />;
+    return <CsvTable content={content} t={t} />;
   }
 
   return <pre className="art-render-pre">{content}</pre>;
 }
 
-function CsvTable({ content }: { content: string }) {
+function CsvTable({ content, t }: { content: string; t?: (key: string) => string }) {
   const rows = content
     .trim()
     .split("\n")
     .map((line) => line.split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
 
-  if (rows.length === 0) return <div className="art-state">Empty file</div>;
+  if (rows.length === 0) return <div className="art-state">{t ? t("artifacts.emptyFile") : "Empty file"}</div>;
   const [header, ...body] = rows;
 
   return (
@@ -144,14 +146,15 @@ export function CodeView({
   content: string | null;
   loading: boolean;
 }) {
+  const { t } = useTranslation();
   const isDark = useDarkMode();
 
-  if (loading) return <div className="art-state">Loading…</div>;
+  if (loading) return <div className="art-state">{t("artifacts.loading")}</div>;
   if (content === null) {
     return (
       <div className="art-state">
-        File not available
-        <small>click ↺ to refresh</small>
+        {t("artifacts.fileNotAvailable")}
+        <small>{t("artifacts.refreshHint")}</small>
       </div>
     );
   }

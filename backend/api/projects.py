@@ -82,7 +82,7 @@ class ProjectFileText(BaseModel):
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(default="Новый проект", max_length=200)
+    name: str = Field(default="New project", max_length=200)
     instructions: str = ""
 
 

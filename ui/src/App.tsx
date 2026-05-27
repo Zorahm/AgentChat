@@ -16,12 +16,15 @@ import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
+import { i18n } from "./i18n";
+import { useTranslation } from "react-i18next";
 
 const PANEL_MIN = 280;
 const PANEL_MAX = 1500;
 const PANEL_DEFAULT = 600;
 
 export function App() {
+  const { t } = useTranslation();
   const chats = useChats();
   const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects">("chat");
   const [settingsTab, setSettingsTab] = useState<NavTab>("main");
@@ -29,6 +32,7 @@ export function App() {
   const [models, setModels] = useState<ModelItem[]>([]);
   const [enabledProviders, setEnabledProviders] = useState<Set<string>>(new Set());
   const [thinkingEnabled, setThinkingEnabled] = useState(true);
+  const [effortLevel, setEffortLevel] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [generalPanelOpen, setGeneralPanelOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
@@ -36,6 +40,7 @@ export function App() {
   const [userName, setUserName] = useState("");
   const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
   const [theme, setTheme] = useState("system");
+  const [language, setLanguage] = useState("");
   const [wslWarning, setWslWarning] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const panelWidthRef = useRef(panelWidth);
@@ -97,6 +102,7 @@ export function App() {
         if (data.default_model) setModel(data.default_model);
         if (typeof data.user_name === "string") setUserName(data.user_name);
         if (typeof data.theme === "string") setTheme(data.theme);
+        if (typeof data.language === "string") setLanguage(data.language);
         if (typeof data.onboarding_completed === "boolean") {
           setOnboardingDone(data.onboarding_completed);
         } else {
@@ -163,6 +169,14 @@ export function App() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
+  // Apply the persisted language once settings load. An empty value means the
+  // user never picked one — keep the OS-locale guess from i18n's detector.
+  useEffect(() => {
+    if (language && i18n.language !== language) {
+      void i18n.changeLanguage(language);
+    }
+  }, [language]);
+
   const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects") => {
     if (v === "skills") {
       setSettingsTab("skills");
@@ -200,11 +214,11 @@ export function App() {
       body: JSON.stringify({ max_iterations: newLimit }),
     }).then(() => {
       if (view !== "chat") setView("chat");
-      chats.sendMessage("Continue", model, []);
+      chats.sendMessage("Continue", model, [], undefined, thinkingEnabled, effortLevel ?? undefined);
       void fetchSettings();
     }).catch(() => {
       if (view !== "chat") setView("chat");
-      chats.sendMessage("Continue", model, []);
+      chats.sendMessage("Continue", model, [], undefined, thinkingEnabled, effortLevel ?? undefined);
     });
   };
   useEffect(() => {
@@ -218,13 +232,20 @@ export function App() {
 
   const handleSend = (text: string, attachments: AttachmentInfo[], html?: string) => {
     if (view !== "chat") setView("chat");
-    chats.sendMessage(text, model, attachments, html);
+    chats.sendMessage(text, model, attachments, html, thinkingEnabled, effortLevel ?? undefined);
   };
 
   const handleModelChange = (newModel: string) => {
     setModel(newModel);
-    const current = (models as Array<ModelItem & { thinking?: boolean }>).find((m) => m.id === newModel);
-    if (current) setThinkingEnabled(current.thinking !== false);
+    const current = models.find((m) => m.id === newModel);
+    if (current) {
+      setThinkingEnabled(current.thinking !== false);
+      if (current.effort_levels && current.effort_levels.length > 0) {
+        setEffortLevel((prev) => prev && current.effort_levels!.includes(prev) ? prev : current.effort_levels![0] ?? null);
+      } else {
+        setEffortLevel(null);
+      }
+    }
     void updateSettings({ default_model: newModel });
   };
 
@@ -246,7 +267,7 @@ export function App() {
   };
 
   const activeSession = chats.sessions.find((s) => s.id === chats.activeId);
-  const chatTitle = activeSession?.title ?? "Chat";
+  const chatTitle = activeSession?.title ?? t("app.chatTitle");
   const shortTitle = chatTitle.length > 40 ? chatTitle.slice(0, 38) + "…" : chatTitle;
 
   const handleToggleFiles = () => {
@@ -262,9 +283,10 @@ export function App() {
     : models;
 
   const settingsCtx = useMemo<SettingsContextValue>(() => ({
-    model, setModel, theme, userName, thinkingEnabled, setThinkingEnabled,
+    model, setModel, theme, language, userName, thinkingEnabled, setThinkingEnabled,
+    effortLevel, setEffortLevel,
     enabledProviders, models, onboardingDone, updateSettings, refreshSettings: fetchSettings,
-  }), [model, theme, userName, thinkingEnabled, enabledProviders, models, onboardingDone, updateSettings, fetchSettings]);
+  }), [model, theme, language, userName, thinkingEnabled, effortLevel, enabledProviders, models, onboardingDone, updateSettings, fetchSettings]);
 
   const sideW = sidebarCollapsed ? 44 : 240;
   const rightW = view === "chat" && panelOpen ? panelWidth : 0;
@@ -305,6 +327,8 @@ export function App() {
             onModelChange={handleModelChange}
             thinkingEnabled={thinkingEnabled}
             onThinkingToggle={() => setThinkingEnabled((v) => !v)}
+            effortLevel={effortLevel}
+            onEffortChange={setEffortLevel}
             onClose={() => handleNavigate("chat")}
             onOpenChat={(id) => { chats.switchChat(id); handleNavigate("chat"); }}
             onStartChat={(pid, text, atts, html) => {
@@ -331,6 +355,8 @@ export function App() {
             onModelChange={handleModelChange}
             thinkingEnabled={thinkingEnabled}
             onThinkingToggle={() => setThinkingEnabled((v) => !v)}
+            effortLevel={effortLevel}
+            onEffortChange={setEffortLevel}
             mcpEnabled={chats.activeMcpEnabled}
             onToggleMcpServer={chats.toggleMcpServer}
           />
@@ -398,7 +424,7 @@ export function App() {
             display: "flex", alignItems: "center", gap: 12, boxShadow: "0 4px 20px rgba(0,0,0,.4)"
           }}
         >
-          <span>⚠ WSL not found — bash tool unavailable</span>
+          <span>⚠ {t("app.wslNotFound")}</span>
           <button
             style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16, lineHeight: 1 }}
             onClick={() => { localStorage.setItem("agentchat.wslWarnDismissed", "1"); setWslWarning(false); }}

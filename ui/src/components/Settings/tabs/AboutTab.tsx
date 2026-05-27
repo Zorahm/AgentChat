@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Atom, Lightning, Desktop, Brain, Code, ArrowClockwise, CheckCircle, WarningCircle, X, CloudArrowDown } from "@phosphor-icons/react";
 import { checkForUpdate, installUpdate, type UpdateStatus } from "../../../utils/updater";
 import { isTauri } from "../../../utils/tauri";
@@ -7,14 +8,15 @@ import avatarZorahm from "../../../assets/avatar-zorahm.png";
 import avatarHerman from "../../../assets/avatar-hermandebush.png";
 
 export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }) {
+  const { t } = useTranslation();
   const [ghostClicks, setGhostClicks] = useState(0);
   const stack = [
-    { name: "React", icon: <Atom />, desc: "UI-фреймворк" },
-    { name: "TypeScript", icon: <Code />, desc: "Типизированный фронтенд" },
-    { name: "FastAPI", icon: <Lightning />, desc: "Асинхронный бэкенд" },
-    { name: "LiteLLM", icon: <Brain />, desc: "Прокси для LLM-провайдеров" },
-    { name: "Tauri", icon: <Desktop />, desc: "Десктопная оболочка" },
-    { name: "Python", icon: <Code />, desc: "Агентный цикл, инструменты" },
+    { name: "React", icon: <Atom />, desc: t("settings.about.stackReact") },
+    { name: "TypeScript", icon: <Code />, desc: t("settings.about.stackTypescript") },
+    { name: "FastAPI", icon: <Lightning />, desc: t("settings.about.stackFastapi") },
+    { name: "LiteLLM", icon: <Brain />, desc: t("settings.about.stackLiteLLM") },
+    { name: "Tauri", icon: <Desktop />, desc: t("settings.about.stackTauri") },
+    { name: "Python", icon: <Code />, desc: t("settings.about.stackPython") },
   ];
 
   const [status, setStatus] = useState<UpdateStatus>({ state: "idle" });
@@ -51,21 +53,21 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
         return (
           <div className="st2-update-card">
             <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">Проверяю обновления…</span>
+            <span className="st2-update-card-msg">{t("settings.about.checking")}</span>
           </div>
         );
       case "available":
         return (
           <div className="st2-update-card is-available">
-            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
             <div className="st2-update-card-head">
               <CloudArrowDown />
-              <span>Доступно обновление</span>
+              <span>{t("settings.about.updateAvailable")}</span>
             </div>
-            <div className="st2-update-card-ver">v{pkg.version} → <b>v{status.version}</b></div>
+            <div className="st2-update-card-ver">{t("settings.about.updateTo", { from: pkg.version, to: status.version })}</div>
             {status.body && <div className="st2-update-card-notes">{status.body}</div>}
             <button className="st2-btn st2-update-card-go" onClick={handleInstall}>
-              Обновить и перезапустить
+              {t("settings.about.updateAndRestart")}
             </button>
           </div>
         );
@@ -73,28 +75,28 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
         return (
           <div className="st2-update-card">
             <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">Загрузка… {status.progress}%</span>
+            <span className="st2-update-card-msg">{t("settings.about.downloading")} {status.progress}%</span>
           </div>
         );
       case "installing":
         return (
           <div className="st2-update-card">
             <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">Установка… приложение перезапустится.</span>
+            <span className="st2-update-card-msg">{t("settings.about.installing")}</span>
           </div>
         );
       case "latest":
         return (
           <div className="st2-update-card is-latest">
-            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
             <CheckCircle />
-            <span className="st2-update-card-msg">У вас последняя версия</span>
+            <span className="st2-update-card-msg">{t("settings.about.latestVersion")}</span>
           </div>
         );
       case "error":
         return (
           <div className="st2-update-card is-error">
-            <button className="st2-update-card-x" onClick={closeCard} title="Закрыть"><X /></button>
+            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
             <WarningCircle />
             <span className="st2-update-card-msg">{status.message}</span>
           </div>
@@ -105,14 +107,13 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
   };
 
   return <>
-    <h3 className="st2-h">О приложении</h3>
+    <h3 className="st2-h">{t("settings.about.title")}</h3>
     <p className="st2-sub">
-      AgentChat — десктопный чат для рабочих задач и брейншторминга.<br />
-      Локальный, конфиденциальный, без привязки к редактированию кода.
+      {t("settings.about.description")}
     </p>
 
     <div className="st2-section">
-      <h4 style={{ marginBottom: 10 }}>Стек</h4>
+      <h4 style={{ marginBottom: 10 }}>{t("settings.about.stack")}</h4>
       <div className="st2-about-stack">
         {stack.map((s) => (
           <div key={s.name} className="st2-about-stack-item">
@@ -125,31 +126,29 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
     </div>
 
     <div className="st2-section">
-      <h4 style={{ marginBottom: 6 }}>Над проектом работали</h4>
+      <h4 style={{ marginBottom: 6 }}>{t("settings.about.authors")}</h4>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="st2-about-author">
           <span className="st2-about-author-ic"><img src={avatarZorahm} alt="" /></span>
           <div className="st2-about-author-info">
             <a className="st2-about-author-name" href="https://github.com/zorahm" target="_blank" rel="noopener noreferrer">ZorahM</a>
-            <span className="st2-about-author-meta">Backend &amp; UI</span>
+            <span className="st2-about-author-meta">{t("settings.about.authorBackend")}</span>
           </div>
         </div>
         <div className="st2-about-author">
           <span className="st2-about-author-ic"><img src={avatarHerman} alt="" /></span>
           <div className="st2-about-author-info">
             <a className="st2-about-author-name" href="https://github.com/hermandebush" target="_blank" rel="noopener noreferrer">Herman</a>
-            <span className="st2-about-author-meta">UX</span>
+            <span className="st2-about-author-meta">{t("settings.about.authorUx")}</span>
           </div>
         </div>
       </div>
     </div>
 
     <div className="st2-section">
-      <h4 style={{ marginBottom: 6 }}>Цель</h4>
+      <h4 style={{ marginBottom: 6 }}>{t("settings.about.goal")}</h4>
       <p className="st2-sub2">
-        Чат, в котором можно обсудить рабочий вопрос, набросать идею,
-        разобрать проблему — и не улетать в среду разработки. Никакого
-        скрытого запуска скриптов, никакой магии терминала. Просто диалог.
+        {t("settings.about.goalText")}
       </p>
     </div>
 
@@ -175,14 +174,14 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
             />
           </div>
           <div>
-            <span className="st2-about-author-name">AgentChat</span>
-            <span className="st2-about-author-meta">v{pkg.version}</span>
+            <span className="st2-about-author-name">{t("settings.about.appName")}</span>
+            <span className="st2-about-author-meta">{t("settings.about.version")} {pkg.version}</span>
           </div>
         </div>
         {isTauri() && (
           <button className="st2-update-btn" onClick={handleCheck} disabled={busy}>
             <ArrowClockwise className={busy ? "spin" : ""} />
-            {status.state === "checking" ? "Проверяю…" : "Проверить обновления"}
+            {status.state === "checking" ? t("settings.about.checking") : t("settings.about.checkUpdates")}
           </button>
         )}
       </div>

@@ -66,10 +66,10 @@ class ReadPhotoTool(BaseTool):
     async def execute(self, path: str) -> str | list[dict[str, Any]]:  # type: ignore[override]
         if not self._vision_supported:
             return (
-                f"Модель не поддерживает vision — пиксельное содержимое недоступно.\n"
-                f"Файл доступен по пути: {path}\n"
-                f"Ты можешь: прочитать метаданные (bash_tool: exiftool / identify -verbose), "
-                f"конвертировать, переименовать, встроить в документ — или попросить пользователя описать содержимое."
+                f"Model does not support vision — pixel content is not accessible.\n"
+                f"File available at: {path}\n"
+                f"You can: read metadata (bash_tool: exiftool / identify -verbose), "
+                f"convert, rename, embed into a document — or ask the user to describe the content."
             )
 
         denied = self._policy.check_read(path)

@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Sun, Moon, Monitor, Camera, SignOut, Warning, Trash,
+  Check, Camera, SignOut, Warning, Trash,
   X as XIcon, ArrowClockwise, CheckCircle, XCircle, Terminal,
+  UserCircle, Globe, Palette, ShieldWarning,
+  Sun, Moon, Monitor,
 } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
 import { AvatarCircle } from "../../Sidebar";
 import { API_BASE } from "../../../utils/apiBase";
+import { SUPPORTED_LANGUAGES } from "../../../i18n/languages";
 import type { SettingsData } from "../SettingsPanel";
+
+const FLAG_MAP: Record<string, string> = {
+  en: "\u{1F1EC}\u{1F1E7}",
+  ru: "\u{1F1F7}\u{1F1FA}",
+};
 
 /* ── MainTab ──────────────────── */
 
@@ -17,6 +26,7 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
   clearAvatar: () => void;
   onSignOut: (deleteChats: boolean) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [draft, setDraft] = useState(settings.user_name ?? "");
   const [showSignOut, setShowSignOut] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -39,98 +49,70 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
   }, [setAvatarFromFile]);
 
   const currentTheme = settings.theme || "system";
+  const currentLang = settings.language || i18n.resolvedLanguage || "en";
   const unrestricted = settings.unrestricted_mode ?? false;
 
   return (
     <div className="st2-main">
-      <h3 className="st2-h">Главное</h3>
+      <h3 className="st2-h">{t("settings.general.title")}</h3>
       <p className="st2-sub">
-        Личные настройки и поведение приложения по умолчанию.
-        Всё хранится локально — никаких облачных аккаунтов.
+        {t("settings.general.description")}
       </p>
 
       {/* 01 Профиль */}
       <section>
         <div className="st2-mh">
           <span className="st2-mn">01</span>
-          <h2>Профиль</h2>
+          <h2>{t("settings.general.profile")}</h2>
         </div>
         <p className="st2-md">
-          Как модель к вам обращается. Не отправляется наружу.
+          {t("settings.general.profileDescription")}
         </p>
         <div className="st2-mrows">
-          {/* Avatar row */}
-          <div className="st2-mrow st2-mrow--avatar">
-            <div className="st2-mlab">
-              <p className="t">Аватарка</p>
-              <p className="d">Отображается в сайдбаре. Хранится только локально.</p>
-            </div>
-            <div className="st2-mctl">
-              <div className="st2-avatar-wrap">
-                <div
-                  className="st2-avatar-preview"
-                  onClick={() => avatarInputRef.current?.click()}
-                  title="Нажми чтобы загрузить фото"
-                >
-                  <AvatarCircle url={avatarUrl} name={draft || settings.user_name} size={64} />
-                  <div className="st2-avatar-overlay">
-                    <Camera size={18} weight="bold" />
-                  </div>
-                </div>
-                <div className="st2-avatar-actions">
-                  <button
-                    className="st2-avatar-btn"
-                    onClick={() => avatarInputRef.current?.click()}
-                  >
-                    {avatarUrl ? "Изменить фото" : "Загрузить фото"}
-                  </button>
-                  {avatarUrl && (
-                    <button
-                      className="st2-avatar-btn st2-avatar-btn--del"
-                      onClick={clearAvatar}
-                    >
-                      <XIcon size={12} weight="bold" /> Удалить
-                    </button>
-                  )}
-                  <p className="st2-avatar-hint">JPG, PNG, WEBP · обрезается до квадрата</p>
-                </div>
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: "none" }}
-                  onChange={handleAvatarFile}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Name row */}
+          {/* Avatar + Name combined */}
           <div className="st2-mrow">
             <div className="st2-mlab">
-              <p className="t">Имя пользователя</p>
-              <p className="d">
-                Модель использует это имя в обращениях. Можно оставить пустым.
-              </p>
+              <p className="t"><UserCircle size={16} /> {t("settings.general.avatar")}</p>
+              <p className="d">{t("settings.general.avatarHint")}</p>
             </div>
             <div className="st2-mctl">
-              <input type="text" className="st2-input" value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={handleBlur}
-                placeholder="Введите имя" />
+              <div className="id-combo">
+                <div className="avatar-circle" onClick={() => avatarInputRef.current?.click()} title={t("settings.general.clickToUpload")}>
+                  <AvatarCircle url={avatarUrl} name={draft || settings.user_name} size={48} />
+                  <span className="edit-badge">✎</span>
+                </div>
+                <div className="input-wrap">
+                  <input type="text" value={draft} maxLength={32}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={handleBlur}
+                    placeholder={t("settings.general.userNamePlaceholder")} />
+                  <span className="char-hint">{draft.length} / 32</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button className="st2-avatar-btn" onClick={() => avatarInputRef.current?.click()}>
+                  <Camera size={14} /> {avatarUrl ? t("settings.general.changePhoto") : t("settings.general.uploadPhoto")}
+                </button>
+                {avatarUrl && (
+                  <button className="st2-avatar-btn st2-avatar-btn--del" onClick={clearAvatar}>
+                    <XIcon size={12} weight="bold" /> {t("settings.general.deletePhoto")}
+                  </button>
+                )}
+              </div>
+              <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarFile} />
             </div>
           </div>
 
           {/* Sign out row */}
-          <div className="st2-mrow st2-mrow--signout">
+          <div className="st2-mrow">
             <div className="st2-mlab">
-              <p className="t">Выход из профиля</p>
-              <p className="d">Сбросить имя, аватарку и при желании удалить все чаты.</p>
+              <p className="t"><SignOut size={16} /> {t("settings.general.signOut")}</p>
+              <p className="d">{t("settings.general.signOutDescription")}</p>
             </div>
             <div className="st2-mctl">
               <button className="st2-signout-btn" onClick={() => setShowSignOut(true)}>
                 <SignOut size={14} weight="bold" />
-                Выйти из профиля
+                {t("settings.general.signOutButton")}
               </button>
             </div>
           </div>
@@ -144,34 +126,96 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
         />
       )}
 
-      {/* 02 Оформление */}
+      {/* 02 Appearance */}
       <section>
         <div className="st2-mh">
           <span className="st2-mn">02</span>
-          <h2>Оформление</h2>
+          <h2>{t("settings.general.appearance")}</h2>
         </div>
         <p className="st2-md">
-          Светлая, тёмная или системная тема. Полная палитра настраивается в теме CSS.
+          {t("settings.general.appearanceDescription")}
         </p>
         <div className="st2-mrows">
           <div className="st2-mrow">
             <div className="st2-mlab">
-              <p className="t">Тема оформления</p>
-              <p className="d">Цветовая схема всего интерфейса.</p>
+              <p className="t"><Globe size={16} /> {t("settings.general.language")}</p>
+              <p className="d">{t("settings.general.languageHint")}</p>
             </div>
             <div className="st2-mctl">
-              <div className="st2-theme">
-                <button className={currentTheme === "light" ? "active" : ""}
+              <div className="lang-picker">
+                <span className="flag">{FLAG_MAP[currentLang] ?? ""}</span>
+                <span className="lang-name">{SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.label ?? currentLang}</span>
+                <span className="arrow">▾</span>
+                <select value={currentLang} onChange={(e) => onUpdate({ language: e.target.value })}>
+                  {SUPPORTED_LANGUAGES.map((lng) => (
+                    <option key={lng.code} value={lng.code}>{lng.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="st2-mrow stack">
+            <div className="st2-mlab">
+              <p className="t"><Palette size={16} /> {t("settings.general.theme")}</p>
+              <p className="d">{t("settings.general.themeHint")}</p>
+            </div>
+            <div className="st2-mctl">
+              <div className="theme-cards" role="radiogroup" aria-label={t("settings.general.theme")}>
+                <button className={"theme-card" + (currentTheme === "light" ? " sel" : "")}
                   onClick={() => onUpdate({ theme: "light" })}>
-                  <Sun /> Светлая
+                  <svg className="tc-preview-svg" viewBox="0 0 120 78" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="120" height="78" rx="4" fill="#f6f4ef"/>
+                    <rect x="8" y="10" width="44" height="5" rx="2" fill="#1a1a1a" opacity=".85"/>
+                    <rect x="8" y="20" width="28" height="4" rx="2" fill="#1a1a1a" opacity=".4"/>
+                    <rect x="8" y="28" width="52" height="4" rx="2" fill="#1a1a1a" opacity=".4"/>
+                    <rect x="8" y="36" width="36" height="4" rx="2" fill="#1a1a1a" opacity=".4"/>
+                    <rect x="60" y="58" width="52" height="12" rx="6" fill="#1a1a1a" opacity=".9"/>
+                  </svg>
+                  <div className="tc-foot">
+                    <span className="name"><Sun size={14} weight="bold" /> {t("settings.general.themeLight")}</span>
+                    <span className="check">{currentTheme === "light" ? "✓" : ""}</span>
+                  </div>
                 </button>
-                <button className={currentTheme === "dark" ? "active" : ""}
+                <button className={"theme-card" + (currentTheme === "dark" ? " sel" : "")}
                   onClick={() => onUpdate({ theme: "dark" })}>
-                  <Moon /> Тёмная
+                  <svg className="tc-preview-svg" viewBox="0 0 120 78" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="120" height="78" rx="4" fill="#15130e"/>
+                    <rect x="8" y="10" width="44" height="5" rx="2" fill="#f0ead8" opacity=".85"/>
+                    <rect x="8" y="20" width="28" height="4" rx="2" fill="#f0ead8" opacity=".4"/>
+                    <rect x="8" y="28" width="52" height="4" rx="2" fill="#f0ead8" opacity=".4"/>
+                    <rect x="8" y="36" width="36" height="4" rx="2" fill="#f0ead8" opacity=".4"/>
+                    <rect x="60" y="58" width="52" height="12" rx="6" fill="#3a2f23"/>
+                  </svg>
+                  <div className="tc-foot">
+                    <span className="name"><Moon size={14} weight="bold" /> {t("settings.general.themeDark")}</span>
+                    <span className="check">{currentTheme === "dark" ? "✓" : ""}</span>
+                  </div>
                 </button>
-                <button className={currentTheme === "system" ? "active" : ""}
+                <button className={"theme-card" + (currentTheme === "system" ? " sel" : "")}
                   onClick={() => onUpdate({ theme: "system" })}>
-                  <Monitor /> Системная
+                  <svg className="tc-preview-svg" viewBox="0 0 120 78" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <clipPath id="tc-auto-clip"><rect width="120" height="78" rx="4"/></clipPath>
+                    </defs>
+                    <g clipPath="url(#tc-auto-clip)">
+                      <rect width="60" height="78" fill="#f6f4ef"/>
+                      <rect x="60" width="60" height="78" fill="#15130e"/>
+                      <rect x="8" y="10" width="36" height="5" rx="2" fill="#1a1a1a" opacity=".85"/>
+                      <rect x="8" y="20" width="24" height="4" rx="2" fill="#1a1a1a" opacity=".4"/>
+                      <rect x="8" y="28" width="42" height="4" rx="2" fill="#1a1a1a" opacity=".4"/>
+                      <rect x="28" y="58" width="26" height="12" rx="6" fill="#1a1a1a" opacity=".9"/>
+                      <rect x="68" y="10" width="36" height="5" rx="2" fill="#f0ead8" opacity=".85"/>
+                      <rect x="68" y="20" width="24" height="4" rx="2" fill="#f0ead8" opacity=".4"/>
+                      <rect x="68" y="28" width="42" height="4" rx="2" fill="#f0ead8" opacity=".4"/>
+                      <rect x="88" y="58" width="26" height="12" rx="6" fill="#3a2f23"/>
+                      <line x1="60" y1="0" x2="60" y2="78" stroke="#888" strokeWidth=".5" strokeDasharray="2,2"/>
+                    </g>
+                  </svg>
+                  <div className="tc-foot">
+                    <span className="name"><Monitor size={14} weight="bold" /> {t("settings.general.themeSystem")}</span>
+                    <span className="check">{currentTheme === "system" ? "✓" : ""}</span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -179,25 +223,23 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
         </div>
       </section>
 
-      {/* 03 Песочница */}
+      {/* 03 Sandbox */}
       <section>
         <div className="st2-mh">
           <span className="st2-mn">03</span>
-          <h2>Песочница</h2>
+          <h2>{t("settings.general.sandbox")}</h2>
         </div>
         <p className="st2-md">
-          Граница доступа к файлам и оболочке. По умолчанию модель видит только папку текущего чата.
+          {t("settings.general.sandboxDescription")}
         </p>
         <div className="st2-mrows">
           <div className="st2-mrow stack">
             <div className="st2-mctl">
               <div className={`st2-danger-row${unrestricted ? " on" : ""}`}>
                 <div className="lab">
-                  <p className="t">Unrestricted mode</p>
+                  <p className="t"><ShieldWarning size={16} /> {t("settings.general.unrestricted")}</p>
                   <p className="d">
-                    Полный доступ к ПК — модель сможет читать <code>~/.ssh</code>,
-                    <code>AppData</code> и писать куда угодно. Включайте, только если
-                    понимаете риск.
+                    {t("settings.general.unrestrictedDescription")}
                   </p>
                 </div>
                 <div className="st2-danger-switch">
@@ -207,11 +249,11 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
               </div>
               {unrestricted && (
                 <div className="st2-risk-note">
-                  <b>Песочница снята.</b> Модель и агент имеют полный доступ к WSL и Windows.
+                  <b>{t("settings.general.sandboxRemoved")}</b>
                   <ul>
-                    <li>Модель может читать любые файлы, включая <code>~/.ssh</code> и <code>AppData</code>.</li>
-                    <li>bash и другие инструменты работают без изоляции.</li>
-                    <li>Перезапустите агента, чтобы вернуть песочницу.</li>
+                    <li>{t("settings.general.sandboxReadAnyFile")}</li>
+                    <li>{t("settings.general.sandboxNoIsolation")}</li>
+                    <li>{t("settings.general.sandboxRestartAgent")}</li>
                   </ul>
                 </div>
               )}
@@ -220,7 +262,7 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
         </div>
       </section>
 
-      {/* 04 Терминал */}
+      {/* 04 Terminal */}
       <ShellSection
         preference={settings.shell_preference ?? "auto"}
         onChange={(v) => onUpdate({ shell_preference: v })}
@@ -255,6 +297,7 @@ function ShellSection({
   preference: "auto" | "wsl" | "powershell";
   onChange: (v: "auto" | "wsl" | "powershell") => void;
 }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ShellStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<null | "distro" | "deps" | "dns">(null);
@@ -276,9 +319,9 @@ function ShellSection({
     try {
       const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
       const data = await r.json();
-      setMessage(data.output ?? (r.ok ? "Установка запущена" : "Ошибка"));
+      setMessage(data.output ?? (r.ok ? t("settings.general.installStarted") : t("settings.general.installErrorGeneric")));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+      setMessage(e instanceof Error ? e.message : t("settings.general.networkError"));
     } finally {
       setInstalling(null);
       reload();
@@ -287,16 +330,16 @@ function ShellSection({
 
   const installDeps = async () => {
     setInstalling("deps");
-    setMessage("Запускаю установку…");
+    setMessage(t("settings.general.installing"));
     try {
       const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
       const data = await r.json();
       if (!r.ok) {
-        setMessage(data.output ?? "Не удалось запустить установку");
+        setMessage(data.output ?? t("settings.general.installError"));
         setInstalling(null);
         return;
       }
-      setMessage(data.output ?? "Установка запущена…");
+      setMessage(data.output ?? t("settings.general.installStarted"));
 
       // Poll the background task every 3s until it stops running.
       let lastLog = "";
@@ -311,13 +354,13 @@ function ShellSection({
             setMessage(payload.log);
           }
           if (!payload.running) {
-            if (payload.error) setMessage(`${payload.log}\n\nОшибка: ${payload.error}`);
+            if (payload.error) setMessage(`${payload.log}\n\n${t("settings.general.installErrorGeneric")}: ${payload.error}`);
             break;
           }
         } catch { /* keep polling */ }
       }
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+      setMessage(e instanceof Error ? e.message : t("settings.general.networkError"));
     } finally {
       setInstalling(null);
       reload();
@@ -330,9 +373,9 @@ function ShellSection({
     try {
       const r = await fetch(`${API_BASE}/wsl/fix-dns`, { method: "POST" });
       const data = await r.json();
-      setMessage(data.output ?? (r.ok ? "DNS починен — WSL перезапущен" : "Ошибка"));
+      setMessage(data.output ?? (r.ok ? t("settings.general.dnsFixed") : t("settings.general.installErrorGeneric")));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Сеть недоступна");
+      setMessage(e instanceof Error ? e.message : t("settings.general.networkError"));
     } finally {
       setInstalling(null);
       reload();
@@ -347,11 +390,10 @@ function ShellSection({
     <section>
       <div className="st2-mh">
         <span className="st2-mn">04</span>
-        <h2>Терминал</h2>
+        <h2>{t("settings.general.terminal")}</h2>
       </div>
       <p className="st2-md">
-        Через какой шелл агент выполняет команды. По умолчанию — bash внутри WSL,
-        с автоматическим откатом на Windows PowerShell, если WSL не установлен.
+        {t("settings.general.terminalDescription")}
       </p>
 
       <div className="st2-mrows">
@@ -360,18 +402,18 @@ function ShellSection({
           <div className="st2-mctl">
             <div className="st2-shell-grid">
               <ShellStatusCard
-                title="WSL · bash"
+                title={t("settings.general.wslBash")}
                 ok={wslOk}
                 lines={[
                   status
                     ? status.wsl_installed
-                      ? `wsl.exe найден${status.default_distro ? ` · ${status.default_distro}` : ""}`
-                      : "wsl.exe не установлен"
+                      ? t("settings.general.wslFound", { distro: status.default_distro ?? undefined })
+                      : t("settings.general.wslNotFound")
                     : "—",
                   status?.wsl_installed
                     ? status.distro_running
-                      ? "Дистрибутив запускается"
-                      : "Дистрибутив недоступен"
+                      ? t("settings.general.wslLaunching")
+                      : t("settings.general.wslNotAvailable")
                     : "",
                   status?.distro_running
                     ? [
@@ -388,15 +430,15 @@ function ShellSection({
                 active={activeShell === "wsl"}
               />
               <ShellStatusCard
-                title="Windows PowerShell"
+                title={t("settings.general.powershell")}
                 ok={psOk}
                 lines={[
                   status
                     ? status.powershell_available
-                      ? "powershell.exe найден"
-                      : "powershell.exe не найден"
+                      ? t("settings.general.powershellFound")
+                      : t("settings.general.powershellNotFound")
                     : "—",
-                  "Без bwrap-cage — песочница «мягкая»",
+                  t("settings.general.softSandbox"),
                 ]}
                 active={activeShell === "powershell"}
               />
@@ -407,11 +449,9 @@ function ShellSection({
         {/* Preference picker */}
         <div className="st2-mrow">
           <div className="st2-mlab">
-            <p className="t">Какой шелл использовать</p>
+            <p className="t">{t("settings.general.shellPreference")}</p>
             <p className="d">
-              «Авто» — bash в WSL, при ошибке откат на PowerShell. «Только WSL» —
-              падать с ошибкой, если WSL недоступен. «Только PowerShell» —
-              никогда не звать WSL.
+              {t("settings.general.shellPreferenceHint")}
             </p>
           </div>
           <div className="st2-mctl">
@@ -420,19 +460,19 @@ function ShellSection({
                 className={preference === "auto" ? "active" : ""}
                 onClick={() => onChange("auto")}
               >
-                <Terminal /> Авто
+                <Terminal /> {t("settings.general.shellAuto")}
               </button>
               <button
                 className={preference === "wsl" ? "active" : ""}
                 onClick={() => onChange("wsl")}
               >
-                <Terminal /> WSL
+                <Terminal /> {t("settings.general.shellWsl")}
               </button>
               <button
                 className={preference === "powershell" ? "active" : ""}
                 onClick={() => onChange("powershell")}
               >
-                <Terminal /> PowerShell
+                <Terminal /> {t("settings.general.shellPowershell")}
               </button>
             </div>
           </div>
@@ -446,26 +486,26 @@ function ShellSection({
                 className="st2-btn"
                 onClick={installDistro}
                 disabled={installing !== null}
-                title="Запускает `wsl --install -d Ubuntu` с правами администратора"
+                title={t("settings.general.installWsl")}
               >
-                {installing === "distro" ? "Установка…" : "Установить WSL + Ubuntu"}
+                {installing === "distro" ? t("settings.general.installing") : t("settings.general.installWsl")}
               </button>
               <button
                 className="st2-btn"
                 onClick={installDeps}
                 disabled={installing !== null || !status?.distro_running}
-                title="Ставит Node, Python, pandoc, LibreOffice, poppler-utils и npm docx внутри WSL. Сам чинит DNS, если он сломан."
+                title={t("settings.general.installDeps")}
               >
-                {installing === "deps" ? "Установка…" : "Установить необходимые библиотеки"}
+                {installing === "deps" ? t("settings.general.installing") : t("settings.general.installDeps")}
               </button>
               {status?.distro_running && !status.dns_ok && (
                 <button
                   className="st2-btn"
                   onClick={fixDns}
                   disabled={installing !== null}
-                  title="Прописывает Cloudflare/Google DNS в /etc/resolv.conf и блокирует автогенерацию через /etc/wsl.conf, затем wsl --shutdown"
+                  title={t("settings.general.fixDns")}
                 >
-                  {installing === "dns" ? "Чиню…" : "Починить DNS"}
+                  {installing === "dns" ? t("settings.general.fixing") : t("settings.general.fixDns")}
                 </button>
               )}
               <button
@@ -473,15 +513,15 @@ function ShellSection({
                 onClick={reload}
                 disabled={loading}
               >
-                <ArrowClockwise /> {loading ? "Проверяю…" : "Проверить снова"}
+                <ArrowClockwise /> {loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
               </button>
               {!wslOk && psOk && preference !== "powershell" && (
                 <button
                   className="st2-btn"
                   onClick={() => onChange("powershell")}
-                  title="WSL недоступен — переключиться на Windows PowerShell"
+                  title={t("settings.general.switchToPowershellHint")}
                 >
-                  Перейти на PowerShell
+                  {t("settings.general.switchToPowershell")}
                 </button>
               )}
             </div>
@@ -490,9 +530,7 @@ function ShellSection({
             )}
             {activeShell === "powershell" && (
               <div className="st2-risk-note" style={{ marginTop: 10 }}>
-                <b>Режим PowerShell.</b> bwrap-песочница на Windows недоступна —
-                модель ограничена только папкой чата через проверки путей,
-                kernel-level изоляции нет.
+                <b>{t("settings.general.powershellWarning")}</b>
               </div>
             )}
           </div>
@@ -513,12 +551,13 @@ function ShellStatusCard({
   lines: string[];
   active: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className={`st2-shell-card${active ? " active" : ""}${ok ? " ok" : " bad"}`}>
       <div className="st2-shell-card-h">
         {ok ? <CheckCircle weight="fill" /> : <XCircle weight="fill" />}
         <span className="st2-shell-card-title">{title}</span>
-        {active && <span className="st2-shell-card-active">активен</span>}
+        {active && <span className="st2-shell-card-active">{t("settings.general.active")}</span>}
       </div>
       {lines.map((ln, i) => (
         <div key={i} className="st2-shell-card-ln">{ln}</div>
@@ -536,6 +575,7 @@ function SignOutDialog({
   onClose: () => void;
   onConfirm: (deleteChats: boolean) => void;
 }) {
+  const { t } = useTranslation();
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", key);
@@ -550,8 +590,8 @@ function SignOutDialog({
         <div className="signout-header">
           <div className="signout-icon"><Warning size={22} weight="fill" /></div>
           <div>
-            <h3 className="confirm-title">Выход из профиля</h3>
-            <p className="signout-sub">Выберите что сделать с данными</p>
+            <h3 className="confirm-title">{t("settings.signOut.title")}</h3>
+            <p className="signout-sub">{t("settings.signOut.subtitle")}</p>
           </div>
         </div>
 
@@ -562,8 +602,8 @@ function SignOutDialog({
           >
             <div className="signout-opt-icon"><Trash size={16} weight="bold" /></div>
             <div className="signout-opt-text">
-              <span className="signout-opt-title">Удалить всё</span>
-              <span className="signout-opt-desc">Чаты, история и личные данные будут стёрты</span>
+              <span className="signout-opt-title">{t("settings.signOut.deleteAll")}</span>
+              <span className="signout-opt-desc">{t("settings.signOut.deleteAllHint")}</span>
             </div>
           </button>
 
@@ -573,14 +613,14 @@ function SignOutDialog({
           >
             <div className="signout-opt-icon"><SignOut size={16} weight="bold" /></div>
             <div className="signout-opt-text">
-              <span className="signout-opt-title">Сохранить чаты</span>
-              <span className="signout-opt-desc">Только имя и аватарка будут сброшены</span>
+              <span className="signout-opt-title">{t("settings.signOut.keepChats")}</span>
+              <span className="signout-opt-desc">{t("settings.signOut.keepChatsHint")}</span>
             </div>
           </button>
         </div>
 
         <button className="confirm-btn confirm-btn--cancel" style={{ width: "100%", textAlign: "center", marginTop: 4 }} onClick={onClose}>
-          Отмена
+          {t("settings.signOut.cancel")}
         </button>
       </div>
     </div>

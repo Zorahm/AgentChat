@@ -1,7 +1,8 @@
 /** Settings panel — v2: provider cards with models, paths. */
 
 import { useCallback, useEffect, useState } from "react";
-import { Key, Cpu, Folder, Command, Info, Sliders, Books, Plugs, ArrowLeft, ArrowClockwise, WarningCircle } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Keyboard, Info, Cube, Cpu, Books, Folder, Plugs } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
@@ -19,6 +20,7 @@ export interface ProviderConfig {
 }
 export interface ModelConfig {
   id: string; name?: string | null; thinking?: boolean | null;
+  thinking_types?: string[] | null; effort_levels?: string[] | null;
 }
 export interface MCPStdioConfig {
   transport: "stdio";
@@ -44,6 +46,7 @@ export interface SettingsData {
   default_model: string; temperature: number; max_iterations: number;
   user_name: string;
   theme: string;
+  language?: string;
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
   shell_preference?: "auto" | "wsl" | "powershell";
@@ -63,6 +66,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onStartGhostChat }: SettingsPanelProps) {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<Array<{ id: string; status: string; count: number; error: string | null }>>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -91,10 +95,10 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         setSettings({ ...data, models: data.models ?? [] });
         setError(null);
       } else {
-        setError(`Не удалось загрузить настройки: HTTP ${r.status}`);
+        setError(t("settings.loadError", { status: r.status }));
       }
     } catch (e) {
-      setError(`Не удалось подключиться к бэкенду (${API_BASE}): ${e instanceof Error ? e.message : "сеть"}`);
+      setError(t("settings.connectionError", { apiBase: API_BASE, message: e instanceof Error ? e.message : "unknown" }));
     }
     await fetchModels();
   }, [fetchModels]);
@@ -106,7 +110,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
     const r = await fetch(`${API_BASE}/settings/providers/${id}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
     });
-    if (!r.ok) { setError(`Ошибка сохранения: ${r.status}`); return; }
+    if (!r.ok) { setError(t("settings.saveError", { status: r.status })); return; }
     await reload();
     return true;
   };
@@ -127,7 +131,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
 
   const deleteProvider = async (id: string) => {
     setError(null);
-    if (!confirm(`Удалить провайдера '${id}'?`)) return false;
+    if (!confirm(t("settings.deleteConfirm", { id }))) return false;
     const r = await fetch(`${API_BASE}/settings/providers/${id}`, { method: "DELETE" });
     if (!r.ok) {
       try { const j = await r.json(); setError(j.detail ?? `HTTP ${r.status}`); }
@@ -151,19 +155,29 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
   return (
     <div className="st2">
       <nav className="st2-nav">
+        <h2 className="st2-nav-h"><img className="st2-nav-mark" src="/dots.svg" alt="" /> {t("settings.nav.title")}</h2>
+
         {onClose && (
-          <button className="st2-back" onClick={onClose}>← Назад</button>
+          <button className="st2-back" onClick={onClose}>{t("settings.back")}</button>
         )}
-        <div className="st2-group">Главное</div>
-        <NavItem t="main" cur={tab} label="Главное" ic={<Sliders />} onClick={setTab} />
-        <NavItem t="providers" cur={tab} label="Провайдеры" ic={<Key />} onClick={setTab} />
-        <NavItem t="models" cur={tab} label="Модели" ic={<Cpu />} onClick={setTab} />
-        <NavItem t="paths" cur={tab} label="Пути" ic={<Folder />} onClick={setTab} />
-        <NavItem t="skills" cur={tab} label="Скиллы" ic={<Books />} onClick={setTab} />
-        <NavItem t="mcp" cur={tab} label="MCP" ic={<Plugs />} onClick={setTab} />
-        <div className="st2-group" style={{ marginTop: 8 }}>Прочее</div>
-        <NavItem t="shortcuts" cur={tab} label="Горячие клавиши" ic={<Command />} onClick={setTab} />
-        <NavItem t="about" cur={tab} label="О приложении" ic={<Info />} onClick={setTab} />
+        <div className="st2-group">{t("settings.nav.personal")}</div>
+        <NavItem t="main" cur={tab} label={t("settings.nav.general")} ic={<User size={16} />} onClick={setTab} />
+        <NavItem t="shortcuts" cur={tab} label={t("settings.nav.shortcuts")} ic={<Keyboard size={16} />} onClick={setTab} />
+        <NavItem t="about" cur={tab} label={t("settings.nav.about")} ic={<Info size={16} />} onClick={setTab} />
+
+        <div className="st2-group">{t("settings.nav.modelGroup")}</div>
+        <NavItem t="providers" cur={tab} label={t("settings.nav.providers")} ic={<Cube size={16} />} onClick={setTab} />
+        <NavItem t="models" cur={tab} label={t("settings.nav.models")} ic={<Cpu size={16} />} onClick={setTab} />
+        <NavItem t="skills" cur={tab} label={t("settings.nav.skills")} ic={<Books size={16} />} onClick={setTab} />
+
+        <div className="st2-group">{t("settings.nav.systemGroup")}</div>
+        <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<Folder size={16} />} onClick={setTab} />
+        <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={setTab} />
+
+        <div className="st2-nav-pad" />
+        <div className="st2-nav-foot">
+          <span className="st2-nav-dot" />
+        </div>
       </nav>
 
       <div className="st2-body">
@@ -174,7 +188,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         {tab === "paths" && <PathsTab />}
         {tab === "skills" && <SkillsManager />}
         {tab === "mcp" && <MCPTab />}
-        {tab === "shortcuts" && <Placeholder t="Горячие клавиши" />}
+        {tab === "shortcuts" && <Placeholder title={t("settings.nav.shortcuts")} />}
         {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
       </div>
     </div>
@@ -189,13 +203,15 @@ function NavItem({ t, cur, label, ic, onClick }: { t: NavTab; cur: NavTab; label
 
 /* ── Placeholder ──────────────────── */
 
-function Placeholder({ t }: { t: string }) {
-  return <><h3 className="st2-h">{t}</h3><p className="st2-sub" style={{ color: "var(--muted)" }}>Скоро.</p></>;
+function Placeholder({ title }: { title: string }) {
+  const { t } = useTranslation();
+  return <><h3 className="st2-h">{title}</h3><p className="st2-sub" style={{ color: "var(--muted)" }}>{t("settings.comingSoon")}</p></>;
 }
 
 /* ── Loading / Error ───────────────── */
 
 function Loading({ error, onRetry, onClose }: { error: string | null; onRetry: () => void; onClose?: () => void }) {
+  const { t } = useTranslation();
   if (error) {
     return (
       <div className="error-page">
@@ -204,26 +220,26 @@ function Loading({ error, onRetry, onClose }: { error: string | null; onRetry: (
             <WarningCircle size={48} className="error-icon" weight="duotone" />
           </div>
 
-          <h2 className="error-title">Что-то пошло не так</h2>
+          <h2 className="error-title">{t("settings.errorTitle")}</h2>
 
           <div className="error-message-box">
             <p className="error-message-text">{error}</p>
           </div>
 
           <p className="error-hint">
-            Возникла ошибка при взаимодействии с сервером. Пожалуйста, проверьте, запущен ли бэкенд, или попробуйте снова.
+            {t("settings.errorHint")}
           </p>
 
           <div className="error-actions">
             {onClose && (
               <button className="error-btn error-btn--secondary" onClick={onClose}>
                 <ArrowLeft size={16} weight="bold" />
-                <span>Назад к чатам</span>
+                <span>{t("settings.backToChats")}</span>
               </button>
             )}
             <button className="error-btn error-btn--primary" onClick={onRetry}>
               <ArrowClockwise size={16} weight="bold" />
-              <span>Повторить попытку</span>
+                <span>{t("settings.retry")}</span>
             </button>
           </div>
         </div>
@@ -235,7 +251,7 @@ function Loading({ error, onRetry, onClose }: { error: string | null; onRetry: (
     <div className="loading-page">
       <div className="loading-container">
         <div className="loading-spinner" />
-        <p className="loading-text">Инициализация настроек…</p>
+        <p className="loading-text">{t("settings.initLoading")}</p>
       </div>
     </div>
   );

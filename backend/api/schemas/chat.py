@@ -38,3 +38,14 @@ class ChatRequest(BaseModel):
         default=None,
         description="IDs of MCP servers to wire in for this turn. Unknown / disabled IDs are skipped silently.",
     )
+    thinking_enabled: bool | None = Field(
+        default=None,
+        description="User-level thinking preference. When False, thinking is always disabled. "
+        "When True, thinking is enabled only if the model supports it. "
+        "When None, falls back to model config.",
+    )
+    effort: str | None = Field(
+        default=None,
+        description="Reasoning effort level (low/medium/high/max/xhigh). "
+        "Only applies to models that support effort levels.",
+    )

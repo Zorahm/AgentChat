@@ -7,6 +7,7 @@ import {
 } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { Markdown } from "../Markdown/Markdown";
+import { useTranslation } from "react-i18next";
 
 interface SkillInfo {
   name: string;
@@ -24,10 +25,10 @@ interface SkillFileEntry {
   size: number;
 }
 
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function fmtSize(bytes: number, t?: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (bytes < 1024) return `${bytes} ${t ? t("skills.fileSizeBytes") : "B"}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t ? t("skills.fileSizeKb") : "KB"}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t ? t("skills.fileSizeMb") : "MB"}`;
 }
 
 /* ── Skill Detail View ──────────────────────────────────────────────────── */
@@ -38,6 +39,7 @@ interface SkillDetailViewProps {
 }
 
 function SkillDetailView({ name, onBack }: SkillDetailViewProps) {
+  const { t } = useTranslation();
   const [skillMd, setSkillMd] = useState<string | null>(null);
   const [files, setFiles] = useState<SkillFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,14 +60,14 @@ function SkillDetailView({ name, onBack }: SkillDetailViewProps) {
     <div className="sk-detail">
       <div className="sk-detail-head">
         <button className="sk-detail-back" onClick={onBack}>
-          <ArrowLeft size={14} /> Назад
+          <ArrowLeft size={14} /> {t("skills.back")}
         </button>
         <h3>{name}</h3>
       </div>
       <div className="sk-detail-body">
         {/* File tree — left pane */}
         <div className="sk-tree">
-          <div className="sk-tree-head">Файлы</div>
+          <div className="sk-tree-head">{t("skills.files")}</div>
           <div className="sk-tree-list">
             {files.map((f) => (
               <div
@@ -80,7 +82,7 @@ function SkillDetailView({ name, onBack }: SkillDetailViewProps) {
                 )}
                 <span className="sk-tree-name">{f.name}</span>
                 {!f.is_dir && f.size > 0 && (
-                  <span className="sk-tree-size">{fmtSize(f.size)}</span>
+                  <span className="sk-tree-size">{fmtSize(f.size, t)}</span>
                 )}
                 {f.is_dir && f.size > 0 && (
                   <span className="sk-tree-size">{f.size}</span>
@@ -88,21 +90,21 @@ function SkillDetailView({ name, onBack }: SkillDetailViewProps) {
               </div>
             ))}
             {files.length === 0 && !loading && (
-              <div className="sk-tree-empty">Нет файлов</div>
+              <div className="sk-tree-empty">{t("skills.noFiles")}</div>
             )}
           </div>
         </div>
 
         {/* SKILL.md render — right pane */}
         <div className="sk-render">
-          <div className="sk-render-head">SKILL.md</div>
+          <div className="sk-render-head">{t("skills.skillMd")}</div>
           <div className="sk-render-body">
             {loading ? (
-              <div className="sk-render-loading">Загрузка…</div>
+              <div className="sk-render-loading">{t("skills.loading")}</div>
             ) : skillMd ? (
               <Markdown text={skillMd} />
             ) : (
-              <div className="sk-render-empty">SKILL.md не найден</div>
+              <div className="sk-render-empty">{t("skills.skillMdNotFound")}</div>
             )}
           </div>
         </div>
@@ -116,10 +118,10 @@ interface SkillContent {
   content: string;
 }
 
-function fmtFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} кб`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} мб`;
+function fmtFileSize(bytes: number, t?: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (bytes < 1024) return `${bytes} ${t ? t("skills.fileSizeBytes") : "B"}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t ? t("skills.fileSizeKb") : "KB"}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t ? t("skills.fileSizeMb") : "MB"}`;
 }
 
 function fileExtClass(name: string): string {
@@ -152,9 +154,9 @@ function fmtSource(name: string): string | null {
   return null;
 }
 
-function SkillTree({ files }: { files: SkillFileEntry[] }) {
+function SkillTree({ files, t }: { files: SkillFileEntry[]; t?: (key: string, opts?: Record<string, unknown>) => string }) {
   if (files.length === 0) {
-    return <div className="st2-sk-tree"><div className="ln" style={{ color: "var(--faint)" }}>Пусто</div></div>;
+    return <div className="st2-sk-tree"><div className="ln" style={{ color: "var(--faint)" }}>{t ? t("skills.emptyTree") : "Пусто"}</div></div>;
   }
   return (
     <div className="st2-sk-tree">
@@ -166,8 +168,8 @@ function SkillTree({ files }: { files: SkillFileEntry[] }) {
             {indents.map((_, i) => <span className="indent" key={i} />)}
             <span className={`ic ${cls}`}>{f.is_dir ? "▾" : cls === "md" ? "¶" : "·"}</span>
             <span className={`nm ${cls}`}>{f.name}{f.is_dir ? "/" : ""}</span>
-            {!f.is_dir && f.size > 0 && <span className="sz">{fmtFileSize(f.size)}</span>}
-            {f.is_dir && f.size > 0 && <span className="sz">{f.size} {pluralRu(f.size, "файл", "файла", "файлов")}</span>}
+            {!f.is_dir && f.size > 0 && <span className="sz">{fmtFileSize(f.size, t)}</span>}
+            {f.is_dir && f.size > 0 && <span className="sz">{f.size} {t ? t("skills.fileCount", { count: f.size }) : `${f.size} файлов`}</span>}
           </div>
         );
       })}
@@ -182,6 +184,7 @@ interface SkillsManagerProps {
 }
 
 export function SkillsManager({ onClose }: SkillsManagerProps) {
+  const { t } = useTranslation();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsDir, setSkillsDir] = useState<string>("C:\\Users\\ZorahM\\.agents\\skills");
   const [source, setSource] = useState("");
@@ -228,7 +231,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
 
   const uploadSkillFile = async (f: File) => {
     if (!/\.(skill|zip)$/i.test(f.name)) {
-      setError("Поддерживаются файлы .skill и .zip");
+      setError(t("skills.invalidFileType"));
       return;
     }
     setInstalling(true);
@@ -239,7 +242,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       const res = await fetch(`${API_BASE}/skills/install-file`, { method: "POST", body: form });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail ?? "Install failed");
+        throw new Error(err.detail ?? t("skills.installFailed"));
       }
       await fetchSkills();
     } catch (e) {
@@ -289,7 +292,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail ?? "Install failed");
+        throw new Error(err.detail ?? t("skills.installFailed"));
       }
       if (!sourceOverride) setSource("");
       await fetchSkills();
@@ -358,8 +361,8 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
         <div className="st2-sk-drop-overlay">
           <div className="st2-sk-drop-card">
             <div className="st2-sk-drop-icon"><Plus /></div>
-            <div className="st2-sk-drop-title">Отпустите чтобы установить</div>
-            <div className="st2-sk-drop-hint">Поддерживается <b>.skill</b> и <b>.zip</b></div>
+            <div className="st2-sk-drop-title">{t("skills.dropToInstall")}</div>
+            <div className="st2-sk-drop-hint">{t("skills.dropHint")}</div>
           </div>
         </div>
       )}
@@ -376,12 +379,12 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       />
       {onClose && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <button className="st2-back" onClick={onClose}>← Назад</button>
+          <button className="st2-back" onClick={onClose}>{t("skills.backNav")}</button>
         </div>
       )}
-      <h3 className="st2-h">Скиллы</h3>
+      <h3 className="st2-h">{t("skills.title")}</h3>
       <p className="st2-sub">
-        Расширяют возможности модели. Манифест пересобирается автоматически при изменениях в папке скиллов.
+        {t("skills.description")}
       </p>
       <div className="st2-path" style={{ marginBottom: 18 }}>
         <Folder /> {skillsDir}
@@ -391,10 +394,10 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       <section>
         <div className="st2-mh">
           <span className="st2-mn">01</span>
-          <h2>Добавить скилл</h2>
+          <h2>{t("skills.addSkill")}</h2>
         </div>
         <p className="st2-md">
-          Вставьте ссылку — на GitHub-репозиторий, <code>.skill</code>-архив или любой URL, отдающий <code>SKILL.md</code>.
+          {t("skills.installDescription")}
         </p>
 
         <div className="st2-sk-install">
@@ -403,25 +406,25 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
             <input
               ref={inputRef}
               type="text"
-              placeholder="github.com/owner/repo · https://… · path/to/skill.zip"
+              placeholder={t("skills.installPlaceholder")}
               value={source}
               onChange={(e) => setSource(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !installing && valid && handleInstall()}
               disabled={installing}
             />
-            <span className="ok">✓ найден</span>
+            <span className="ok">✓ {t("skills.urlFound")}</span>
           </div>
           <button
             className="st2-sk-install-btn primary"
             onClick={() => handleInstall()}
             disabled={installing || !valid}
           >
-            <Plus /> Установить
+            <Plus /> {t("skills.install")}
           </button>
         </div>
 
         <div className="st2-sk-hints">
-          <span>понимаем: <b>owner/repo</b></span>
+          <span>{t("skills.hintOwner")}</span>
           <span><b>https://github.com/…</b></span>
           <button
             type="button"
@@ -429,16 +432,16 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
             onClick={() => fileInputRef.current?.click()}
             disabled={installing}
           >
-            или выбрать <b>.skill</b> / <b>.zip</b>
+            {t("skills.orSelectFile")}
           </button>
-          <span>· перетащите файл сюда</span>
+          <span>{t("skills.dragHere")}</span>
         </div>
 
         <div className="st2-sk-preset">
           <div className="st2-sk-preset-info">
-            <div className="st2-sk-preset-title">Набор от Anthropic</div>
-            <div className="st2-sk-preset-desc">
-              Word, Excel, PowerPoint, PDF, создание скиллов — официальная коллекция из <code>github.com/anthropics/skills</code>.
+          <div className="st2-sk-preset-title">{t("skills.presetTitle")}</div>
+          <div className="st2-sk-preset-desc">
+            {t("skills.presetDescription")}
             </div>
           </div>
           <button
@@ -446,12 +449,12 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
             onClick={() => handleInstall("anthropics/skills")}
             disabled={installing}
           >
-            {installing ? "Установка…" : <><Plus /> Установить набор</>}
+            {installing ? <span>{t("skills.installingPreset")}…</span> : <><Plus /> {t("skills.installPreset")}</>}
           </button>
         </div>
 
         {installing && (
-          <div className="st2-sk-error" style={{ marginTop: 12 }}>Установка…</div>
+          <div className="st2-sk-error" style={{ marginTop: 12 }}>{t("skills.installing")}…</div>
         )}
         {error && <div className="st2-sk-error">{error}</div>}
       </section>
@@ -460,10 +463,10 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       <section>
         <div className="st2-mh">
           <span className="st2-mn">02</span>
-          <h2>Установленные</h2>
+          <h2>{t("skills.installedTitle")}</h2>
         </div>
         <p className="st2-md">
-          Клик по строке — раскрывает SKILL.md. Меню справа — удалить.
+          {t("skills.installedDescription")}
         </p>
 
         <div className="st2-mrows">
@@ -471,13 +474,13 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
             <div className="fld">
               <MagnifyingGlass />
               <input
-                placeholder="Поиск по имени или описанию…"
+                placeholder={t("skills.searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <div className="st2-sk-meta">
-              <b>{skills.length}</b> установлено
+              <b>{skills.length}</b> {t("skills.installedCount")}
             </div>
           </div>
 
@@ -512,8 +515,8 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
                     <DotsThree />
                     {menuOpen === s.name && (
                       <div className="st2-sk-popover">
-                        <div className="pitem" onClick={(e) => { e.stopPropagation(); handleUninstall(s.name); }}>
-                          <Trash /> Удалить
+                          <div className="pitem" onClick={(e) => { e.stopPropagation(); handleUninstall(s.name); }}>
+                            <Trash /> {t("skills.uninstall")}
                         </div>
                       </div>
                     )}
@@ -526,18 +529,18 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
                     <div className="grid">
                       <div>
                         <h6 className="col-label">
-                          Структура
+                          {t("skills.structure")}
                           <span className="src">{s.path || `${skillsDir}\\${s.name}`}</span>
                         </h6>
                         {tree ? (
-                          <SkillTree files={tree} />
+                          <SkillTree files={tree} t={t} />
                         ) : (
-                          <div className="st2-sk-tree"><div className="ln" style={{ color: "var(--faint)" }}>Загрузка…</div></div>
+                          <div className="st2-sk-tree"><div className="ln" style={{ color: "var(--faint)" }}>{t("skills.loadingFiles")}</div></div>
                         )}
                       </div>
                       <div>
                         <h6 className="col-label">
-                          SKILL.md
+                          {t("skills.skillMdColumn")}
                           {src && <span className="src">· {src}</span>}
                         </h6>
                         {content ? (
@@ -548,7 +551,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
                             breaks={false}
                           />
                         ) : (
-                          <div className="st2-sk-readme" style={{ color: "var(--faint)" }}>Загрузка…</div>
+                          <div className="st2-sk-readme" style={{ color: "var(--faint)" }}>{t("skills.loadingContent")}</div>
                         )}
                       </div>
                     </div>
@@ -560,7 +563,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
 
           {filtered.length === 0 && (
             <div className="st2-sk-empty">
-              {search ? "Ничего не найдено" : "Нет установленных скиллов"}
+              {search ? t("skills.emptySearch") : t("skills.emptyAll")}
             </div>
           )}
         </div>

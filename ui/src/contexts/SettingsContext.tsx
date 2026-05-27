@@ -6,15 +6,21 @@ export interface ModelItem {
   id: string;
   name?: string | null;
   thinking?: boolean | null;
+  thinking_types?: string[] | null;
+  effort_levels?: string[] | null;
 }
 
 export interface SettingsContextValue {
   model: string;
   setModel: (id: string) => void;
   theme: string;
+  /** Active UI language code ("" = follow OS-locale detection). */
+  language: string;
   userName: string;
   thinkingEnabled: boolean;
   setThinkingEnabled: (v: boolean | ((prev: boolean) => boolean)) => void;
+  effortLevel: string | null;
+  setEffortLevel: (v: string | null | ((prev: string | null) => string | null)) => void;
   enabledProviders: Set<string>;
   models: ModelItem[];
   onboardingDone: boolean | null;

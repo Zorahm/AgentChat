@@ -1,6 +1,7 @@
 """GET /api/files — read file content or serve binary files.  POST /api/files/upload — receive user uploads."""
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shlex
@@ -96,8 +97,8 @@ async def _wsl_home() -> str:
     return _cached_wsl_home
 
 
-async def _upload_dir(chat_dir_slug: str | None) -> str:
-    """Resolve where uploads land for this request.
+async def _wsl_upload_dir(chat_dir_slug: str | None) -> str:
+    """Resolve where uploads land inside WSL for this request.
 
     Per-chat folder when a valid slug is provided — keeps uploads inside the
     sandbox so the model can read them. Falls back to the legacy date-bucketed
@@ -109,6 +110,20 @@ async def _upload_dir(chat_dir_slug: str | None) -> str:
     base = f"{home}/.aicache/uploads" if home != "/tmp" else "/tmp/aicache-uploads"
     day = datetime.now().strftime("%Y-%m-%d")
     return f"{base}/{day}"
+
+
+def _win_upload_dir(chat_dir_slug: str | None, user_home: str) -> Path:
+    """Resolve where uploads land on the Windows filesystem (PowerShell mode).
+
+    Mirrors the WSL layout but as a real Windows path under the chat sandbox, so
+    the path we hand the model resolves to an actual file when it reads via
+    read_file / bash_tool. Without this, PowerShell-mode uploads were written
+    through WSL (absent on these machines) and pointed at a non-existent path.
+    """
+    if chat_dir_slug and _SLUG_RE.match(chat_dir_slug):
+        return Path(user_home) / "AgentChat" / "chats" / chat_dir_slug / "uploads"
+    day = datetime.now().strftime("%Y-%m-%d")
+    return Path(user_home) / ".aicache" / "uploads" / day
 
 
 def _safe_filename(name: str) -> str:
@@ -133,17 +148,38 @@ async def _extract_pdf_text(wsl_path: str) -> str | None:
 
 @router.post("/upload")
 async def upload_files(
+    request: Request,
     files: list[UploadFile],
     chat_dir_slug: str | None = Form(default=None),
 ) -> list[dict[str, object]]:
-    dir_path = await _upload_dir(chat_dir_slug)
+    # Match the upload location to the shell the agent will actually use. WSL →
+    # write into WSL; PowerShell fallback → write to the Windows filesystem.
+    # (Previously WSL-only: in PowerShell mode the file was never written to
+    # Windows and the model got a Unix path that resolved to nothing.)
+    from main import USER_HOME, resolve_active_shell
+
+    preference = getattr(request.app.state.settings_store, "shell_preference", "auto")
+    shell = resolve_active_shell(preference)
+
+    if shell == "powershell":
+        win_dir = _win_upload_dir(chat_dir_slug, USER_HOME)
+        await asyncio.to_thread(win_dir.mkdir, parents=True, exist_ok=True)
+        dir_path = str(win_dir)
+    else:
+        dir_path = await _wsl_upload_dir(chat_dir_slug)
+
     results: list[dict[str, object]] = []
 
     for f in files:
         data = await f.read()
         name = _safe_filename(f.filename or "unnamed")
-        full = f"{dir_path}/{name}"
-        await wsl_write_bytes(full, data)
+
+        if shell == "powershell":
+            full = str(Path(dir_path) / name)
+            await asyncio.to_thread(Path(full).write_bytes, data)
+        else:
+            full = f"{dir_path}/{name}"
+            await wsl_write_bytes(full, data)
 
         result: dict[str, object] = {
             "name": name,
@@ -152,7 +188,9 @@ async def upload_files(
             "mime_type": f.content_type or "application/octet-stream",
         }
 
-        if name.lower().endswith(".pdf"):
+        # PDF text extraction relies on WSL pdftotext; skip it in PowerShell mode
+        # (the model can still open the file at the returned Windows path).
+        if name.lower().endswith(".pdf") and shell != "powershell":
             text = await _extract_pdf_text(full)
             if text:
                 result["content"] = text

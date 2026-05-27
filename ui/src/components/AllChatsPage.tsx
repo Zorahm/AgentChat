@@ -4,6 +4,7 @@ import {
   PushPin, Chats, SortAscending, SortDescending,
 } from "@phosphor-icons/react";
 import type { ChatSession, ChatNode } from "../types/chat";
+import { useTranslation } from "react-i18next";
 
 interface AllChatsPageProps {
   sessions: ChatSession[];
@@ -37,15 +38,15 @@ function getMessageCount(root: ChatNode[]): number {
   return count;
 }
 
-function formatDate(ts: number): string {
+function formatDate(ts: number, t?: (key: string, opts?: Record<string, unknown>) => string): string {
   const d = new Date(ts);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const days = Math.floor(diff / 86400000);
-  if (days === 0) return "Сегодня";
-  if (days === 1) return "Вчера";
-  if (days < 7) return `${days} дн. назад`;
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  if (days === 0) return t ? t("allChats.today") : "Сегодня";
+  if (days === 1) return t ? t("allChats.yesterday") : "Вчера";
+  if (days < 7) return t ? t("allChats.daysAgo", { count: days }) : `${days} дн. назад`;
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 function formatTime(ts: number): string {
@@ -59,6 +60,7 @@ function formatTime(ts: number): string {
 export function AllChatsPage({
   sessions, activeId, onSwitch, onDelete, onRename, onPin, onBack,
 }: AllChatsPageProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("newest");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -99,7 +101,7 @@ export function AllChatsPage({
 
   const handleBulkDelete = useCallback(() => {
     if (selected.size === 0) return;
-    if (!confirm(`Удалить ${selected.size} чат(ов)?`)) return;
+    if (!confirm(t("allChats.deleteConfirm", { count: selected.size }))) return;
     for (const id of selected) onDelete(id);
     setSelected(new Set());
     setSelectMode(false);
@@ -115,27 +117,27 @@ export function AllChatsPage({
   }, []);
 
   const sortLabel: Record<SortMode, string> = {
-    newest: "Новые",
-    oldest: "Старые",
-    alpha: "А–Я",
+    newest: t("allChats.sortNew"),
+    oldest: t("allChats.sortOld"),
+    alpha: t("allChats.sortAlpha"),
   };
 
   return (
     <div className="ac-page">
       {/* ── Header ── */}
       <div className="ac-head">
-        <button className="ac-back" onClick={onBack} title="Назад">
+        <button className="ac-back" onClick={onBack} title={t("allChats.cancel")}>
           <ArrowLeft size={18} weight="bold" />
         </button>
         <div className="ac-head-titles">
-          <h2 className="ac-head-title">Все чаты</h2>
+          <h2 className="ac-head-title">{t("allChats.title")}</h2>
           <span className="ac-head-count">{sessions.length}</span>
         </div>
         <div className="ac-search">
           <MagnifyingGlass size={14} className="ac-search-icon" />
           <input
             ref={searchRef}
-            placeholder="Поиск по чатам…"
+            placeholder={t("allChats.searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -146,19 +148,19 @@ export function AllChatsPage({
           )}
         </div>
         <div className="ac-head-actions">
-          <button className="ac-toolbar-btn" onClick={cycleSortMode} title="Сортировка">
+          <button className="ac-toolbar-btn" onClick={cycleSortMode} title={t("allChats.sortTooltip")}>
             {sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
             <span>{sortLabel[sort]}</span>
           </button>
           {selectMode ? (
             <button className="ac-toolbar-btn ac-toolbar-btn--active" onClick={handleExitSelect}>
               <X size={14} weight="bold" />
-              <span>Отмена</span>
+              <span>{t("allChats.cancel")}</span>
             </button>
           ) : (
             <button className="ac-toolbar-btn" onClick={() => setSelectMode(true)}>
               <Check size={14} weight="bold" />
-              <span>Выбрать</span>
+              <span>{t("allChats.select")}</span>
             </button>
           )}
         </div>
@@ -169,14 +171,14 @@ export function AllChatsPage({
         <div className="ac-bulk-bar">
           <label className="ac-bulk-check">
             <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
-            <span>{allSelected ? "Снять всё" : "Выбрать всё"}</span>
+            <span>{allSelected ? t("allChats.deselectAll") : t("allChats.selectAll")}</span>
           </label>
           {selected.size > 0 && (
             <div className="ac-bulk-right">
-              <span className="ac-bulk-count">{selected.size} выбрано</span>
+              <span className="ac-bulk-count">{t("allChats.selected", { count: selected.size })}</span>
               <button className="ac-bulk-del" onClick={handleBulkDelete}>
                 <Trash size={14} weight="bold" />
-                Удалить
+                {t("allChats.delete")}
               </button>
             </div>
           )}
@@ -188,8 +190,8 @@ export function AllChatsPage({
         {filtered.length === 0 ? (
           <div className="ac-empty">
             <div className="ac-empty-icon"><Chats size={40} weight="duotone" /></div>
-            <p className="ac-empty-title">Ничего не найдено</p>
-            <p className="ac-empty-sub">Попробуй другой запрос или создай новый чат</p>
+            <p className="ac-empty-title">{t("allChats.emptyTitle")}</p>
+            <p className="ac-empty-sub">{t("allChats.emptySubtitle")}</p>
           </div>
         ) : (
           <>
@@ -197,7 +199,7 @@ export function AllChatsPage({
               <section className="ac-section">
                 <div className="ac-section-label">
                   <PushPin size={11} weight="fill" />
-                  Закреплённые
+                  {t("allChats.pinned")}
                 </div>
                 <div className="ac-grid">
                   {pinned.map((s) => (
@@ -221,7 +223,7 @@ export function AllChatsPage({
             {unpinned.length > 0 && (
               <section className="ac-section">
                 {pinned.length > 0 && (
-                  <div className="ac-section-label">Остальные</div>
+                  <div className="ac-section-label">{t("allChats.others")}</div>
                 )}
                 <div className="ac-grid">
                   {unpinned.map((s) => (
@@ -261,6 +263,7 @@ interface CardMenuProps {
 }
 
 function CardMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: CardMenuProps) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -277,16 +280,16 @@ function CardMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: CardMenu
     <div ref={ref} className="ctx-menu" style={{ position: "fixed", top: y, left: x, zIndex: 9999 }}>
       <button className="ctx-item" onClick={() => { onPin(); onClose(); }}>
         <PushPin weight={pinned ? "fill" : "regular"} />
-        {pinned ? "Открепить" : "Закрепить"}
+        {pinned ? t("allChats.unpin") : t("allChats.pin")}
       </button>
       <button className="ctx-item" onClick={() => { onRename(); onClose(); }}>
         <PencilSimple />
-        Переименовать
+        {t("allChats.rename")}
       </button>
       <div className="ctx-divider" />
       <button className="ctx-item ctx-item--danger" onClick={() => { onDelete(); onClose(); }}>
         <Trash />
-        Удалить
+        {t("allChats.delete")}
       </button>
     </div>
   );
@@ -309,6 +312,7 @@ interface ChatCardProps {
 function ChatCard({
   session, active, selectMode, selected, onToggleSelect, onSelect, onDelete, onRename, onPin,
 }: ChatCardProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -367,15 +371,15 @@ function ChatCard({
             />
           )}
           <div className="ac-card-badges">
-            {active && <span className="ac-badge ac-badge--active">Текущий</span>}
+            {active && <span className="ac-badge ac-badge--active">{t("allChats.currentBadge")}</span>}
             {session.pinned && <span className="ac-badge ac-badge--pin"><PushPin size={9} weight="fill" /></span>}
           </div>
           {!selectMode && !editing && (
             <div className="ac-card-actions" onClick={(e) => e.stopPropagation()}>
-              <button className="ac-card-btn" onClick={handleStartEdit} title="Переименовать">
+              <button className="ac-card-btn" onClick={handleStartEdit} title={t("allChats.renameTooltip")}>
                 <PencilSimple size={13} />
               </button>
-              <button className="ac-card-btn ac-card-btn--del" onClick={() => onDelete()} title="Удалить">
+              <button className="ac-card-btn ac-card-btn--del" onClick={() => onDelete()} title={t("allChats.deleteTooltip")}>
                 <Trash size={13} />
               </button>
             </div>
@@ -411,11 +415,11 @@ function ChatCard({
         {/* Meta */}
         <div className="ac-card-meta">
           <span className="ac-card-meta-item">
-            {msgCount > 0 ? `${msgCount} сообщ.` : "Пустой"}
+            {msgCount > 0 ? t("allChats.messageCount", { count: msgCount }) : t("allChats.empty")}
           </span>
           <span className="ac-card-meta-sep" />
           <span className="ac-card-meta-item ac-card-meta-date">
-            {formatDate(session.createdAt)}
+            {formatDate(session.createdAt, t)}
             <span className="ac-card-meta-time">{formatTime(session.createdAt)}</span>
           </span>
         </div>

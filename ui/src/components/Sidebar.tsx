@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
 import { GhostChat } from "./GhostChat";
+import { useTranslation } from "react-i18next";
 
 interface SidebarProps {
   sessions: ChatSession[];
@@ -25,6 +26,7 @@ export function Sidebar({
   sessions, activeId, onNew, onSwitch, onDelete, onRename, onPin,
   activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const [orderIds, setOrderIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem("aic-chat-order-v1");
@@ -179,17 +181,17 @@ export function Sidebar({
     return (
       <aside className="sidebar sidebar--collapsed">
         {/* Toggle */}
-        <button className="sb-col-toggle" onClick={onToggle} title="Развернуть">
+        <button className="sb-col-toggle" onClick={onToggle} title={t("sidebar.expand")}>
           ☰
         </button>
 
         {/* New chat */}
-        <button className="sb-col-new" onClick={onNew} title="Новый чат">
+        <button className="sb-col-new" onClick={() => onNew()} title={t("sidebar.newChat")}>
           <Plus weight="bold" size={15} />
         </button>
 
         {/* Search */}
-        <button className="sb-col-search" onClick={() => onNavigate("allchats")} title="Поиск по чатам">
+        <button className="sb-col-search" onClick={() => onNavigate("allchats")} title={t("sidebar.search")}>
           <MagnifyingGlass size={15} weight="bold" />
         </button>
 
@@ -239,28 +241,28 @@ export function Sidebar({
           <button
             className={`sb-col-btn${activeView === "skills" ? " sb-col-btn--active" : ""}`}
             onClick={() => onNavigate("skills")}
-            title="Скиллы"
+            title={t("sidebar.skills")}
           >
             <Books size={16} />
           </button>
           <button
             className={`sb-col-btn${activeView === "projects" ? " sb-col-btn--active" : ""}`}
             onClick={() => onNavigate("projects")}
-            title="Проекты"
+            title={t("sidebar.projects")}
           >
             <FolderOpen size={16} />
           </button>
           <button
             className={`sb-col-btn${activeView === "settings" ? " sb-col-btn--active" : ""}`}
             onClick={() => onNavigate("settings")}
-            title="Настройки"
+            title={t("sidebar.settings")}
           >
             <Gear size={16} />
           </button>
           <button
             className="sb-col-avatar"
             onClick={() => onNavigate("settings")}
-            title={userName || "Профиль"}
+            title={userName || t("sidebar.profile")}
           >
             <AvatarCircle url={avatarUrl} name={userName} size={26} />
           </button>
@@ -268,11 +270,11 @@ export function Sidebar({
 
         {pendingDrop && (
           <ConfirmDialog
-            title={pendingDrop.type === "unpin" ? "Открепить чат?" : "Закрепить чат?"}
+            title={pendingDrop.type === "unpin" ? t("sidebar.unpinConfirm") : t("sidebar.pinConfirm")}
             message={
                pendingDrop.type === "unpin" 
-                 ? "Вы перетащили закреплённый чат в список недавних. Вы уверены, что хотите открепить его?" 
-                 : "Вы перетащили недавний чат в закреплённые. Вы уверены, что хотите закрепить его?"
+                 ? t("sidebar.unpinMessage")
+                 : t("sidebar.pinMessage")
             }
             onConfirm={() => {
                executeDrop(pendingDrop.draggedId, pendingDrop.targetId, true);
@@ -297,12 +299,12 @@ export function Sidebar({
             style={{ cursor: isPatched || logoDetached ? "default" : "pointer" }}
             title={isPatched ? "" : undefined}
           >
-            <img className="sb-logo-mark" src="/dots.svg" alt="AgentChat" />
+            <img className="sb-logo-mark" src="/dots.svg" alt={t("sidebar.appName")} />
             {isPatched && <span className="sb-logo-patch" aria-hidden>🩹</span>}
           </div>
-          <span>AgentChat</span>
+          <span>{t("sidebar.appName")}</span>
           {logoDetached && !isPatched && (
-            <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title="Призрак ждёт...">
+            <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title={t("sidebar.ghostWaiting")}>
               +
             </button>
           )}
@@ -312,33 +314,33 @@ export function Sidebar({
 
       <div className="sb-body">
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <button className="sb-new-chat" onClick={onNew} style={{ flex: 1, marginBottom: 0 }}>
-            <span>+ Новый чат</span>
+          <button className="sb-new-chat" onClick={() => onNew()} style={{ flex: 1, marginBottom: 0 }}>
+            <span>{t("sidebar.newChatButton")}</span>
           </button>
 
           <button
             className="sb-col-search"
             style={{ marginBottom: 0, width: '38px', height: '38px' }}
             onClick={() => onNavigate("allchats")}
-            title="Поиск"
+            title={t("sidebar.searchTooltip")}
           >
             <MagnifyingGlass size={16} weight="bold" />
           </button>
         </div>
         <button className="sb-skills-btn" onClick={() => onNavigate("skills")}>
           <Books />
-          <span>Навыки</span>
+          <span>{t("sidebar.skillsButton")}</span>
         </button>
         <button
           className={`sb-skills-btn${activeView === "projects" ? " active" : ""}`}
           onClick={() => onNavigate("projects")}
         >
           <FolderOpen />
-          <span>Проекты</span>
+          <span>{t("sidebar.projectsButton")}</span>
         </button>
 
         <div className="sb-section-header">
-          <span className="sb-section-label">Недавние</span>
+          <span className="sb-section-label">{t("sidebar.recent")}</span>
         </div>
 
         <div className="sb-list">
@@ -368,8 +370,8 @@ export function Sidebar({
         <div className="sb-user" onClick={() => onNavigate("settings")}>
           <AvatarCircle url={avatarUrl} name={userName} size={30} />
           <div className="sb-user-info">
-            <span className="sb-user-name">{userName || "Пользователь"}</span>
-            <span className="sb-user-hint">Настройки</span>
+            <span className="sb-user-name">{userName || t("sidebar.userFallback")}</span>
+            <span className="sb-user-hint">{t("sidebar.settingsHint")}</span>
           </div>
           <span className="sb-user-gear"><Gear /></span>
         </div>
@@ -377,11 +379,11 @@ export function Sidebar({
 
       {pendingDrop && (
         <ConfirmDialog
-          title={pendingDrop.type === "unpin" ? "Открепить чат?" : "Закрепить чат?"}
+          title={pendingDrop.type === "unpin" ? t("sidebar.unpinConfirm") : t("sidebar.pinConfirm")}
           message={
              pendingDrop.type === "unpin"
-               ? "Вы перетащили закреплённый чат в список недавних. Вы уверены, что хотите открепить его?"
-               : "Вы перетащили недавний чат в закреплённые. Вы уверены, что хотите закрепить его?"
+               ? t("sidebar.unpinMessage")
+               : t("sidebar.pinMessage")
           }
           onConfirm={() => {
              executeDrop(pendingDrop.draggedId, pendingDrop.targetId, true);
@@ -411,6 +413,7 @@ interface ContextMenuProps {
 }
 
 function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: ContextMenuProps) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -441,14 +444,14 @@ function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: Conte
         onClick={() => { onPin(); onClose(); }}
       >
         <PushPin weight={pinned ? "fill" : "regular"} />
-        {pinned ? "Открепить" : "Закрепить"}
+        {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
       </button>
       <button
         className="ctx-item"
         onClick={() => { onRename(); onClose(); }}
       >
         <PencilSimple />
-        Переименовать
+        {t("sidebar.rename")}
       </button>
       <div className="ctx-divider" />
       <button
@@ -456,7 +459,7 @@ function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: Conte
         onClick={() => { onDelete(); onClose(); }}
       >
         <Trash />
-        Удалить
+        {t("sidebar.delete")}
       </button>
     </div>
   );
@@ -475,6 +478,7 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -494,10 +498,10 @@ function ConfirmDialog({
         <p className="confirm-message">{message}</p>
         <div className="confirm-actions">
           <button className="confirm-btn confirm-btn--cancel" onClick={onCancel}>
-            Отмена
+            {t("sidebar.cancel")}
           </button>
           <button className="confirm-btn confirm-btn--confirm" onClick={onConfirm}>
-            Да
+            {t("sidebar.confirmYes")}
           </button>
         </div>
       </div>
@@ -534,6 +538,7 @@ function ChatItem({
   onDrop: (e: React.DragEvent) => void;
   onDragEnd: (e: React.DragEvent) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -600,7 +605,7 @@ function ChatItem({
                   e.preventDefault();
                   handleSave(e);
                 }}
-                title="Сохранить"
+                title={t("sidebar.save")}
               >
                 <Check />
               </button>
@@ -611,7 +616,7 @@ function ChatItem({
                   e.stopPropagation();
                   setEditing(false);
                 }}
-                title="Отмена"
+                title={t("sidebar.cancel")}
               >
                 <X />
               </button>
@@ -628,7 +633,7 @@ function ChatItem({
             <button
               className={`sb-pin-btn${session.pinned ? " sb-pin-btn--active" : ""}`}
               onClick={(e) => { e.stopPropagation(); handlePin(); }}
-              title={session.pinned ? "Открепить" : "Закрепить"}
+              title={session.pinned ? t("sidebar.unpinTooltip") : t("sidebar.pinTooltip")}
             >
               <PushPin weight={session.pinned ? "fill" : "regular"} />
             </button>

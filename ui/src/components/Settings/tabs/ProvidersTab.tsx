@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ProviderConfig, ModelConfig, SettingsData } from "../SettingsPanel";
 
 /* ── Types ─────────────────────── */
@@ -28,15 +29,16 @@ export function ProvidersTab({ settings, statuses, loading, expanded, setExpande
   onDelete: (id: string) => Promise<boolean>;
   onRefreshModels: () => void;
 }) {
+  const { t } = useTranslation();
   const statusMap = new Map(statuses.map((s) => [s.id, s]));
   return <>
     <div className="st2-row-between">
       <div>
-        <h3 className="st2-h">Провайдеры</h3>
-        <p className="st2-sub">Модели подгружаются с {`{api_base}/models`} каждого провайдера.</p>
+        <h3 className="st2-h">{t("settings.providers.title")}</h3>
+        <p className="st2-sub">{t("settings.providers.description")}</p>
       </div>
       <button className="st2-btn" onClick={onRefreshModels} disabled={loading}>
-        {loading ? "Обновляю…" : "Обновить модели"}
+        {loading ? t("settings.providers.refresh") : t("settings.providers.refresh")}
       </button>
     </div>
     {settings.providers.map((p) => (
@@ -58,6 +60,7 @@ function AddProviderForm({ existingIds, onAdd }: {
   existingIds: Set<string>;
   onAdd: (body: { id: string; name: string; api_base: string; api_key?: string }) => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [id, setId] = useState("");
   const [name, setName] = useState("");
@@ -72,54 +75,54 @@ function AddProviderForm({ existingIds, onAdd }: {
     setErr(null);
     const trimmedId = id.trim().toLowerCase();
     if (!trimmedId || !name.trim() || !base.trim()) {
-      setErr("ID, название и api_base обязательны");
+      setErr(t("settings.providers.validationRequired"));
       return;
     }
     if (!/^[a-z0-9_-]+$/.test(trimmedId)) {
-      setErr("ID: только латиница, цифры, _ и -");
+      setErr(t("settings.providers.validationFormat"));
       return;
     }
     if (existingIds.has(trimmedId)) {
-      setErr(`Провайдер '${trimmedId}' уже существует`);
+      setErr(t("settings.providers.validationExists", { id: trimmedId }));
       return;
     }
     setSaving(true);
     const ok = await onAdd({ id: trimmedId, name: name.trim(), api_base: base.trim(), api_key: key.trim() || undefined });
     setSaving(false);
     if (ok) { reset(); setOpen(false); }
-    else setErr("Не удалось сохранить");
+    else setErr(t("settings.providers.saveError"));
   };
 
   if (!open) {
     return (
       <button className="st2-add-btn" onClick={() => setOpen(true)}>
-        + Добавить OpenAI-совместимого провайдера
+        + {t("settings.providers.addButton")}
       </button>
     );
   }
 
   return (
     <div className="st2-add-form">
-      <h4>Свой провайдер (OpenAI-совместимый)</h4>
-      <p className="st2-sub2">Должен поддерживать <code>{`{api_base}/models`}</code> и <code>{`{api_base}/chat/completions`}</code>.</p>
+      <h4>{t("settings.providers.formTitle")}</h4>
+      <p className="st2-sub2">{t("settings.providers.formDescription")}</p>
       <div className="st2-add-grid">
-        <label>ID
-          <input className="st2-field" placeholder="my-provider" value={id} onChange={(e) => setId(e.target.value)} />
+        <label>{t("settings.providers.id")}
+          <input className="st2-field" placeholder={t("settings.providers.idPlaceholder")} value={id} onChange={(e) => setId(e.target.value)} />
         </label>
-        <label>Название
-          <input className="st2-field" placeholder="My Provider" value={name} onChange={(e) => setName(e.target.value)} />
+        <label>{t("settings.providers.name")}
+          <input className="st2-field" placeholder={t("settings.providers.namePlaceholder")} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label style={{ gridColumn: "1 / -1" }}>API Base
-          <input className="st2-field" placeholder="https://api.example.com/v1" value={base} onChange={(e) => setBase(e.target.value)} />
+        <label style={{ gridColumn: "1 / -1" }}>{t("settings.providers.apiBase")}
+          <input className="st2-field" placeholder={t("settings.providers.apiBasePlaceholder")} value={base} onChange={(e) => setBase(e.target.value)} />
         </label>
-        <label style={{ gridColumn: "1 / -1" }}>API Key
-          <input type="password" className="st2-field" placeholder="(опционально)" value={key} onChange={(e) => setKey(e.target.value)} />
+        <label style={{ gridColumn: "1 / -1" }}>{t("settings.providers.apiKey")}
+          <input type="password" className="st2-field" placeholder={t("settings.providers.apiKeyOptional")} value={key} onChange={(e) => setKey(e.target.value)} />
         </label>
       </div>
       {err && <div className="st2-add-err">{err}</div>}
       <div className="st2-add-actions">
-        <button className="st2-btn" onClick={submit} disabled={saving}>{saving ? "Сохраняю…" : "Добавить"}</button>
-        <button className="st2-btn st2-btn--ghost" onClick={() => { reset(); setOpen(false); }}>Отмена</button>
+        <button className="st2-btn" onClick={submit} disabled={saving}>{saving ? t("settings.providers.saving") : t("settings.providers.add")}</button>
+        <button className="st2-btn st2-btn--ghost" onClick={() => { reset(); setOpen(false); }}>{t("settings.providers.cancel")}</button>
       </div>
     </div>
   );
@@ -134,6 +137,7 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
   onUpdate: (patch: Record<string, unknown>) => Promise<boolean | undefined>;
   onDelete?: () => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const [key, setKey] = useState("");
   const logo = p.name[0]?.toUpperCase() ?? "?";
 
@@ -144,9 +148,9 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
   };
 
   const badge = status?.status === "error"
-    ? <span className="st2-pv-badge err" title={status.error ?? ""}>ошибка</span>
+    ? <span className="st2-pv-badge err" title={status.error ?? ""}>{t("settings.providers.error")}</span>
     : status?.status === "ok"
-    ? <span className="st2-pv-badge ok">{status.count} моделей</span>
+    ? <span className="st2-pv-badge ok">{t("settings.providers.modelsCount", { count: status.count })}</span>
     : null;
 
   return (
@@ -155,36 +159,36 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
         <div className={`st2-pv-logo ${LOGO[p.id] ?? "lg-other"}`}>{logo}</div>
         <div className="st2-pv-name">{p.name}<small>{p.api_base ?? "—"}</small></div>
         {badge}
-        <div className="st2-pv-key">{p.api_key_set ? "••••" : "без ключа"}</div>
+        <div className="st2-pv-key">{p.api_key_set ? "••••" : t("settings.providers.noKey")}</div>
         <div className={`st2-switch${p.enabled ? " on" : ""}`}
           onClick={(e) => { e.stopPropagation(); onUpdate({ enabled: !p.enabled }); }} />
       </div>
       {open && (
         <div className="st2-pv-body">
           {status?.status === "error" && (
-            <div className="st2-pv-err">Не удалось получить список моделей: {status.error}</div>
+            <div className="st2-pv-err">{t("settings.providers.modelsError", { error: status.error })}</div>
           )}
           {models.length === 0 && status?.status !== "error" && (
-            <div className="st2-pv-empty">Моделей нет.{p.api_key_set ? "" : " Добавь ключ и обнови список."}</div>
+            <div className="st2-pv-empty">{p.api_key_set ? t("settings.providers.modelsEmpty") : t("settings.providers.modelsEmptyHint")}</div>
           )}
           {models.map((m) => (
             <div key={m.id} className="st2-pv-row">
               <span className="st2-pv-model">{m.name ?? m.id}</span>
-              {m.thinking && <span className="st2-think-tag">thinking</span>}
+              {m.thinking && <span className="st2-think-tag">{t("settings.providers.thinking")}</span>}
               <div className={`st2-switch${m.id === defaultModel ? " on" : ""}`} />
             </div>
           ))}
           <div className="st2-pv-key-row">
             <input type="password" className="st2-field"
-              placeholder={p.api_key_set ? "•••• (установить новый)" : "API ключ…"}
+              placeholder={p.api_key_set ? t("settings.providers.keyNew") : t("settings.providers.keyPlaceholder")}
               value={key} onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSaveKey()} />
             <button className="st2-btn" onClick={handleSaveKey}>
-              Сохранить
+              {t("settings.providers.saveKey")}
             </button>
             {onDelete && (
               <button className="st2-btn st2-btn--danger" onClick={onDelete}>
-                Удалить
+                {t("settings.providers.delete")}
               </button>
             )}
           </div>

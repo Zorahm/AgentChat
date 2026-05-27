@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { CloudArrowUp } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
 
 export function GlobalDropZone() {
+  const { t } = useTranslation();
   const [active, setActive] = useState(false);
   const counter = useRef(0);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,8 +21,16 @@ export function GlobalDropZone() {
       }, 60);
     };
 
+    // `dataTransfer.types` is an array in modern browsers but a DOMStringList in
+    // others — normalise so `.includes()` never throws. A throw here would skip
+    // the `preventDefault` below, and without it the browser hijacks the drop
+    // (opens/navigates to the file) and drag-and-drop appears completely dead.
+    const hasFiles = (dt: DataTransfer | null): boolean =>
+      !!dt && Array.from(dt.types as ArrayLike<string>).includes("Files");
+
     const onDragEnter = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return;
+      if (!hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
       clear();
       counter.current++;
       setActive(true);
@@ -32,7 +42,9 @@ export function GlobalDropZone() {
     };
 
     const onDragOver = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+      if (!hasFiles(e.dataTransfer)) return;
+      e.preventDefault(); // REQUIRED — otherwise the drop event never fires
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     };
 
     const onDrop = (e: DragEvent) => {
@@ -79,7 +91,7 @@ export function GlobalDropZone() {
     <div className="gdz">
       <div className="gdz-card">
         <CloudArrowUp size={36} weight="light" />
-        <span>Перетащите файлы</span>
+        <span>{t("chat.dropZone")}</span>
       </div>
     </div>
   );

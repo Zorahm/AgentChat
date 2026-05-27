@@ -1,6 +1,7 @@
 /** Code block with language header, copy button, and syntax highlighting. */
 
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Copy, Check } from "@phosphor-icons/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -26,6 +27,7 @@ const LANG_LABELS: Record<string, string> = {
 };
 
 export function CodeBlockView({ language, code }: CodeBlockViewProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const lang = getLang(language) || language;
   const label = LANG_LABELS[language] ?? language;
@@ -50,7 +52,7 @@ export function CodeBlockView({ language, code }: CodeBlockViewProps) {
     <div className="cb">
       <div className="cb-head">
         <span className="cb-lang">{label}</span>
-        <button className="cb-copy" onClick={handleCopy} title={copied ? "Скопировано" : "Копировать"}>
+        <button className="cb-copy" onClick={handleCopy} title={copied ? t("chat.copied") : t("chat.copy")}>
           {copied ? <Check /> : <Copy />}
         </button>
       </div>
