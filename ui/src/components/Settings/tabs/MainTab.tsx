@@ -8,7 +8,9 @@ import {
 import { useTranslation } from "react-i18next";
 import { AvatarCircle } from "../../Sidebar";
 import { API_BASE } from "../../../utils/apiBase";
+import { isTauri } from "../../../utils/tauri";
 import { SUPPORTED_LANGUAGES } from "../../../i18n/languages";
+import { RestartBackendButton } from "../RestartBackendButton";
 import type { SettingsData } from "../SettingsPanel";
 
 const FLAG_MAP: Record<string, string> = {
@@ -267,6 +269,28 @@ export function MainTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clea
         preference={settings.shell_preference ?? "auto"}
         onChange={(v) => onUpdate({ shell_preference: v })}
       />
+
+      {/* 05 Backend */}
+      {isTauri() && (
+        <section>
+          <div className="st2-mh">
+            <span className="st2-mn">05</span>
+            <h2>{t("settings.backend.title")}</h2>
+          </div>
+          <p className="st2-md">{t("settings.backend.description")}</p>
+          <div className="st2-mrows">
+            <div className="st2-mrow">
+              <div className="st2-mlab">
+                <p className="t">{t("settings.backend.restart")}</p>
+                <p className="d">{t("settings.backend.restartHint")}</p>
+              </div>
+              <div className="st2-mctl">
+                <RestartBackendButton className="st2-btn" />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

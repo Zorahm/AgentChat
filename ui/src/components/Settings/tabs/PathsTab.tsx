@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, Globe, Check, Copy, DeviceMobile, ArrowClockwise } from "@phosphor-icons/react";
+import { Folder, Globe, Check, Copy, DeviceMobile } from "@phosphor-icons/react";
 import { QRCodeSVG } from "qrcode.react";
-import { invoke } from "@tauri-apps/api/core";
 import { API_BASE, setBackendUrl } from "../../../utils/apiBase";
-import { isTauri } from "../../../utils/tauri";
 import { useSettings } from "../../../contexts/SettingsContext";
+import { RestartBackendButton } from "../RestartBackendButton";
 
 interface RemoteAccessInfo {
   enabled: boolean;
@@ -28,7 +27,6 @@ export function PathsTab() {
   const [manageable, setManageable] = useState(true);
   const [selectedUrl, setSelectedUrl] = useState("");
   const [restartHint, setRestartHint] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const [copied, setCopied] = useState<"url" | "token" | null>(null);
 
   const handleApply = useCallback(() => {
@@ -64,19 +62,6 @@ export function PathsTab() {
     setRestartHint(true);
     await loadInfo();
   }, [info, updateSettings, loadInfo]);
-
-  const handleRestart = useCallback(async () => {
-    setRestarting(true);
-    try {
-      await invoke("restart_backend");
-      setRestartHint(false);
-      await loadInfo();
-    } catch {
-      /* restart failed — leave the hint up so the user can retry */
-    } finally {
-      setRestarting(false);
-    }
-  }, [loadInfo]);
 
   const copy = useCallback(async (value: string, which: "url" | "token") => {
     try {
@@ -196,21 +181,15 @@ export function PathsTab() {
                 </div>
               </div>
 
-              {restartHint && (
-                <div className="st2-remote-restart-row">
+              <div className="st2-remote-restart-row">
+                <RestartBackendButton
+                  className="st2-remote-copy"
+                  onDone={() => { setRestartHint(false); void loadInfo(); }}
+                />
+                {restartHint && (
                   <p className="st2-remote-restart">{t("settings.paths.remoteRestart")}</p>
-                  {isTauri() && (
-                    <button
-                      className="st2-remote-copy"
-                      disabled={restarting}
-                      onClick={() => { void handleRestart(); }}
-                    >
-                      <ArrowClockwise weight="bold" />
-                      {restarting ? t("settings.paths.remoteRestarting") : t("settings.paths.remoteRestartNow")}
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
 
               {enabled && info && (
                 <div className="st2-remote-pair">
