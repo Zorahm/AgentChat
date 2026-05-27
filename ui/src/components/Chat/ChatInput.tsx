@@ -124,20 +124,28 @@ export function ChatInput({
       try {
         const r = await fetch(`${API_BASE}/files/upload`, { method: "POST", body: form });
         if (r.ok) {
+          // The response preserves the order of `needUpload` (the order we
+          // appended to FormData), so pair by index. Matching by name was
+          // unreliable: the backend sanitises filenames (_safe_filename), and
+          // the old `&& pf.uploading` guard never matched — finalFiles holds
+          // the pre-upload objects whose `uploading` flag is still false, so
+          // uploadedPath was never set and the model saw "path: None".
           const uploaded: Array<{ name: string; path: string; size: number; mime_type: string; content?: string }> = await r.json();
-          for (const up of uploaded) {
-            const idx = finalFiles.findIndex((pf) => pf.name === up.name && pf.uploading);
-            if (idx >= 0) {
-              finalFiles[idx] = {
-                ...finalFiles[idx]!,
-                content: (finalFiles[idx]!.content === null && finalFiles[idx]!.type === "text/plain")
-                  ? null
-                  : (up.content ?? finalFiles[idx]!.content),
-                uploading: false,
-                uploadedPath: up.path,
-              };
-            }
-          }
+          uploaded.forEach((up, i) => {
+            const src = needUpload[i];
+            if (!src) return;
+            const idx = finalFiles.findIndex((pf) => pf.id === src.id);
+            if (idx < 0) return;
+            const cur = finalFiles[idx]!;
+            finalFiles[idx] = {
+              ...cur,
+              content: (cur.content === null && cur.type === "text/plain")
+                ? null
+                : (up.content ?? cur.content),
+              uploading: false,
+              uploadedPath: up.path,
+            };
+          });
         }
       } catch { /* upload failed — try anyway, model can read from path */ }
     }

@@ -49,6 +49,33 @@ fn kill_process_tree(pid: u32) {
     let _ = cmd.output();
 }
 
+/// Force-kill whatever process tree is LISTENING on `port`. Unlike
+/// kill_sidecar_by_image (which only matches our current image name), this also
+/// clears a *legacy* sidecar: older versions ran a generically-named
+/// `backend.exe` that taskkill-by-image never hits. Windows-only.
+#[cfg(windows)]
+fn kill_port_owner(port: u16) {
+    let mut cmd = Command::new("netstat");
+    cmd.args(["-ano", "-p", "TCP"]);
+    hide_console(&mut cmd);
+    let out = match cmd.output() {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = format!(":{}", port);
+    for line in text.lines() {
+        // Listening rows carry the port only in the local-address column and a
+        // remote address of 0.0.0.0:0, so a state check avoids false matches.
+        if !line.to_uppercase().contains("LISTENING") || !line.contains(&needle) {
+            continue;
+        }
+        if let Some(pid) = line.split_whitespace().last().and_then(|s| s.parse::<u32>().ok()) {
+            kill_process_tree(pid);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -73,9 +100,13 @@ fn restart_backend(state: tauri::State<'_, BackendProcess>) -> Result<(), String
         }
         *guard = None;
     }
-    // Catch any stray sidecar still holding the port before we rebind.
+    // Catch any stray sidecar still holding the port before we rebind —
+    // by image name, then by whoever owns 8787 (covers a legacy backend.exe).
     #[cfg(windows)]
-    kill_sidecar_by_image();
+    {
+        kill_sidecar_by_image();
+        kill_port_owner(8787);
+    }
 
     let child = start_backend().ok_or_else(|| "failed to spawn backend".to_string())?;
     wait_for_backend();
@@ -172,29 +203,78 @@ fn backend_is_healthy(client: &reqwest::blocking::Client) -> bool {
         .unwrap_or(false)
 }
 
+/// Version the backend on 8787 reports via /api/health, if any. Lets us tell
+/// our freshly-bundled backend apart from a leftover sidecar of a previous
+/// version. Returns None when nothing answers, the route 404s, or the response
+/// carries no `version` (a backend predating that field).
+fn running_backend_version(client: &reqwest::blocking::Client) -> Option<String> {
+    let resp = client
+        .get("http://127.0.0.1:8787/api/health")
+        .timeout(Duration::from_secs(1))
+        .send()
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body = resp.text().ok()?;
+    let json: serde_json::Value = serde_json::from_str(&body).ok()?;
+    json.get("version").and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 fn main() {
-    // A previous session can leave an orphaned sidecar alive (crash, force-kill,
-    // or an old version still serving 8787 after an update). Kill any leftover
-    // by our unique image name first, so we always run the freshly-bundled
-    // backend and never keep its .exe locked for the next installer. This only
-    // matches our own process; a hand-run dev uvicorn (python.exe) is untouched.
-    #[cfg(windows)]
-    kill_sidecar_by_image();
+    // Generate the Tauri context once so we can read our own version *before*
+    // the builder consumes it, then hand the same context to .build().
+    let ctx = tauri::generate_context!();
+    let expected_version = ctx.package_info().version.to_string();
 
-    // If a backend (e.g. a dev uvicorn started by hand) is already serving 8787,
-    // reuse it instead of trying to bind a second one and crashing with
-    // OSError 10048.
     let probe_client = reqwest::blocking::Client::new();
-    let already_running = backend_is_healthy(&probe_client);
 
-    let mut backend_child: Option<Child> = if already_running {
-        None
+    // Decide which backend serves 8787.
+    //
+    // Dev (debug build): reuse a hand-run uvicorn if one is already healthy, so
+    // a developer's own backend is never killed; otherwise spawn.
+    //
+    // Release build: insist on a backend reporting OUR version. A leftover
+    // sidecar from a previous version keeps serving 8787 after an update (the
+    // new sidecar can't bind a second time, and an older generically-named
+    // `backend.exe` slips past taskkill-by-image), so the new UI would talk to
+    // a stale backend missing newer settings fields. Force-clear the port and
+    // run the freshly-bundled backend instead.
+    let mut backend_child: Option<Child> = if cfg!(debug_assertions) {
+        if backend_is_healthy(&probe_client) {
+            None
+        } else {
+            start_backend()
+        }
     } else {
-        start_backend()
+        match find_sidecar_exe() {
+            Some(sidecar) => {
+                let running = running_backend_version(&probe_client);
+                if running.as_deref() == Some(expected_version.as_str()) {
+                    None // our backend is already up — reuse it
+                } else {
+                    #[cfg(windows)]
+                    {
+                        kill_sidecar_by_image();
+                        kill_port_owner(8787);
+                    }
+                    spawn_sidecar(&sidecar)
+                }
+            }
+            // No bundled sidecar next to the exe (unusual for a release) — fall
+            // back to reuse-or-python rather than leaving 8787 empty.
+            None => {
+                if backend_is_healthy(&probe_client) {
+                    None
+                } else {
+                    spawn_python_backend(&find_backend_dir())
+                }
+            }
+        }
     };
 
     if backend_child.is_some() {
@@ -210,7 +290,7 @@ fn main() {
             child: Mutex::new(backend_child.take()),
         })
         .invoke_handler(tauri::generate_handler![get_backend_url, restart_backend])
-        .build(tauri::generate_context!())
+        .build(ctx)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {

@@ -29,6 +29,16 @@ if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
     throw "ui/dist/index.html not found after build — cannot bundle UI into backend."
 }
 
+Write-Host "==> Stamping build version (single source: tauri.conf.json)..."
+# The Tauri shell compares this against /api/health to detect a stale sidecar
+# left running on 8787 after an update. main.py imports _buildstamp, so
+# PyInstaller bundles it; the file is absent in dev (→ BUILD_VERSION="dev").
+$confPath = Join-Path $root "src-tauri\tauri.conf.json"
+$ver = (Get-Content $confPath -Raw | ConvertFrom-Json).version
+$stamp = Join-Path $root "backend\_buildstamp.py"
+Set-Content -Path $stamp -Value "BUILD_VERSION = `"$ver`"" -Encoding utf8
+Write-Host "    BUILD_VERSION = $ver"
+
 Write-Host "==> Running PyInstaller..."
 Set-Location (Join-Path $root "backend")
 

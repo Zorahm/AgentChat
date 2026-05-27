@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { ChatInput } from "../Chat/ChatInput";
 import type { ModelItem } from "../Chat/ChatView";
 import type { UseProjectsResult } from "../../hooks/useProjects";
+import { makeDirSlug } from "../../hooks/useChats";
 import type { ProjectFull, ProjectFileInfo, ProjectFileText } from "../../types/project";
 import type { ChatSession, AttachmentInfo } from "../../types/chat";
 import { formatRelative } from "../../utils/formatTime";
@@ -31,6 +32,7 @@ interface ProjectDetailProps {
     text: string,
     attachments: AttachmentInfo[],
     html?: string,
+    dirSlug?: string,
   ) => void;
   onDeleteChat: (id: string) => void;
 }
@@ -52,6 +54,11 @@ export function ProjectDetail({
   const [fileView, setFileView] = useState<ProjectFileText | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Slug for the chat the composer is about to spawn. Pre-allocated so a file
+  // attached here uploads straight into that chat's sandbox (chats/{slug}/
+  // uploads/) instead of the out-of-sandbox cache dir — otherwise the model
+  // can't read the first message's attachments. Regenerated after each send.
+  const [composeSlug, setComposeSlug] = useState(() => makeDirSlug());
 
   const reload = useCallback(async () => {
     const full = await api.getProject(projectId);
@@ -166,7 +173,10 @@ export function ProjectDetail({
         </div>
 
         <ChatInput
-          onSend={(text, attachments, html) => onStartChat(projectId, text, attachments, html)}
+          onSend={(text, attachments, html) => {
+            onStartChat(projectId, text, attachments, html, composeSlug);
+            setComposeSlug(makeDirSlug()); // fresh sandbox for the next message
+          }}
           onStop={() => {}}
           isStreaming={false}
           models={models}
@@ -177,6 +187,7 @@ export function ProjectDetail({
           effortLevel={effortLevel}
           onEffortChange={onEffortChange}
           placeholder={t("projects.chatPlaceholder")}
+          dirSlug={composeSlug}
         />
 
         <div className="proj-chats-head">{t("projects.chatSectionTitle")}</div>

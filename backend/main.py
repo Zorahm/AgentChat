@@ -60,6 +60,19 @@ from tools.registry import ToolRegistry
 from tools.write_file import WriteFileTool
 
 # ---------------------------------------------------------------------------
+# build version
+# ---------------------------------------------------------------------------
+
+# Stamped into the frozen sidecar by scripts/build-backend.ps1 from
+# tauri.conf.json (the single version source). Lets the Tauri shell tell its
+# own freshly-built backend apart from a leftover sidecar of a previous version
+# still squatting on port 8787 after an update. Absent in dev / source runs.
+try:
+    from _buildstamp import BUILD_VERSION  # type: ignore[import-not-found]
+except Exception:  # noqa: BLE001 — any failure just means "not a release build"
+    BUILD_VERSION = "dev"
+
+# ---------------------------------------------------------------------------
 # paths
 # ---------------------------------------------------------------------------
 
@@ -892,7 +905,9 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok"}
+        # `version` lets the desktop shell verify the backend on 8787 is the one
+        # this build ships, not a stale sidecar from a previous version.
+        return {"status": "ok", "version": BUILD_VERSION}
 
     # --- static UI (remote/phone clients) ---
     # Serve the built SPA from the same origin as the API so phones never hit

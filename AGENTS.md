@@ -155,3 +155,40 @@ App.handleModelChange → updateSettings({ default_model }) → context syncs al
 - [ ] Single responsibility per module
 - [ ] No commented-out code
 - [ ] No hardcoded secrets or keys
+
+---
+
+## Releases
+
+A release is cut by **pushing a git tag `vX.Y.Z`**. The tag push triggers
+`.github/workflows/release.yml`, which builds the UI, the PyInstaller backend
+sidecar, and the Tauri app, then publishes a GitHub Release (installers +
+auto-updater manifest) plus a portable ZIP.
+
+**Before tagging, bump `"version"` to the new number (e.g. `1.3.0` → `1.3.2`)
+in BOTH files.** They are not kept in sync automatically in the committed tree,
+and each is read by something different:
+
+| File | Field | Read by |
+|------|-------|---------|
+| `ui/package.json` | `"version"` | Settings → About screen, and the "from" version in the update prompt (`pkg.version`). Forgetting this ships an About screen showing the old version. |
+| `src-tauri/tauri.conf.json` | `"version"` | The version baked into the app for the auto-updater, and the identity the desktop shell uses to spot a stale backend left on port 8787 (`ctx.package_info().version`). Also makes local `tauri build`s correct. |
+
+Use the same `X.Y.Z` everywhere — the tag is that number prefixed with `v`.
+`src-tauri/Cargo.toml`'s version is unused and stays as-is.
+
+### Steps
+
+1. Bump `"version"` in `ui/package.json` **and** `src-tauri/tauri.conf.json` to the new `X.Y.Z`.
+2. Commit: `chore(release): vX.Y.Z`.
+3. Tag and push:
+   ```sh
+   git tag vX.Y.Z
+   git push origin master --tags
+   ```
+4. Watch the **Release** workflow on GitHub Actions; the Release and updater
+   manifest appear when it finishes.
+
+> CI re-bumps `src-tauri/tauri.conf.json` from the tag at build time, so the
+> *published* app matches the tag even if you forget — but `ui/package.json` is
+> **never** auto-bumped. Always bump both by hand; don't lean on the CI bump.

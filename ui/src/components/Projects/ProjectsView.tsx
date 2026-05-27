@@ -25,6 +25,7 @@ interface ProjectsViewProps {
     text: string,
     attachments: AttachmentInfo[],
     html?: string,
+    dirSlug?: string,
   ) => void;
   onDeleteChat: (id: string) => void;
 }

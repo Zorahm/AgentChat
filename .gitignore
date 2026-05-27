@@ -9,6 +9,7 @@ build/
 # PyInstaller
 src-tauri/binaries/
 build/pyinstaller-*/
+backend/_buildstamp.py
 
 # Rust / Tauri
 src-tauri/target/

@@ -331,8 +331,8 @@ export function App() {
             onEffortChange={setEffortLevel}
             onClose={() => handleNavigate("chat")}
             onOpenChat={(id) => { chats.switchChat(id); handleNavigate("chat"); }}
-            onStartChat={(pid, text, atts, html) => {
-              chats.startProjectChat(pid, text, model, atts, html);
+            onStartChat={(pid, text, atts, html, dirSlug) => {
+              chats.startProjectChat(pid, text, model, atts, html, dirSlug);
               handleNavigate("chat");
             }}
             onDeleteChat={chats.deleteChat}

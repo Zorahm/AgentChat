@@ -47,6 +47,7 @@ export interface UseChatResult {
     model?: string,
     attachments?: AttachmentInfo[],
     html?: string,
+    dirSlug?: string,
   ) => void;
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
@@ -292,7 +293,7 @@ function backfillDirSlug(s: ChatSession): ChatSession {
   return { ...s, dirSlug: `chat-${short}-${ts}` };
 }
 
-function makeDirSlug(): string {
+export function makeDirSlug(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
@@ -300,7 +301,7 @@ function makeDirSlug(): string {
   return `chat-${id}-${ts}`;
 }
 
-function makeSession(projectId?: string): ChatSession {
+function makeSession(projectId?: string, dirSlug?: string): ChatSession {
   // Guard against a non-string projectId — e.g. a click handler wired as
   // `onClick={onNew}` forwards the MouseEvent here, and a DOM event is a
   // deeply circular object that poisons every JSON.stringify of the session.
@@ -310,7 +311,10 @@ function makeSession(projectId?: string): ChatSession {
     title: i18n.t("chat.newChatTitle"),
     root: [],
     createdAt: Date.now(),
-    dirSlug: makeDirSlug(),
+    // A caller may pre-allocate the slug (the project composer uploads its
+    // first attachment before the chat exists; the upload must land in this
+    // chat's sandbox, so the slug has to be known up front).
+    dirSlug: dirSlug || makeDirSlug(),
     projectId: pid,
   };
 }
@@ -1513,12 +1517,15 @@ export function useChats(): UseChatResult {
       model?: string,
       attachments?: AttachmentInfo[],
       html?: string,
+      dirSlug?: string,
     ) => {
       sseRef.current?.close();
       sseRef.current = null;
       streamingTargetRef.current = null;
       setIsStreaming(false);
-      const session = makeSession(projectId);
+      // Reuse the slug the composer already uploaded into, so the first
+      // message's attachments sit inside this chat's sandbox.
+      const session = makeSession(projectId, dirSlug);
       setSessions((prev) => [session, ...prev]);
       setActiveId(session.id);
       setLiveFiles([]);
