@@ -313,10 +313,16 @@ interface SearxngStatusDTO {
   wsl_available: boolean;
   docker_available: boolean;
   docker_cli: boolean;
+  docker_desktop_installed: boolean;
+  winget_available: boolean;
+  docker_download_url: string;
   running: boolean;
   url: string | null;
   installing: boolean;
+  installing_docker: boolean;
 }
+
+const WS = "settings.providers.webSearch";
 
 function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void }) {
   const { t } = useTranslation();
@@ -324,6 +330,9 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
   const [log, setLog] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dockerLog, setDockerLog] = useState("");
+  const [dockerError, setDockerError] = useState<string | null>(null);
+  const [dockerBusy, setDockerBusy] = useState(false);
   const notifiedRef = useRef(false);
 
   const refreshStatus = () => {
@@ -368,38 +377,86 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
       .catch(() => setBusy(false));
   };
 
+  const pollDocker = () => {
+    const tick = () => {
+      fetch(`${API_BASE}/searxng/install-docker/status`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { running: boolean; log: string; error: string | null; docker_available: boolean } | null) => {
+          if (!d) return;
+          setDockerLog(d.log);
+          setDockerError(d.error);
+          if (d.running) {
+            setTimeout(tick, 2000);
+          } else {
+            setDockerBusy(false);
+            // refreshStatus flips docker_desktop_installed → the primary button
+            // becomes "Install SearXNG" for the user to click next.
+            refreshStatus();
+          }
+        })
+        .catch(() => setDockerBusy(false));
+    };
+    tick();
+  };
+
+  const installDocker = () => {
+    setDockerBusy(true);
+    setDockerError(null);
+    setDockerLog("");
+    fetch(`${API_BASE}/searxng/install-docker`, { method: "POST" })
+      .then(() => pollDocker())
+      .catch(() => setDockerBusy(false));
+  };
+
   if (!status) return null;
 
   return (
     <div className="st2-ws-install">
       <div className="st2-ws-install-head">
-        <span className="st2-ws-install-title">{t("settings.providers.webSearch.installTitle")}</span>
-        {status.running && <span className="st2-ws-ok">● {t("settings.providers.webSearch.running")}</span>}
+        <span className="st2-ws-install-title">{t(`${WS}.installTitle`)}</span>
+        {status.running && <span className="st2-ws-ok">● {t(`${WS}.running`)}</span>}
       </div>
 
       {!status.wsl_available ? (
-        <p className="st2-ws-hint">{t("settings.providers.webSearch.needWsl")}</p>
-      ) : !status.docker_available ? (
-        <p className="st2-ws-hint">
-          {status.docker_cli
-            ? t("settings.providers.webSearch.dockerDown")
-            : t("settings.providers.webSearch.needDocker")}
-        </p>
+        <p className="st2-ws-hint">{t(`${WS}.needWsl`)}</p>
+      ) : !status.docker_desktop_installed ? (
+        // Step 1 — Docker isn't installed yet. Download it (winget) or guide.
+        status.winget_available ? (
+          <>
+            <p className="st2-ws-hint">{t(`${WS}.dockerAutoHint`)}</p>
+            <button className="st2-btn" onClick={installDocker} disabled={dockerBusy}>
+              {dockerBusy ? t(`${WS}.installingDocker`) : t(`${WS}.installDocker`)}
+            </button>
+          </>
+        ) : (
+          <p className="st2-ws-hint">
+            {t(`${WS}.dockerManualHint`)}{" "}
+            <a href={status.docker_download_url} target="_blank" rel="noreferrer">
+              {status.docker_download_url}
+            </a>
+          </p>
+        )
       ) : (
-        <p className="st2-ws-hint">{t("settings.providers.webSearch.installHint")}</p>
+        // Step 2 — Docker is installed. Offer the SearXNG install directly.
+        <>
+          <p className="st2-ws-hint">
+            {status.docker_available ? t(`${WS}.installHint`) : t(`${WS}.dockerSetupHint`)}
+          </p>
+          <button className="st2-btn" onClick={install} disabled={busy}>
+            {busy
+              ? t(`${WS}.installing`)
+              : status.running
+                ? t(`${WS}.reinstall`)
+                : t(`${WS}.install`)}
+          </button>
+        </>
       )}
 
-      <button
-        className="st2-btn"
-        onClick={install}
-        disabled={busy || !status.docker_available}
-      >
-        {busy
-          ? t("settings.providers.webSearch.installing")
-          : status.running
-            ? t("settings.providers.webSearch.reinstall")
-            : t("settings.providers.webSearch.install")}
-      </button>
+      {(dockerLog || dockerError) && (
+        <pre className={`st2-ws-log${dockerError ? " err" : ""}`}>
+          {dockerError ? `${dockerLog}\n${dockerError}` : dockerLog}
+        </pre>
+      )}
 
       {(log || error) && (
         <pre className={`st2-ws-log${error ? " err" : ""}`}>{error ? `${log}\n${error}` : log}</pre>

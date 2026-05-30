@@ -18,6 +18,8 @@ interface SidebarProps {
   onToggle: () => void;
   userName: string;
   avatarUrl: string | null;
+  /** Mobile only: when true the sidebar slides in as an off-canvas drawer. */
+  mobileOpen?: boolean;
 }
 
 const RECENT_LIMIT = 15;
@@ -25,6 +27,7 @@ const RECENT_LIMIT = 15;
 export function Sidebar({
   sessions, activeId, onNew, onSwitch, onDelete, onRename, onPin,
   activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
+  mobileOpen = false,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [orderIds, setOrderIds] = useState<string[]>(() => {
@@ -290,7 +293,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${mobileOpen ? " sidebar--mobile-open" : ""}`}>
       <div className="sb-top">
         <div className="sb-logo">
           <div

@@ -14,6 +14,7 @@ import "./styles/tiptap.css";
 import "./styles/settings-v2.css";
 import "./styles/onboarding.css";
 import "./styles/projects.css";
+import "./styles/responsive.css";
 
 // Pair a phone via ?token=…, then route the Bearer token onto every API call.
 // Must run before the first fetch (App effects), i.e. before render.

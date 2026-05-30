@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen } from "@phosphor-icons/react";
+import { FolderOpen, List } from "@phosphor-icons/react";
 import type { AgentChatState } from "../../hooks/useChats";
 import { ChatInput } from "./ChatInput";
 import { MessageBubble } from "./MessageBubble";
@@ -24,6 +24,8 @@ interface ChatViewProps {
   chatTitle: string;
   dirSlug: string | null;
   onSend: (text: string, attachments: AttachmentInfo[]) => void;
+  /** Mobile only: opens the off-canvas sidebar drawer. */
+  onOpenSidebar?: () => void;
   onStop: () => void;
   onRetry: () => void;
   onEdit: (userNodeId: string, content: string, displayHtml?: string) => void;
@@ -80,7 +82,7 @@ function useTypewriter(text: string, speed = 45): { displayed: string; done: boo
 }
 
 export function ChatView({
-  activeId, state, chatTitle, dirSlug, onSend, onStop, onRetry, onEdit, onSwitchVariant, branchNodes, onToggleFiles,
+  activeId, state, chatTitle, dirSlug, onSend, onOpenSidebar, onStop, onRetry, onEdit, onSwitchVariant, branchNodes, onToggleFiles,
   models, model, onModelChange,
   thinkingEnabled, onThinkingToggle,
   effortLevel, onEffortChange,
@@ -131,6 +133,16 @@ export function ChatView({
     <div className={`chat${isEmpty ? " chat--welcome" : ""}`}>
       {!isEmpty && (
         <div className="chat-head">
+          {onOpenSidebar && (
+            <button
+              className="chat-mobile-menu-btn"
+              onClick={onOpenSidebar}
+              title={t("sidebar.expand")}
+              aria-label={t("sidebar.expand")}
+            >
+              <List />
+            </button>
+          )}
           <div>
             <div className="chat-head-title">{chatTitle}</div>
             <div className="chat-head-subtitle">
@@ -149,6 +161,16 @@ export function ChatView({
 
       {isEmpty ? (
         <div className="chat-welcome">
+          {onOpenSidebar && (
+            <button
+              className="chat-mobile-menu-btn"
+              onClick={onOpenSidebar}
+              title={t("sidebar.expand")}
+              aria-label={t("sidebar.expand")}
+            >
+              <List />
+            </button>
+          )}
           <div className="chat-welcome-hgroup">
             <div className="chat-welcome-logo" onClick={() => setRevealed(true)}>
               <img src="/ghost.svg" alt="" />

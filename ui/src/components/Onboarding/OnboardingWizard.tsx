@@ -50,9 +50,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [apiKey, setApiKey] = useState("");
   const [defaultModel, setDefaultModel] = useState<string>("");
+  const [shellChoice, setShellChoice] = useState<"wsl" | "powershell" | null>(null);
   const [wsl, setWsl] = useState<WSLStatus | null>(null);
   const [wslBusy, setWslBusy] = useState<string | null>(null);
   const [wslLog, setWslLog] = useState<string>("");
+  const [wslUsername, setWslUsername] = useState("");
+  const [wslPassword, setWslPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skillsInstalling, setSkillsInstalling] = useState(false);
@@ -97,8 +100,27 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   }, []);
 
   useEffect(() => {
-    if (step === 3) refreshWsl();
-  }, [step, refreshWsl]);
+    if (step === 3 && shellChoice === "wsl") refreshWsl();
+  }, [step, shellChoice, refreshWsl]);
+
+  /** Step 3: pick the shell. WSL reveals its setup screen; PowerShell needs none. */
+  const chooseShell = useCallback(
+    async (choice: "wsl" | "powershell") => {
+      setShellChoice(choice);
+      setError(null);
+      try {
+        await fetch(`${API_BASE}/settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shell_preference: choice }),
+        });
+      } catch {
+        /* non-critical — the selection still drives the UI */
+      }
+      if (choice === "wsl") refreshWsl();
+    },
+    [refreshWsl],
+  );
 
   // ── Step 1: name ──
   const handleNextFromName = async () => {
@@ -169,44 +191,55 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   const appendLog = (line: string) => setWslLog((prev) => (prev ? prev + "\n" + line : line));
 
-  /** Poll /wsl/status until distro_running is true, or give up. */
-  const pollDistroReady = async (timeoutMs = 600000): Promise<WSLStatus | null> => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      try {
-        const r = await fetch(`${API_BASE}/wsl/status`);
-        if (r.ok) {
-          const s = (await r.json()) as WSLStatus;
-          setWsl(s);
-          if (s.distro_running) return s;
-        }
-      } catch {
-        /* keep polling */
-      }
-    }
-    return null;
-  };
-
-  /** Single-click flow: ensure WSL+Ubuntu installed, then libraries. */
+  /** Single-click flow: ensure WSL+Ubuntu installed (+ Linux user), then libraries. */
   const installAll = async () => {
+    const distroReady = !!wsl && wsl.wsl_installed && wsl.distro_running;
+    // A fresh distro install needs Linux credentials so we can provision the
+    // user ourselves (no interactive first-boot prompt).
+    if (!distroReady && (!wslUsername.trim() || !wslPassword)) {
+      setError(t("onboarding.wslCredsRequired"));
+      return;
+    }
     setWslBusy("all");
     setWslLog("");
     setError(null);
     try {
-      let current = wsl;
-      if (!current || !current.wsl_installed || !current.distro_running) {
-        if (!current || !current.wsl_installed || !current.default_distro) {
-          appendLog(t("onboarding.wslStarting"));
-          const r = await fetch(`${API_BASE}/wsl/install-distro`, { method: "POST" });
-          const d = await r.json();
-          if (d.output) appendLog(d.output);
-          if (!d.success) throw new Error(t("onboarding.wslStartError"));
+      if (!distroReady) {
+        const r = await fetch(`${API_BASE}/wsl/install-distro`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: wslUsername.trim().toLowerCase(),
+            password: wslPassword,
+          }),
+        });
+        const d = await r.json();
+        if (d.output) appendLog(d.output);
+        if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslStartError"));
+
+        // Poll the background install/provision task. The backend enables the
+        // Windows features via DISM on failure and reports a restart request.
+        let lastLog = "";
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          try {
+            const s = await fetch(`${API_BASE}/wsl/install-distro/status`);
+            if (!s.ok) continue;
+            const p = (await s.json()) as { running: boolean; log: string; error: string | null; done: boolean };
+            if (p.log && p.log !== lastLog) {
+              lastLog = p.log;
+              setWslLog(p.log);
+            }
+            if (!p.running) {
+              if (p.error) throw new Error(p.error);
+              break;
+            }
+          } catch (err) {
+            if (err instanceof Error && err.message) throw err;
+            /* transient network error — keep polling */
+          }
         }
-        appendLog(t("onboarding.wslWaiting"));
-        const ready = await pollDistroReady();
-        if (!ready) throw new Error(t("onboarding.wslTimeout"));
-        current = ready;
+        await refreshWsl();
       }
 
       appendLog(t("onboarding.wslInstallingDeps"));
@@ -381,6 +414,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             <div className="ob-actions">
               <button className="ob-btn ob-btn--ghost" onClick={() => setStep(1)}>{t("onboarding.back")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.skip")}</button>
               <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
                 {saving ? "…" : t("onboarding.next")}
               </button>
@@ -395,6 +429,31 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               {t("onboarding.step3Description")}
             </p>
 
+            <div className="ob-shell-choice">
+              <button
+                type="button"
+                className={`ob-shell-card${shellChoice === "powershell" ? " selected" : ""}`}
+                onClick={() => chooseShell("powershell")}
+              >
+                <span className="ob-shell-name">{t("onboarding.shellPowershell")}</span>
+                <span className="ob-shell-desc">{t("onboarding.shellPowershellDesc")}</span>
+              </button>
+              <button
+                type="button"
+                className={`ob-shell-card${shellChoice === "wsl" ? " selected" : ""}`}
+                onClick={() => chooseShell("wsl")}
+              >
+                <span className="ob-shell-name">{t("onboarding.shellWsl")}</span>
+                <span className="ob-shell-desc">{t("onboarding.shellWslDesc")}</span>
+              </button>
+            </div>
+
+            {shellChoice === "powershell" && (
+              <p className="ob-sub2">{t("onboarding.shellPowershellNote")}</p>
+            )}
+
+            {shellChoice === "wsl" && (
+            <>
             {wsl === null ? (
               <p className="ob-sub2">{t("onboarding.checkingWsl")}</p>
             ) : (
@@ -408,6 +467,38 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <WSLRow label={t("onboarding.wslPoppler")} ok={wsl.poppler} value={wsl.poppler ? t("onboarding.wslPoppler") : "—"} />
                 <WSLRow label={t("onboarding.wslDocx")} ok={wsl.docx} value={wsl.docx ? t("onboarding.wslDocx") : "—"} />
                 <WSLRow label={t("onboarding.wslDns")} ok={wsl.dns_ok} value={wsl.dns_ok ? t("onboarding.wslDnsWorking") : t("onboarding.wslDnsBroken")} />
+              </div>
+            )}
+
+            {wsl && !wsl.distro_running && (
+              <div className="ob-wsl-creds">
+                <p className="ob-sub2">{t("onboarding.wslCredsDescription")}</p>
+                <div className="ob-wsl-creds-row">
+                  <label className="ob-label">
+                    {t("onboarding.wslUsername")}
+                    <input
+                      className="ob-input"
+                      type="text"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      value={wslUsername}
+                      onChange={(e) => setWslUsername(e.target.value)}
+                      placeholder={t("onboarding.wslUsernamePlaceholder")}
+                      disabled={wslBusy !== null}
+                    />
+                  </label>
+                  <label className="ob-label">
+                    {t("onboarding.wslPassword")}
+                    <input
+                      className="ob-input"
+                      type="password"
+                      value={wslPassword}
+                      onChange={(e) => setWslPassword(e.target.value)}
+                      placeholder={t("onboarding.wslPasswordPlaceholder")}
+                      disabled={wslBusy !== null}
+                    />
+                  </label>
+                </div>
               </div>
             )}
 
@@ -433,9 +524,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             {wslLog && (
               <pre className="ob-log">{wslLog}</pre>
             )}
+            </>
+            )}
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
               <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>{t("onboarding.back")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(4)} disabled={wslBusy !== null}>{t("onboarding.skip")}</button>
               <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null}>{t("onboarding.next")}</button>
             </div>
           </div>

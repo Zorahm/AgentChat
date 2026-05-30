@@ -22,6 +22,7 @@ export interface ToolCall {
 export const TOOL_ICONS: Record<string, string> = {
   bash_tool: ">_",
   web_search: "🔍",
+  web_fetch: "🌐",
   read_file: "📄",
   read_photo: "🖼",
   write_file: "📄",

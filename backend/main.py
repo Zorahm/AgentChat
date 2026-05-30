@@ -57,6 +57,7 @@ from tools.read_file import ReadFileTool
 from tools.read_photo import ReadPhotoTool
 from tools.read_skill import ReadSkillTool
 from tools.registry import ToolRegistry
+from tools.web_fetch_tool import WebFetchTool
 from tools.write_file import WriteFileTool
 from web_search.config import WebSearchConfig
 from web_search.service import WebSearchService
@@ -265,6 +266,7 @@ Date: {now}
 
 {bash_desc}
 - read_file — read a file from the local filesystem. For large files, use offset (1-based line number) and limit (max lines) to read in chunks instead of loading the entire file at once.
+- web_fetch — fetch an http(s) URL and return its readable text (HTML is converted to plain text). Use it to read a page the user links or that a web_search result points to.
 - read_skill — read detailed instructions for an installed skill
 
 ## Sandbox & uploads
@@ -895,6 +897,7 @@ def create_app() -> FastAPI:
     registry.register(WriteFileTool())
     registry.register(EditFileTool())
     registry.register(ReadSkillTool(reader))
+    registry.register(WebFetchTool())
 
     # --- web search (native capability cache + Tavily/SearXNG client) ---
     def _native_web_search_cap(model_id: str) -> bool | None:

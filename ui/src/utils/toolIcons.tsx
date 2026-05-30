@@ -1,7 +1,7 @@
 /** Phosphor icon helpers for tool calls and file extensions. */
 
 import {
-  Brain, BookOpen, Terminal, MagnifyingGlass,
+  Brain, BookOpen, Terminal, MagnifyingGlass, Globe,
   FileTs, FileJs, FileCss, FileHtml, FileRs, FileSql,
   FileText, FileCode, FilePdf, FileDoc, FileXls, FilePpt, FileZip, FileImage,
   File,
@@ -11,6 +11,7 @@ export function toolIcon(name: string): React.ReactNode {
   switch (name) {
     case "bash_tool": return <Terminal />;
     case "web_search": return <MagnifyingGlass />;
+    case "web_fetch": return <Globe />;
     case "read_file": case "read_skill": return <BookOpen />;
     case "read_photo": return <FileImage />;
     case "write_file": return <FileCode />;

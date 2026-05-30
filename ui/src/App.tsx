@@ -34,6 +34,8 @@ export function App() {
   const [thinkingEnabled, setThinkingEnabled] = useState(true);
   const [effortLevel, setEffortLevel] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [generalPanelOpen, setGeneralPanelOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
@@ -51,6 +53,26 @@ export function App() {
   useEffect(() => {
     setOpenFilePath(null);
     setGeneralPanelOpen(false);
+  }, [chats.activeId]);
+
+  // Track the mobile breakpoint (mirrors styles/responsive.css). On phones the
+  // sidebar becomes an off-canvas drawer, so the desktop collapse state is
+  // ignored and we close the drawer whenever we leave mobile.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
+
+  // Switching chats from the drawer should also dismiss it.
+  useEffect(() => {
+    setMobileNavOpen(false);
   }, [chats.activeId]);
 
 
@@ -178,6 +200,7 @@ export function App() {
   }, [language]);
 
   const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects") => {
+    setMobileNavOpen(false);
     if (v === "skills") {
       setSettingsTab("skills");
       setView("settings");
@@ -288,9 +311,13 @@ export function App() {
     enabledProviders, models, onboardingDone, updateSettings, refreshSettings: fetchSettings,
   }), [model, theme, language, userName, thinkingEnabled, effortLevel, enabledProviders, models, onboardingDone, updateSettings, fetchSettings]);
 
+  // On mobile the sidebar is a fixed drawer (not a grid column), so the grid is
+  // a single column — responsive.css enforces this; the inline value is just a
+  // harmless fallback. On desktop the 3-column grid drives the layout.
   const sideW = sidebarCollapsed ? 44 : 240;
   const rightW = view === "chat" && panelOpen ? panelWidth : 0;
-  const gridCols = `${sideW}px 1fr ${rightW}px`;
+  const gridCols = isMobile ? "1fr" : `${sideW}px 1fr ${rightW}px`;
+  const effectiveCollapsed = isMobile ? false : sidebarCollapsed;
 
   return (
     <SettingsContext.Provider value={settingsCtx}>
@@ -300,9 +327,15 @@ export function App() {
         <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
       )}
       <div
-        className={`app-body${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+        className={`app-body${effectiveCollapsed ? " sidebar-collapsed" : ""}`}
         style={{ gridTemplateColumns: gridCols }}
       >
+        {isMobile && mobileNavOpen && (
+          <div
+            className="mobile-drawer-backdrop"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        )}
         <Sidebar
           sessions={chats.sessions}
           activeId={chats.activeId}
@@ -313,10 +346,11 @@ export function App() {
           onPin={chats.pinChat}
           activeView={view}
           onNavigate={handleNavigate}
-          collapsed={sidebarCollapsed}
+          collapsed={effectiveCollapsed}
           onToggle={() => setSidebarCollapsed((v) => !v)}
           userName={userName}
           avatarUrl={avatarUrl}
+          mobileOpen={isMobile && mobileNavOpen}
         />
 
         {view === "projects" ? (
@@ -344,6 +378,7 @@ export function App() {
             chatTitle={shortTitle}
             dirSlug={chats.activeDirSlug}
             onSend={handleSend}
+            onOpenSidebar={() => setMobileNavOpen(true)}
             onStop={chats.abort}
             onRetry={chats.retry}
             onEdit={chats.editMessage}

@@ -9,10 +9,15 @@ container's URL (http://localhost:8080) is written into settings as
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import secrets
 import shlex
+import shutil
+import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
@@ -32,6 +37,14 @@ _install_task: asyncio.Task[None] | None = None
 _install_log: list[str] = []
 _install_error: str | None = None
 
+# Separate background task for the Docker Desktop install + WSL-integration step.
+_docker_task: asyncio.Task[None] | None = None
+_docker_log: list[str] = []
+_docker_error: str | None = None
+
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_DOCKER_DOWNLOAD_URL = "https://www.docker.com/products/docker-desktop/"
+
 
 # ── Models ──────────────────────────────────────────────────────────────────
 
@@ -40,9 +53,13 @@ class SearxngStatus(BaseModel):
     wsl_available: bool
     docker_available: bool  # docker CLI present AND daemon reachable
     docker_cli: bool  # docker binary on PATH (daemon may still be down)
+    docker_desktop_installed: bool  # Docker Desktop present on the Windows host
+    winget_available: bool  # winget present, so we can auto-install Docker Desktop
+    docker_download_url: str  # manual-install fallback link
     running: bool  # the agentchat-searxng container is up
     url: str | None  # configured searxng_url, if any
-    installing: bool
+    installing: bool  # SearXNG install task is running
+    installing_docker: bool  # Docker Desktop install task is running
 
 
 class SearxngInstallStatus(BaseModel):
@@ -123,6 +140,132 @@ async def _health_ok() -> bool:
         return False
 
 
+# ── Docker Desktop (Windows host) ───────────────────────────────────────────
+
+
+async def _win_run(args: list[str], timeout: int = 60) -> tuple[int, str, str]:
+    """Run a Windows-side command in a thread; return (returncode, out, err)."""
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            args,
+            capture_output=True,
+            timeout=timeout,
+            creationflags=_NO_WINDOW,
+        )
+    except FileNotFoundError:
+        return 127, "", f"{args[0]}: not found"
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout}s"
+    except OSError as exc:
+        return 1, "", str(exc)
+    return result.returncode, decode_loose(result.stdout), decode_loose(result.stderr)
+
+
+def _docker_desktop_exe() -> str | None:
+    """Locate Docker Desktop.exe in the usual install locations."""
+    candidates = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Docker" / "Docker" / "Docker Desktop.exe",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Docker" / "Docker" / "Docker Desktop.exe",
+    ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return None
+
+
+def _docker_desktop_installed() -> bool:
+    return _docker_desktop_exe() is not None or shutil.which("docker") is not None
+
+
+def _winget_available() -> bool:
+    return shutil.which("winget") is not None
+
+
+async def _default_wsl_distro() -> str | None:
+    """First entry of `wsl -l -q` — the default distro Docker should integrate."""
+    code, out, _ = await _win_run(["wsl.exe", "-l", "-q"], timeout=10)
+    if code != 0:
+        return None
+    for line in out.splitlines():
+        name = line.strip()
+        if name:
+            return name
+    return None
+
+
+def _patch_wsl_integration(distro: str | None) -> bool:
+    """Best-effort: enable Docker Desktop's WSL2 engine + integration with the
+    default (and named) distro by editing its settings file. Docker reads this
+    on (re)start, so we patch BEFORE launching it. Never raises."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return False
+    docker_dir = Path(appdata) / "Docker"
+    target: Path | None = None
+    data: dict[str, object] = {}
+    for name in ("settings-store.json", "settings.json"):
+        p = docker_dir / name
+        if p.exists():
+            target = p
+            try:
+                loaded = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    data = loaded
+            except (OSError, ValueError):
+                data = {}
+            break
+    if target is None:
+        # Fresh install — Docker hasn't created its config yet. Seed one.
+        try:
+            docker_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
+        target = docker_dir / "settings-store.json"
+
+    data["wslEngineEnabled"] = True
+    data["enableIntegrationWithDefaultWslDistro"] = True
+    if distro:
+        existing = data.get("integratedWslDistros")
+        distros = list(existing) if isinstance(existing, list) else []
+        if distro not in distros:
+            distros.append(distro)
+        data["integratedWslDistros"] = distros
+    try:
+        target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+async def _winget_install_docker() -> tuple[int, str, str]:
+    """Install Docker Desktop via winget in a UAC-elevated process, waiting for
+    completion and propagating winget's exit code."""
+    inner = (
+        "winget install -e --id Docker.DockerDesktop "
+        "--accept-source-agreements --accept-package-agreements --silent"
+    )
+    ps_cmd = (
+        "$p = Start-Process -Verb RunAs -Wait -PassThru -FilePath 'powershell.exe' "
+        "-ArgumentList '-NoProfile','-NoLogo','-Command',"
+        + "'" + inner.replace("'", "''") + "'"
+        + "; exit $p.ExitCode"
+    )
+    return await _win_run(["powershell.exe", "-NoProfile", "-Command", ps_cmd], timeout=1800)
+
+
+def _start_docker_desktop() -> bool:
+    """Launch Docker Desktop (non-elevated). Returns False if the exe is missing."""
+    exe = _docker_desktop_exe()
+    if not exe:
+        return False
+    try:
+        subprocess.Popen([exe], creationflags=_NO_WINDOW)
+        return True
+    except OSError:
+        return False
+
+
 # ── routes ──────────────────────────────────────────────────────────────────
 
 
@@ -137,9 +280,108 @@ async def status(request: Request) -> SearxngStatus:
         wsl_available=wsl,
         docker_available=daemon,
         docker_cli=cli,
+        docker_desktop_installed=_docker_desktop_installed(),
+        winget_available=_winget_available(),
+        docker_download_url=_DOCKER_DOWNLOAD_URL,
         running=running,
         url=store.searxng_url,
         installing=_install_task is not None and not _install_task.done(),
+        installing_docker=_docker_task is not None and not _docker_task.done(),
+    )
+
+
+class DockerInstallStatus(BaseModel):
+    running: bool
+    log: str
+    error: str | None
+    docker_available: bool
+
+
+async def _run_install_docker() -> None:
+    """Background worker: install Docker Desktop (winget), enable WSL
+    integration, start it, and wait for the daemon. Writes progress to state."""
+    global _docker_error
+    _docker_error = None
+    _docker_log.clear()
+
+    def emit(line: str) -> None:
+        logger.info("docker-install: %s", line)
+        _docker_log.append(line)
+
+    try:
+        if not _docker_desktop_installed():
+            if not _winget_available():
+                _docker_error = (
+                    "winget is not available, so Docker Desktop can't be installed "
+                    f"automatically. Install it manually from {_DOCKER_DOWNLOAD_URL}, "
+                    "enable WSL integration for your distro, then come back."
+                )
+                return
+            emit("Installing Docker Desktop via winget (a UAC prompt will appear; this can take several minutes)…")
+            code, out, err = await _winget_install_docker()
+            tail = "\n".join(s for s in [(out or "").strip(), (err or "").strip()] if s)
+            if tail:
+                emit(tail[-2000:])
+            if not _docker_desktop_installed():
+                _docker_error = (
+                    f"Docker Desktop install did not complete (winget exit {code}). "
+                    f"Try installing it manually from {_DOCKER_DOWNLOAD_URL}."
+                )
+                return
+            emit("Docker Desktop installed.")
+        else:
+            emit("Docker Desktop is already installed.")
+
+        distro = await _default_wsl_distro()
+        if _patch_wsl_integration(distro):
+            emit(f"Enabled Docker WSL integration{f' for {distro}' if distro else ''} in Docker Desktop settings.")
+
+        emit("Starting Docker Desktop…")
+        if not _start_docker_desktop():
+            _docker_error = (
+                "Docker Desktop was installed but its executable could not be found to "
+                "launch. Open Docker Desktop manually, then refresh."
+            )
+            return
+
+        emit("Waiting for the Docker daemon to come up (first start can take a few minutes)…")
+        for _ in range(120):  # ~4 minutes
+            await asyncio.sleep(2)
+            if await _docker_daemon():
+                emit("✓ Docker is running and reachable from WSL.")
+                return
+        _docker_error = (
+            "Docker Desktop is installed and starting, but the daemon isn't reachable "
+            "from WSL yet. Open Docker Desktop and, once it has finished starting, go to "
+            "Settings → Resources → WSL Integration, enable your distro, then Apply & "
+            "Restart. A Windows restart may be required after a fresh install."
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.exception("docker install failed")
+        _docker_error = f"Unexpected error: {exc}"
+
+
+@router.post("/install-docker", response_model=ActionResult)
+async def install_docker() -> ActionResult:
+    """Install Docker Desktop + enable WSL integration, in the background.
+    Poll /searxng/install-docker/status for progress."""
+    global _docker_task
+    if _docker_task and not _docker_task.done():
+        return ActionResult(success=True, output="Docker install already running.")
+    _docker_task = asyncio.create_task(_run_install_docker())
+    return ActionResult(success=True, output="Docker Desktop setup started.")
+
+
+@router.get("/install-docker/status", response_model=DockerInstallStatus)
+async def install_docker_status() -> DockerInstallStatus:
+    running = _docker_task is not None and not _docker_task.done()
+    cli = await _docker_cli() if await _wsl_ok() else False
+    daemon = await _docker_daemon() if cli else False
+    return DockerInstallStatus(
+        running=running,
+        log="\n".join(_docker_log),
+        error=_docker_error,
+        docker_available=daemon,
     )
 
 

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import shutil
 import subprocess
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -27,6 +30,15 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _install_task: asyncio.Task[None] | None = None
 _install_log: list[str] = []
 _install_error: str | None = None
+
+# Background distro-install + user-provision task (separate from install-deps).
+_distro_task: asyncio.Task[None] | None = None
+_distro_log: list[str] = []
+_distro_error: str | None = None
+_distro_done: bool = False
+
+# Linux usernames: start with a letter/underscore, then letters/digits/_/- (max 32).
+_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -63,8 +75,15 @@ class InstallResult(BaseModel):
 # ── Subprocess helpers ────────────────────────────────────────────────────
 
 
-async def _run(args: list[str], timeout: int = 30) -> tuple[int, str, str]:
-    """Run a command in a thread and return (returncode, stdout, stderr)."""
+async def _run(
+    args: list[str], timeout: int = 30, env: dict[str, str] | None = None
+) -> tuple[int, str, str]:
+    """Run a command in a thread and return (returncode, stdout, stderr).
+
+    When ``env`` is given it REPLACES the process environment, so callers must
+    merge in ``os.environ`` themselves (used to forward credentials into WSL
+    via WSLENV without putting them on the command line).
+    """
     try:
         result = await asyncio.to_thread(
             subprocess.run,
@@ -72,6 +91,7 @@ async def _run(args: list[str], timeout: int = 30) -> tuple[int, str, str]:
             capture_output=True,
             timeout=timeout,
             creationflags=_NO_WINDOW,
+            env=env,
         )
     except FileNotFoundError:
         return 127, "", f"{args[0]}: not found"
@@ -192,6 +212,184 @@ async def _apply_dns_fix() -> tuple[bool, str]:
     return True, f"{log}\n[shutdown] {shut_log or 'OK'}".strip()
 
 
+# ── Distro install + user provisioning ─────────────────────────────────────
+
+
+def _ps_quote(text: str) -> str:
+    """Single-quote a string for a PowerShell argument (doubles inner quotes)."""
+    return "'" + text.replace("'", "''") + "'"
+
+
+async def _launch_wsl_install() -> tuple[int, str, str]:
+    """Run `wsl --install -d Ubuntu --no-launch` in a UAC-elevated process and
+    wait for it, returning its real exit code.
+
+    ``--no-launch`` registers the distro WITHOUT running Ubuntu's interactive
+    first-boot user setup — we create the Linux user ourselves afterwards.
+    ``-Wait -PassThru`` lets us propagate the installer's exit code (via
+    ``exit $p.ExitCode``) so the caller can react to a real failure (→ DISM)
+    instead of waiting out a registration timeout. The download runs inside the
+    elevated process, hence the long timeout.
+    """
+    ps_cmd = (
+        "$p = Start-Process -Verb RunAs -Wait -PassThru -FilePath 'wsl.exe' "
+        "-ArgumentList '--install','-d','Ubuntu','--no-launch'; exit $p.ExitCode"
+    )
+    return await _run(["powershell.exe", "-NoProfile", "-Command", ps_cmd], timeout=900)
+
+
+async def _do_enable_features(emit: Any) -> bool:
+    """Enable the two Windows optional features WSL needs, via elevated DISM.
+
+    Run when `wsl --install` errors or the distro never registers. Both DISM
+    commands run inside ONE elevated PowerShell (single UAC prompt), and we
+    -Wait for them so we know whether they completed. A reboot is usually
+    required afterwards before the distro can register.
+    """
+    inner = (
+        "dism.exe /online /enable-feature "
+        "/featurename:Microsoft-Windows-Subsystem-Linux /all /norestart; "
+        "dism.exe /online /enable-feature "
+        "/featurename:VirtualMachinePlatform /all /norestart"
+    )
+    ps_cmd = (
+        "Start-Process -Verb RunAs -Wait -FilePath 'powershell.exe' "
+        "-ArgumentList '-NoProfile','-NoLogo','-Command'," + _ps_quote(inner)
+    )
+    code, out, err = await _run(
+        ["powershell.exe", "-NoProfile", "-Command", ps_cmd], timeout=300
+    )
+    tail = "\n".join(s for s in [(out or "").strip(), (err or "").strip()] if s)
+    if tail:
+        emit(tail[-1500:])
+    if code != 0:
+        emit("DISM step did not complete (UAC declined or error).")
+        return False
+    emit("Windows features enabled via DISM.")
+    return True
+
+
+async def _wait_registered(timeout: int = 600) -> bool:
+    """Poll `wsl -l -q` until an Ubuntu distro appears (registration done)."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        await asyncio.sleep(5)
+        code, out, _ = await _run(["wsl.exe", "-l", "-q"], timeout=10)
+        if code == 0 and any(
+            "ubuntu" in line.strip().lower() for line in out.splitlines() if line.strip()
+        ):
+            return True
+    return False
+
+
+# Provision script — runs as root inside the freshly registered distro.
+# Reads the username/password from env (forwarded via WSLENV) so neither ever
+# appears on the command line. Creates the user, sets the password, grants
+# passwordless sudo, and pins it as the distro's default user in /etc/wsl.conf.
+_PROVISION_SCRIPT = r"""
+set -e
+U="$WSL_NEW_USER"
+if [ -z "$U" ]; then echo "no username"; exit 2; fi
+if ! id "$U" >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$U"
+fi
+printf '%s:%s\n' "$U" "$WSL_NEW_PASS" | chpasswd
+usermod -aG sudo "$U"
+printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$U" > "/etc/sudoers.d/90-agentchat"
+chmod 0440 /etc/sudoers.d/90-agentchat
+if grep -q '^\[user\]' /etc/wsl.conf 2>/dev/null; then
+  if grep -q '^default=' /etc/wsl.conf; then
+    sed -i "s/^default=.*/default=$U/" /etc/wsl.conf
+  else
+    sed -i "/^\[user\]/a default=$U" /etc/wsl.conf
+  fi
+else
+  printf '\n[user]\ndefault=%s\n' "$U" >> /etc/wsl.conf
+fi
+echo OK
+"""
+
+
+async def _provision_user(username: str, password: str) -> tuple[bool, str]:
+    """Create the Linux user as root, then shut WSL down so the new default
+    user takes effect on next launch. Credentials are passed via WSLENV."""
+    if not _USERNAME_RE.match(username):
+        return False, f"invalid username {username!r} (use a-z, 0-9, _ or -, start with a letter)"
+    if not password or "\n" in password:
+        return False, "invalid password"
+
+    existing_wslenv = os.environ.get("WSLENV", "")
+    forward = "WSL_NEW_USER/u:WSL_NEW_PASS/u"
+    env = {
+        **os.environ,
+        "WSL_NEW_USER": username,
+        "WSL_NEW_PASS": password,
+        "WSLENV": f"{existing_wslenv}:{forward}" if existing_wslenv else forward,
+    }
+    code, out, err = await _run(
+        ["wsl.exe", "-d", "Ubuntu", "--user", "root", "--", "bash", "-lc", _PROVISION_SCRIPT],
+        timeout=120,
+        env=env,
+    )
+    log = "\n".join(s for s in [(out or "").strip(), (err or "").strip()] if s)
+    if code != 0:
+        return False, log or f"provision script exit {code}"
+    # Shut down so /etc/wsl.conf default user applies on the next launch.
+    await _run(["wsl.exe", "--shutdown"], timeout=20)
+    return True, log or "OK"
+
+
+async def _run_install_distro(username: str, password: str) -> None:
+    """Background worker: install Ubuntu, fall back to DISM on failure, then
+    create the Linux user. Progress is written to module-level state."""
+    global _distro_error, _distro_done
+    _distro_error = None
+    _distro_done = False
+    _distro_log.clear()
+
+    def emit(line: str) -> None:
+        logger.info("install-distro: %s", line)
+        _distro_log.append(line)
+
+    try:
+        emit("Launching the WSL + Ubuntu installer (a UAC prompt may appear)…")
+        code, out, err = await _launch_wsl_install()
+        if code != 0:
+            launch_msg = (err or out or "").strip()
+            if launch_msg:
+                emit(launch_msg)
+            emit("Installer launch failed — enabling Windows features via DISM…")
+            await _do_enable_features(emit)
+            _distro_error = (
+                "Windows features for WSL were just enabled. Please RESTART Windows, "
+                "then run the WSL setup again."
+            )
+            return
+
+        emit("Waiting for the Ubuntu distro to register (first download can take several minutes)…")
+        if not await _wait_registered(timeout=600):
+            emit("Distro did not register in time — enabling Windows features via DISM as a fallback…")
+            await _do_enable_features(emit)
+            _distro_error = (
+                "Could not register the Ubuntu distro. Windows features were enabled — "
+                "RESTART Windows and try again."
+            )
+            return
+
+        emit("Distro registered. Creating the Linux user…")
+        ok, log = await _provision_user(username, password)
+        if log:
+            emit(log)
+        if not ok:
+            _distro_error = "Failed to create the Linux user — see the log above."
+            return
+        emit("✓ WSL is ready.")
+        _distro_done = True
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.exception("install-distro background task failed")
+        _distro_error = f"Unexpected error: {exc}"
+
+
 # ── Routes ────────────────────────────────────────────────────────────────
 
 
@@ -268,24 +466,77 @@ async def status(request: Request) -> WSLStatus:
     )
 
 
-@router.post("/install-distro", response_model=InstallResult)
-async def install_distro() -> InstallResult:
-    """Launch `wsl --install -d Ubuntu` in a UAC-elevated PowerShell window.
+class InstallDistroRequest(BaseModel):
+    """Credentials for the Linux user AgentChat creates during install."""
 
-    Returns immediately; the actual install happens in a separate elevated
-    process and may take several minutes. Caller should poll /status.
+    username: str
+    password: str
+
+
+class InstallDistroStatus(BaseModel):
+    """Snapshot of the background distro-install/provision task."""
+
+    running: bool
+    log: str
+    error: str | None
+    done: bool
+
+
+@router.post("/install-distro", response_model=InstallResult)
+async def install_distro(body: InstallDistroRequest) -> InstallResult:
+    """Install Ubuntu and provision the Linux user, in the background.
+
+    Validates the requested username up front, then kicks off a worker that
+    launches `wsl --install -d Ubuntu --no-launch`, falls back to enabling the
+    Windows features via DISM if that errors, and finally creates the Linux
+    user (no interactive first-boot prompt). Caller polls
+    /wsl/install-distro/status.
     """
-    # Start-Process -Verb RunAs triggers the UAC prompt.
-    ps_cmd = "Start-Process -Verb RunAs -FilePath 'wsl.exe' -ArgumentList '--install','-d','Ubuntu'"
-    code, out, err = await _run(
-        ["powershell.exe", "-NoProfile", "-Command", ps_cmd], timeout=30
-    )
-    if code != 0:
-        return InstallResult(success=False, output=err or out or "PowerShell exited with non-zero status")
+    global _distro_task
+    username = body.username.strip().lower()
+    if not _USERNAME_RE.match(username):
+        return InstallResult(
+            success=False,
+            output="Invalid username — use a-z, 0-9, _ or -, starting with a letter.",
+        )
+    if not body.password or "\n" in body.password:
+        return InstallResult(success=False, output="Password must be non-empty and single-line.")
+
+    if _distro_task and not _distro_task.done():
+        return InstallResult(
+            success=True, output="Install is already running — watch the progress here."
+        )
+    logger.info("install-distro: scheduling background task")
+    _distro_task = asyncio.create_task(_run_install_distro(username, body.password))
     return InstallResult(
         success=True,
-        output="WSL installer launched. Wait for the installation and first-distro-setup to finish.",
+        output="WSL install started in the background. This can take several minutes.",
     )
+
+
+@router.get("/install-distro/status", response_model=InstallDistroStatus)
+async def install_distro_status() -> InstallDistroStatus:
+    """Return the current distro-install task's log, error, and running state."""
+    running = _distro_task is not None and not _distro_task.done()
+    return InstallDistroStatus(
+        running=running,
+        log="\n".join(_distro_log),
+        error=_distro_error,
+        done=_distro_done,
+    )
+
+
+@router.post("/enable-features", response_model=InstallResult)
+async def enable_features() -> InstallResult:
+    """Enable the WSL + Virtual Machine Platform Windows features via elevated
+    DISM. Exposed for a manual retry; the install flow also calls this on error.
+    A Windows restart is normally required afterwards."""
+    log: list[str] = []
+    ok = await _do_enable_features(log.append)
+    output = "\n".join(log) or ("OK" if ok else "DISM failed")
+    if ok:
+        output += "\n\nA Windows RESTART is required before WSL can be installed."
+    return InstallResult(success=ok, output=output)
 
 
 class InstallDepsStatus(BaseModel):

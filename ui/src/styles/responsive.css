@@ -1,0 +1,123 @@
+/* Responsive / mobile — phone layout for remote access.
+ *
+ * Loaded last so these media-queried rules win the cascade. The app shell uses
+ * a fixed 3-column grid (sidebar | chat | panel) that can't fit a phone, so on
+ * narrow viewports we collapse to a single column and turn the sidebar into an
+ * off-canvas drawer and the right-hand panels into full-screen overlays.
+ *
+ * Breakpoint: 768px (tablet portrait and below = "mobile" here).
+ */
+
+/* The hamburger that opens the drawer + the drawer backdrop only exist on
+ * mobile; hide them everywhere else regardless of state. */
+.chat-mobile-menu-btn { display: none; }
+.mobile-drawer-backdrop { display: none; }
+
+@media (max-width: 768px) {
+  /* ── Single-column shell ──────────────────────────────────────────────
+   * App.tsx sets grid-template-columns inline, so we must override with
+   * !important. The chat column becomes the only flow column; sidebar and
+   * side panels are lifted out into fixed-position overlays below. */
+  .app-body,
+  .app-body.sidebar-collapsed {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Sidebar → off-canvas drawer ─────────────────────────────────────── */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 84vw;
+    max-width: 320px;
+    z-index: 1200;
+    transform: translateX(-100%);
+    transition: transform .24s cubic-bezier(.22, .68, 0, 1);
+    box-shadow: 0 0 40px -8px rgba(0, 0, 0, .45);
+    will-change: transform;
+  }
+  .sidebar.sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Dim + click-to-close layer behind the open drawer. */
+  .mobile-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(0, 0, 0, .45);
+    animation: mdb-in .2s ease both;
+  }
+  @keyframes mdb-in { from { opacity: 0; } }
+
+  /* ── Hamburger trigger ───────────────────────────────────────────────── */
+  .chat-mobile-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--ink);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+  .chat-mobile-menu-btn:hover { background: var(--hover); }
+
+  /* On the welcome (empty) screen there's no header bar, so the button floats
+   * in the top-left corner over the centered content. */
+  .chat--welcome .chat-mobile-menu-btn {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top));
+    left: 10px;
+    z-index: 5;
+  }
+  .chat--welcome { position: relative; }
+
+  /* In an active chat the button sits inline at the start of the header.
+   * Pin hamburger + title to the left; the files button drifts right. */
+  .chat-head { padding: 0 12px; gap: 8px; justify-content: flex-start; }
+  .chat-head > div { min-width: 0; }
+  .chat-head-btn { margin-left: auto; }
+  .chat-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Breathing room: tighten the wide desktop paddings ───────────────── */
+  .chat-scroll { padding: 16px 14px 12px; gap: 18px; }
+  .msg-user { max-width: 88%; }
+  .msg-assistant { max-width: 100%; }
+  .composer { padding: 10px 10px calc(14px + env(safe-area-inset-bottom)); }
+  .chat:not(.chat--welcome) .composer-box { max-width: 100%; }
+
+  .chat-welcome { padding: 24px 16px; gap: 18px; }
+  .chat-welcome-hgroup { gap: 12px; }
+  .chat-welcome-logo { width: 56px; height: 56px; }
+  .chat-welcome-title { font-size: 24px; white-space: normal; }
+
+  /* ── Right-hand panels → full-screen overlays ────────────────────────── */
+  .art-panel,
+  .files-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    border-left: none;
+    width: 100vw !important;
+  }
+  /* Drag-to-resize is pointless on touch + full-screen. */
+  .art-resize-handle { display: none; }
+
+  /* ── Modals / page overlays: edge-to-edge ────────────────────────────── */
+  .ac-modal-overlay { padding: 0; }
+  .ac-modal-content { max-width: 100%; }
+  .ac-page {
+    max-height: 100vh;
+    height: 100vh;
+    border-radius: 0;
+    border: none;
+  }
+}
