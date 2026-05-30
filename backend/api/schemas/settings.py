@@ -11,6 +11,8 @@ class ModelConfig(BaseModel):
     thinking: bool | None = None
     thinking_types: list[str] | None = None
     effort_levels: list[str] | None = None
+    # Native web-search capability, when the provider's models API reports it.
+    web_search: bool | None = None
 
 
 class ProviderConfig(BaseModel):
@@ -21,6 +23,7 @@ class ProviderConfig(BaseModel):
     enabled: bool = True
     api_key_set: bool = False
     custom: bool = False
+    extra_headers: dict[str, str] | None = None
 
 
 class ProviderCreate(BaseModel):
@@ -28,6 +31,7 @@ class ProviderCreate(BaseModel):
     name: str = Field(min_length=1)
     api_base: str = Field(min_length=1)
     api_key: str | None = None
+    extra_headers: dict[str, str] | None = None
 
 
 class SettingsData(BaseModel):
@@ -50,6 +54,13 @@ class SettingsData(BaseModel):
     # itself is NOT exposed here — read it from the loopback-only
     # GET /api/remote-access endpoint.
     remote_access_enabled: bool = False
+    # Default web search mode offered in the UI (auto|native|litellm|searxng).
+    web_search_mode: str = "auto"
+    # Optional self-hosted SearXNG base URL. Overrides the SEARXNG_URL env var.
+    searxng_url: str | None = None
+    # True when a Tavily key is configured (settings or TAVILY_API_KEY env). The
+    # raw key is never returned — set it via SettingsUpdate.tavily_api_key.
+    tavily_api_key_set: bool = False
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
 
 
@@ -64,12 +75,17 @@ class SettingsUpdate(BaseModel):
     unrestricted_mode: bool | None = None
     shell_preference: str | None = None
     remote_access_enabled: bool | None = None
+    web_search_mode: str | None = None
+    searxng_url: str | None = None
+    # Empty string clears the stored key (falls back to TAVILY_API_KEY env).
+    tavily_api_key: str | None = None
 
 
 class ProviderUpdate(BaseModel):
     api_key: str | None = None
     api_base: str | None = None
     enabled: bool | None = None
+    extra_headers: dict[str, str] | None = None
 
 
 class RemoteAccessInfo(BaseModel):

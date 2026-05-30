@@ -7,6 +7,7 @@
  *               can pick it up from submitted text as `@skill:NAME`.
  */
 
+import i18n from "i18next";
 import { API_BASE } from "./apiBase";
 import { ReactRenderer } from "@tiptap/react";
 import { MentionPopup, type MentionItemData } from "../components/Chat/MentionPopup";
@@ -18,6 +19,21 @@ export interface MentionDeps {
 interface SkillEntry {
   name: string;
   description: string;
+}
+
+/** Capitalize the first character (rest untouched). */
+export function capitalizeFirst(s: string): string {
+  return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+/** Split a mention label like "skill:foo" into its type and a human display
+ *  text ("Foo"). Labels without a "type:" prefix are treated as files. */
+export function mentionDisplay(label: string): { type: string; text: string } {
+  const parts = String(label).split(":");
+  const hasType = parts.length > 1;
+  const type = hasType ? parts[0]! : "file";
+  const raw = hasType ? parts.slice(1).join(":") : label;
+  return { type, text: capitalizeFirst(raw) };
 }
 
 interface ActionItem extends MentionItemData {
@@ -32,15 +48,18 @@ interface SkillItem extends MentionItemData {
 
 type Item = ActionItem | SkillItem;
 
-const ACTION_FILE: ActionItem = {
-  key: "action:file",
-  kind: "action",
-  action: "attach-file",
-  label: "Файл",
-  desc: "Прикрепить файл с диска",
-  type: "file",
-  kbd: "",
-};
+/** Built fresh per query so it picks up the current UI language. */
+function actionFileItem(): ActionItem {
+  return {
+    key: "action:file",
+    kind: "action",
+    action: "attach-file",
+    label: i18n.t("chat.mention.file"),
+    desc: i18n.t("chat.mention.fileDesc"),
+    type: "file",
+    kbd: "",
+  };
+}
 
 // ── Skills cache ───────────────────────────────────────────────────────────
 
@@ -69,8 +88,10 @@ function buildItems(query: string, skills: SkillEntry[]): Item[] {
   const items: Item[] = [];
 
   // Action item: shown when query is empty or matches its label/keywords.
-  if (!q || "файл".includes(q) || "file".includes(q) || ACTION_FILE.label.toLowerCase().includes(q)) {
-    items.push(ACTION_FILE);
+  // Both language keywords stay matchable regardless of the active locale.
+  const actionFile = actionFileItem();
+  if (!q || "файл".includes(q) || "file".includes(q) || actionFile.label.toLowerCase().includes(q)) {
+    items.push(actionFile);
   }
 
   for (const s of skills) {
@@ -83,8 +104,8 @@ function buildItems(query: string, skills: SkillEntry[]): Item[] {
         key: `skill:${s.name}`,
         kind: "skill",
         skillName: s.name,
-        label: s.name,
-        desc: s.description || "Скилл",
+        label: capitalizeFirst(s.name),
+        desc: s.description || i18n.t("chat.mention.skillDesc"),
         type: "skill",
       });
     }

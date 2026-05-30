@@ -1,9 +1,9 @@
-/** MCP-server toggles, rendered as a section inside the composer "+" menu.
- * Returns null when there are no usable (enabled) servers. */
+/** Connectors (MCP servers) — a "+" menu row that opens a side flyout of
+ * per-chat server toggles. */
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plugs } from "@phosphor-icons/react";
+import { Plugs, CaretRight } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 
 interface ServerLite {
@@ -23,6 +23,7 @@ export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
   const { t } = useTranslation();
   const [servers, setServers] = useState<ServerLite[]>([]);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -38,25 +39,42 @@ export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
   const usable = servers.filter((s) => s.enabled);
   const enabledSet = new Set(enabledIds);
 
-  if (!loading && usable.length === 0) return null;
-
   return (
-    <div className="cpm-mcp">
-      <div className="cpm-mcp-head"><Plugs size={13} /> {t("chat.mcp.servers")}</div>
-      {loading && usable.length === 0 ? (
-        <div className="cpm-mcp-empty">{t("chat.mcp.loading")}</div>
-      ) : (
-        usable.map((s) => {
-          const on = enabledSet.has(s.id);
-          return (
-            <label key={s.id} className="cpm-mcp-item">
-              <input type="checkbox" checked={on} onChange={() => onToggle(s.id)} />
-              <span className="cpm-mcp-name">{s.name}</span>
-              <span className={`mcp-chip-dot mcp-chip-dot--${s.state}`} />
-              <span className="cpm-mcp-tools">{s.tool_count}</span>
-            </label>
-          );
-        })
+    <div className="cpm-section cpm-connectors">
+      <button className="cpm-item" onClick={() => setOpen((v) => !v)}>
+        <Plugs />
+        <span className="cpm-item-label">{t("chat.mcp.servers")}</span>
+        {enabledIds.length > 0 && <span className="cpm-count">{enabledIds.length}</span>}
+        <CaretRight className="cpm-arr" />
+      </button>
+
+      {open && (
+        <div className="cpm-flyout">
+          {loading && usable.length === 0 ? (
+            <div className="cpm-flyout-empty">{t("chat.mcp.loading")}</div>
+          ) : usable.length === 0 ? (
+            <div className="cpm-flyout-empty">{t("chat.mcp.none")}</div>
+          ) : (
+            usable.map((s) => (
+              <label key={s.id} className="cpm-mcp-item">
+                <input
+                  type="checkbox"
+                  checked={enabledSet.has(s.id)}
+                  onChange={() => onToggle(s.id)}
+                />
+                <span className="cpm-mcp-name">{s.name}</span>
+                <span className={`mcp-chip-dot mcp-chip-dot--${s.state}`} />
+                <span className="cpm-mcp-tools">{s.tool_count}</span>
+              </label>
+            ))
+          )}
+          <button
+            className="cpm-flyout-manage"
+            onClick={() => window.dispatchEvent(new CustomEvent("navigate", { detail: "settings" }))}
+          >
+            {t("chat.mcp.manage")}
+          </button>
+        </div>
       )}
     </div>
   );

@@ -44,6 +44,16 @@ class ChatRequest(BaseModel):
         "When True, thinking is enabled only if the model supports it. "
         "When None, falls back to model config.",
     )
+    web_search_enabled: bool | None = Field(
+        default=None,
+        description="Per-chat web search toggle (the globe button). When falsy, no "
+        "web search tools are wired for the turn.",
+    )
+    web_search_mode: str | None = Field(
+        default=None,
+        description="Requested web search mode: auto|native|litellm|searxng. "
+        "Falls back to the configured default when None.",
+    )
     effort: str | None = Field(
         default=None,
         description="Reasoning effort level (low/medium/high/max/xhigh). "

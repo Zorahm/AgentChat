@@ -359,6 +359,9 @@ export function App() {
             onEffortChange={setEffortLevel}
             mcpEnabled={chats.activeMcpEnabled}
             onToggleMcpServer={chats.toggleMcpServer}
+            webSearchEnabled={chats.activeWebSearchEnabled}
+            webSearchMode={chats.activeWebSearchMode}
+            onWebSearchChange={chats.setWebSearch}
           />
         )}
         {view === "chat" && panelOpen && !openFilePath && (

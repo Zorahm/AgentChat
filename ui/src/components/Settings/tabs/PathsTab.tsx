@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, Globe, Check, Copy, DeviceMobile } from "@phosphor-icons/react";
+import { Globe, Check, Copy, DeviceMobile } from "@phosphor-icons/react";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE, setBackendUrl } from "../../../utils/apiBase";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -78,109 +78,34 @@ export function PathsTab() {
     info && selectedUrl ? `${selectedUrl}/?token=${encodeURIComponent(info.token)}` : "";
 
   return (
-    <div className="st2-main">
+    <div className="st2-remote">
       <h3 className="st2-h">{t("settings.paths.title")}</h3>
       <p className="st2-sub">{t("settings.paths.description")}</p>
 
-      {/* 01 Storage paths */}
-      <section>
-        <div className="st2-mh">
-          <span className="st2-mn">01</span>
-          <h2>{t("settings.paths.storage")}</h2>
+      {/* Remote access — let a phone connect to this backend */}
+      {!manageable ? (
+        <div className="st2-remote-locked">
+          <DeviceMobile size={18} />
+          <span>{t("settings.paths.remoteLocalOnly")}</span>
         </div>
-        <p className="st2-md">
-          {t("settings.paths.storageHint")}
-        </p>
-        <div className="st2-mrows">
-          <div className="st2-mrow">
-            <div className="st2-mlab">
-              <p className="t">{t("settings.paths.skillsFolder")}</p>
-              <p className="d">{t("settings.paths.skillsFolderHint")}</p>
+      ) : (
+        <div className={`st2-remote-card${enabled ? " on" : ""}`}>
+          <div className="st2-remote-head">
+            <div className="st2-remote-head-icon"><DeviceMobile size={20} weight="duotone" /></div>
+            <div className="st2-remote-head-text">
+              <div className="st2-remote-head-title">{t("settings.paths.remoteAllow")}</div>
+              <div className="st2-remote-head-sub">{t("settings.paths.remoteAllowHint")}</div>
             </div>
-            <div className="st2-mctl">
-              <div className="st2-path"><Folder /> {t("settings.paths.skillsFolderValue")}</div>
-            </div>
+            <div
+              className={`st2-switch st2-switch--lg${enabled ? " on" : ""}`}
+              role="switch"
+              aria-checked={enabled}
+              onClick={() => { void handleToggleRemote(); }}
+            />
           </div>
 
-          <div className="st2-mrow">
-            <div className="st2-mlab">
-              <p className="t">{t("settings.paths.workDir")}</p>
-              <p className="d">{t("settings.paths.workDirHint")}</p>
-            </div>
-            <div className="st2-mctl">
-              <div className="st2-path"><Folder /> {t("settings.paths.workDirValue")}</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 02 Backend connection */}
-      <section>
-        <div className="st2-mh">
-          <span className="st2-mn">02</span>
-          <h2>{t("settings.paths.connection")}</h2>
-        </div>
-        <p className="st2-md">
-          {t("settings.paths.connectionHint")}
-        </p>
-        <div className="st2-mrows">
-          <div className="st2-mrow">
-            <div className="st2-mlab">
-              <p className="t">{t("settings.paths.backendUrl")}</p>
-              <p className="d">{t("settings.paths.backendUrlHint")}</p>
-            </div>
-            <div className="st2-mctl">
-              <div className="st2-paths-url-row">
-                <div className="st2-paths-url-input">
-                  <Globe size={14} />
-                  <input
-                    type="text"
-                    value={backendUrl}
-                    onChange={(e) => { setBackendUrlState(e.target.value); setApplied(false); }}
-                    placeholder={t("settings.paths.backendUrlPlaceholder")}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleApply(); }}
-                  />
-                </div>
-                <button
-                  className={`st2-paths-url-btn${applied ? " applied" : ""}`}
-                  onClick={handleApply}
-                >
-                  {applied ? <><Check weight="bold" /> {t("settings.paths.applied")}</> : t("settings.paths.apply")}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 03 Remote access (phone) */}
-      <section>
-        <div className="st2-mh">
-          <span className="st2-mn">03</span>
-          <h2>{t("settings.paths.remoteAccess")}</h2>
-        </div>
-        <p className="st2-md">{t("settings.paths.remoteAccessHint")}</p>
-
-        {!manageable ? (
-          <p className="st2-md">{t("settings.paths.remoteLocalOnly")}</p>
-        ) : (
-          <div className="st2-mrows">
-            <div className="st2-mrow stack">
-              <div className="st2-mctl">
-                <div className={`st2-danger-row${enabled ? " on" : ""}`}>
-                  <div className="lab">
-                    <p className="t"><DeviceMobile size={16} /> {t("settings.paths.remoteAllow")}</p>
-                    <p className="d">{t("settings.paths.remoteAllowHint")}</p>
-                  </div>
-                  <div className="st2-danger-switch">
-                    <div
-                      className={`st2-switch${enabled ? " on" : ""}`}
-                      onClick={() => { void handleToggleRemote(); }}
-                    />
-                  </div>
-                </div>
-              </div>
-
+          {(enabled || restartHint) && (
+            <div className="st2-remote-body">
               <div className="st2-remote-restart-row">
                 <RestartBackendButton
                   className="st2-remote-copy"
@@ -192,58 +117,90 @@ export function PathsTab() {
               </div>
 
               {enabled && info && (
-                <div className="st2-remote-pair">
-                  {pairUrl ? (
-                    <>
-                      <p className="st2-md">{t("settings.paths.remoteScan")}</p>
+                pairUrl ? (
+                  <div className="st2-remote-pair">
+                    <div className="st2-remote-pair-grid">
                       <div className="st2-remote-qr">
-                        <QRCodeSVG value={pairUrl} size={168} level="M" />
+                        <QRCodeSVG value={pairUrl} size={156} level="M" />
                       </div>
-                      {info.urls.length > 1 && (
-                        <div className="st2-remote-urls">
-                          {info.urls.map((u) => (
-                            <button
-                              key={u}
-                              className={`st2-remote-url-chip${u === selectedUrl ? " on" : ""}`}
-                              onClick={() => setSelectedUrl(u)}
-                            >
-                              {u.replace(/^https?:\/\//, "")}
+                      <div className="st2-remote-pair-info">
+                        <p className="st2-remote-scan">{t("settings.paths.remoteScan")}</p>
+
+                        {info.urls.length > 1 && (
+                          <div className="st2-remote-urls">
+                            {info.urls.map((u) => (
+                              <button
+                                key={u}
+                                className={`st2-remote-url-chip${u === selectedUrl ? " on" : ""}`}
+                                onClick={() => setSelectedUrl(u)}
+                              >
+                                {u.replace(/^https?:\/\//, "")}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedUrl && (
+                          <div className="st2-remote-field">
+                            <span className="lab">{t("settings.paths.remoteUrlLabel")}</span>
+                            <code>{selectedUrl}</code>
+                            <button className="st2-remote-copy" onClick={() => void copy(selectedUrl, "url")}>
+                              {copied === "url" ? <Check weight="bold" /> : <Copy />}
+                              {copied === "url" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
                             </button>
-                          ))}
+                          </div>
+                        )}
+
+                        <div className="st2-remote-field">
+                          <span className="lab">{t("settings.paths.remoteToken")}</span>
+                          <code className="token">{info.token}</code>
+                          <button className="st2-remote-copy" onClick={() => void copy(info.token, "token")}>
+                            {copied === "token" ? <Check weight="bold" /> : <Copy />}
+                            {copied === "token" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
+                          </button>
                         </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="st2-md">{t("settings.paths.remoteNoUrls")}</p>
-                  )}
-
-                  {selectedUrl && (
-                    <div className="st2-remote-field">
-                      <span className="lab">{t("settings.paths.remoteUrlLabel")}</span>
-                      <code>{selectedUrl}</code>
-                      <button className="st2-remote-copy" onClick={() => void copy(selectedUrl, "url")}>
-                        {copied === "url" ? <Check weight="bold" /> : <Copy />}
-                        {copied === "url" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
-                      </button>
+                      </div>
                     </div>
-                  )}
 
-                  <div className="st2-remote-field">
-                    <span className="lab">{t("settings.paths.remoteToken")}</span>
-                    <code className="token">{info.token}</code>
-                    <button className="st2-remote-copy" onClick={() => void copy(info.token, "token")}>
-                      {copied === "token" ? <Check weight="bold" /> : <Copy />}
-                      {copied === "token" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
-                    </button>
+                    <p className="st2-remote-tailscale">{t("settings.paths.remoteTailscaleHint")}</p>
                   </div>
-
-                  <p className="st2-md">{t("settings.paths.remoteTailscaleHint")}</p>
-                </div>
+                ) : (
+                  <p className="st2-remote-empty">{t("settings.paths.remoteNoUrls")}</p>
+                )
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Backend connection — point this client at a backend elsewhere */}
+      <div className="st2-remote-conn">
+        <div className="st2-remote-conn-head">
+          <Globe size={16} />
+          <div className="st2-remote-conn-titles">
+            <div className="st2-remote-conn-title">{t("settings.paths.connection")}</div>
+            <div className="st2-remote-conn-sub">{t("settings.paths.connectionHint")}</div>
           </div>
-        )}
-      </section>
+        </div>
+        <div className="st2-paths-url-row">
+          <div className="st2-paths-url-input">
+            <Globe size={14} />
+            <input
+              type="text"
+              value={backendUrl}
+              onChange={(e) => { setBackendUrlState(e.target.value); setApplied(false); }}
+              placeholder={t("settings.paths.backendUrlPlaceholder")}
+              onKeyDown={(e) => { if (e.key === "Enter") handleApply(); }}
+            />
+          </div>
+          <button
+            className={`st2-paths-url-btn${applied ? " applied" : ""}`}
+            onClick={handleApply}
+          >
+            {applied ? <><Check weight="bold" /> {t("settings.paths.applied")}</> : t("settings.paths.apply")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

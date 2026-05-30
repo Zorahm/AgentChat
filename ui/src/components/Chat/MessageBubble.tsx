@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp, PencilSimple, X } from "@phosphor-icons/react";
-import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning } from "@phosphor-icons/react";
+import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning, Plugs, Globe } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
+import { parseMcpToolName } from "../../utils/mcpName";
 import { API_BASE } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
@@ -106,6 +107,7 @@ export function MessageBubble({
                 steps={procSteps}
                 isStreaming={blockStreaming}
                 liveFiles={liveFiles}
+                webSearchMode={message.webSearchMode}
               />
             )}
             {parsed.cleanText.trim() && <MarkdownContent text={parsed.cleanText} />}
@@ -120,6 +122,8 @@ export function MessageBubble({
       {fallback && fallback.artifacts.map((a, i) => (
         <ArtifactCard key={`art-fb-${i}`} artifact={a} />
       ))}
+
+      {message.webSearchMode === "native" && <NativeWebSearchChip />}
 
       {iterExhausted && <IterationsExhaustedCard count={iterExhausted.count} />}
 
@@ -463,7 +467,12 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
   for (const tool of tools) {
     if (seen.has(tool.call.name)) continue;
     seen.add(tool.call.name);
-    verbs.push(verbMap[tool.call.name] ?? tool.call.name);
+    const mcp = parseMcpToolName(tool.call.name);
+    if (mcp) {
+      verbs.push(t(streaming ? "chat.tools.mcp.present" : "chat.tools.mcp.past", { server: mcp.server }));
+    } else {
+      verbs.push(verbMap[tool.call.name] ?? tool.call.name);
+    }
   }
 
   let phrase = verbs.join(", ");
@@ -476,11 +485,12 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
 }
 
 function ProcessBlock({
-  steps, isStreaming, liveFiles,
+  steps, isStreaming, liveFiles, webSearchMode,
 }: {
   steps: ProcessStep[];
   isStreaming: boolean;
   liveFiles: LiveFile[];
+  webSearchMode?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -530,6 +540,12 @@ function ProcessBlock({
             }
             if (c.name === "read_skill") {
               return <SkillReadStep key={c.id} call={c} />;
+            }
+            if (c.name.startsWith("mcp__")) {
+              return <McpToolStep key={c.id} call={c} />;
+            }
+            if (c.name === "web_search") {
+              return <WebSearchStep key={c.id} call={c} mode={webSearchMode} />;
             }
             return (
               <div key={c.id} className="thinking-step thinking-step--tool">
@@ -797,6 +813,126 @@ function SkillReadStep({ call }: { call: ToolCall }) {
           {call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)}${t("chat.skill.seconds")}` : ""}
         </span>
       )}
+    </div>
+  );
+}
+
+function McpToolStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [tab, setTab] = useState<"input" | "output">("input");
+
+  const parsed = parseMcpToolName(call.name);
+  const server = parsed?.server ?? "mcp";
+  const tool = parsed?.tool ?? call.name;
+
+  const isRunning = call.status === "running";
+  const isError = call.status === "error";
+  const isCancelled = call.status === "cancelled";
+  const inputStr = call.input != null ? JSON.stringify(call.input, null, 2) : "";
+
+  return (
+    <div className="thinking-step thinking-step--tool">
+      <span className="thinking-gic"><Plugs size={14} /></span>
+      <div className="thinking-content">
+        <div className={`mcp-step${expanded ? " expanded" : ""}`}>
+          <div className="mcp-head" onClick={() => setExpanded((v) => !v)}>
+            <span className="mcp-head-badge" title={t("chat.mcp.serverTitle", { server })}>{server}</span>
+            <span className="mcp-head-tool">{tool}</span>
+            {isRunning && <span className="mcp-status running">⟳</span>}
+            {isError && <span className="mcp-status err">✗ {t("chat.mcp.error")}</span>}
+            {isCancelled && <span className="mcp-status cancelled">⏹ {t("chat.mcp.cancelled")}</span>}
+            {!isRunning && !isError && !isCancelled && call.durationMs != null && (
+              <span className="mcp-status">{(call.durationMs / 1000).toFixed(1)}{t("chat.mcp.seconds")}</span>
+            )}
+            <span className="mcp-chev">{expanded ? <CaretUp /> : <CaretDown />}</span>
+          </div>
+
+          {expanded && (
+            <div className="tc-body">
+              <div className="tc-tabs">
+                <button
+                  className={`tc-tab${tab === "input" ? " active" : ""}`}
+                  onClick={() => setTab("input")}
+                >
+                  {t("chat.mcp.input")}
+                </button>
+                {!isRunning && (
+                  <button
+                    className={`tc-tab${tab === "output" ? " active" : ""}`}
+                    onClick={() => setTab("output")}
+                  >
+                    {t("chat.mcp.output")}
+                  </button>
+                )}
+              </div>
+              <pre className="tc-pre">
+                {tab === "input"
+                  ? inputStr || t("chat.mcp.noInput")
+                  : call.output || t("chat.mcp.noOutput")}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WebSearchStep({ call, mode }: { call: ToolCall; mode?: string }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+
+  const query = String(call.input?.query ?? "");
+  const output = call.output ?? "";
+  const isRunning = call.status === "running";
+  const isError = call.status === "error" || output.startsWith("[web_search error]");
+
+  // Result count is parsed from the tool output header "— N result(s):".
+  const match = output.match(/—\s*(\d+)\s+result/);
+  const count = match ? Number(match[1]) : null;
+  // litellm mode is branded "Tavily" in the UI.
+  const modeLabel = mode ? t(`chat.webSearch.modes.${mode}`, { defaultValue: mode }) : "";
+
+  return (
+    <div className="thinking-step thinking-step--tool">
+      <span className="thinking-gic"><Globe size={14} /></span>
+      <div className="thinking-content">
+        <div className={`mcp-step${expanded ? " expanded" : ""}`}>
+          <div className="mcp-head" onClick={() => setExpanded((v) => !v)}>
+            <span className="mcp-head-badge">
+              {isRunning
+                ? t("chat.webSearch.searching")
+                : count != null
+                  ? t("chat.webSearch.results", { count })
+                  : t("chat.webSearch.searched")}
+            </span>
+            <span className="mcp-head-tool">{query}</span>
+            {modeLabel && !isRunning && <span className="ws-mode-tag">{modeLabel}</span>}
+            {isRunning && <span className="mcp-status running">⟳</span>}
+            {isError && <span className="mcp-status err">✗</span>}
+            {!isRunning && !isError && call.durationMs != null && (
+              <span className="mcp-status">{(call.durationMs / 1000).toFixed(1)}{t("chat.webSearch.seconds")}</span>
+            )}
+            <span className="mcp-chev">{expanded ? <CaretUp /> : <CaretDown />}</span>
+          </div>
+          {expanded && (
+            <div className="tc-body">
+              <pre className="tc-pre">{output || t("chat.webSearch.noOutput")}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NativeWebSearchChip() {
+  const { t } = useTranslation();
+  return (
+    <div className="ws-native-chip">
+      <Globe size={13} />
+      <span>{t("chat.webSearch.nativeUsed")}</span>
     </div>
   );
 }

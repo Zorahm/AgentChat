@@ -60,6 +60,9 @@ export interface UseChatResult {
   abort: () => void;
   startGhostChat: () => void;
   toggleMcpServer: (serverId: string) => void;
+  activeWebSearchEnabled: boolean;
+  activeWebSearchMode: string;
+  setWebSearch: (enabled: boolean, mode?: string) => void;
 }
 
 // ── Persistence & migration ────────────────────────────────────────────────
@@ -76,6 +79,32 @@ function loadPinnedIds(): Set<string> {
 
 function savePinnedIds(ids: Set<string>): void {
   localStorage.setItem(PINNED_KEY, JSON.stringify([...ids]));
+}
+
+// Web-search toggle is a sticky user preference: the last enabled/mode the user
+// picked seeds every new chat, instead of resetting to off/auto each time.
+const WEB_SEARCH_PREF_KEY = "aic-web-search-pref";
+
+interface WebSearchPref {
+  enabled: boolean;
+  mode: string;
+}
+
+function loadWebSearchPref(): WebSearchPref {
+  try {
+    const raw = localStorage.getItem(WEB_SEARCH_PREF_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<WebSearchPref>;
+      return { enabled: !!p.enabled, mode: typeof p.mode === "string" ? p.mode : "auto" };
+    }
+  } catch { /* ignore */ }
+  return { enabled: false, mode: "auto" };
+}
+
+function saveWebSearchPref(pref: WebSearchPref): void {
+  try {
+    localStorage.setItem(WEB_SEARCH_PREF_KEY, JSON.stringify(pref));
+  } catch { /* ignore */ }
 }
 
 const STORAGE_KEY = "aic-sessions-v2";
@@ -306,6 +335,7 @@ function makeSession(projectId?: string, dirSlug?: string): ChatSession {
   // `onClick={onNew}` forwards the MouseEvent here, and a DOM event is a
   // deeply circular object that poisons every JSON.stringify of the session.
   const pid = typeof projectId === "string" && projectId ? projectId : undefined;
+  const wsPref = loadWebSearchPref();
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     title: i18n.t("chat.newChatTitle"),
@@ -316,6 +346,10 @@ function makeSession(projectId?: string, dirSlug?: string): ChatSession {
     // chat's sandbox, so the slug has to be known up front).
     dirSlug: dirSlug || makeDirSlug(),
     projectId: pid,
+    // Seed from the sticky web-search preference so the toggle persists across
+    // new chats.
+    webSearchEnabled: wsPref.enabled,
+    webSearchMode: wsPref.mode,
   };
 }
 
@@ -566,6 +600,7 @@ function currentBranch(session: ChatSession): ChatMessage[] {
         steps: av.steps,
         toolCalls: av.toolCalls,
         reasoningContent: av.reasoningContent,
+        webSearchMode: av.webSearchMode,
       });
       next = av.children[0];
     }
@@ -1060,6 +1095,18 @@ export function useChats(): UseChatResult {
             // Ignore - breaks are now only inserted when text precedes reasoning/tool_start
             break;
           }
+          case "web_search_status": {
+            const mode = String(data.mode ?? "");
+            if (mode && mode !== "none") {
+              setSessions((prev) =>
+                prev.map((s) => {
+                  if (s.id !== sessionId) return s;
+                  return mapVariant(s, nodeId, variantId, (v) => ({ ...v, webSearchMode: mode }));
+                }),
+              );
+            }
+            break;
+          }
           case "tool_start": {
             const tc: ToolCall = {
               id: String(data.id ?? ""),
@@ -1245,6 +1292,8 @@ export function useChats(): UseChatResult {
           project_id: currentSession.projectId ?? undefined,
           thinking_enabled: thinkingEnabled,
           effort: effort,
+          web_search_enabled: currentSession.webSearchEnabled ?? false,
+          web_search_mode: currentSession.webSearchMode ?? "auto",
         },
         handler,
         (err: Error) => {
@@ -1325,6 +1374,8 @@ export function useChats(): UseChatResult {
         chat_id: sid,
         mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
         project_id: activeSession.projectId ?? undefined,
+        web_search_enabled: activeSession.webSearchEnabled ?? false,
+        web_search_mode: activeSession.webSearchMode ?? "auto",
       },
       handler,
       (err: Error) => {
@@ -1406,6 +1457,8 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
           project_id: activeSession.projectId ?? undefined,
+          web_search_enabled: activeSession.webSearchEnabled ?? false,
+          web_search_mode: activeSession.webSearchMode ?? "auto",
         },
         handler,
         (err: Error) => {
@@ -1620,6 +1673,21 @@ export function useChats(): UseChatResult {
     );
   }, [activeId]);
 
+  const setWebSearch = useCallback(
+    (enabled: boolean, mode?: string) => {
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== activeId) return s;
+          const nextMode = mode ?? s.webSearchMode ?? "auto";
+          // Remember the choice so future new chats inherit it.
+          saveWebSearchPref({ enabled, mode: nextMode });
+          return { ...s, webSearchEnabled: enabled, webSearchMode: nextMode };
+        }),
+      );
+    },
+    [activeId],
+  );
+
   const pinChat = useCallback((id: string) => {
     setSessions((prev) => {
       const pinnedIds = loadPinnedIds();
@@ -1656,6 +1724,8 @@ export function useChats(): UseChatResult {
     activeId,
     activeDirSlug: activeSession?.dirSlug ?? null,
     activeMcpEnabled: activeSession?.mcpEnabledServers ?? [],
+    activeWebSearchEnabled: activeSession?.webSearchEnabled ?? false,
+    activeWebSearchMode: activeSession?.webSearchMode ?? "auto",
     messages,
     branchNodes,
     liveFiles,
@@ -1674,5 +1744,6 @@ export function useChats(): UseChatResult {
     abort,
     startGhostChat,
     toggleMcpServer,
+    setWebSearch,
   };
 }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills.reader import AgentSkillsReader, _parse_frontmatter
+from skills.reader import AgentSkillsReader
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 
@@ -116,7 +116,10 @@ class ReadSkillTool(BaseTool):
         except OSError as exc:
             return f"Error reading skill '{name}': {exc}"
 
-        _, content = _parse_frontmatter(raw)
+        # Keep the YAML frontmatter — the model needs to see the skill's
+        # metadata (name, description, allowed-tools, version), not just the
+        # body. Only normalize a BOM / line endings so it renders cleanly.
+        body = raw.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n").lstrip("\n")
 
         win_dir = str(entry.path.resolve())
         wsl_dir = _to_wsl_path(entry.path)
@@ -133,4 +136,4 @@ class ReadSkillTool(BaseTool):
             f"## Files in this skill\n\n"
             f"```\n{tree}\n```\n\n"
         )
-        return header + content
+        return header + body

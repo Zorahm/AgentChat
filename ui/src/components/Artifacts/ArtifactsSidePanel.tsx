@@ -81,7 +81,15 @@ function editedPaths(messages: ChatMessage[]): Set<string> {
 
 export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose, onResizeStart }: Props) {
   const { t } = useTranslation();
-  const artifacts = collectArtifacts(messages);
+  const collected = collectArtifacts(messages);
+  // openFilePath may point at a file the model never wrote via <file>/<edit>
+  // (e.g. a SKILL.md opened from a "read skill" step). Such paths aren't in the
+  // parsed-artifact list, so synthesize an entry for it — its content is then
+  // fetched on demand from /files/content like any other artifact.
+  const artifacts =
+    openFilePath && !collected.some((a) => a.path === openFilePath)
+      ? [...collected, { type: "file" as const, path: openFilePath, label: basename(openFilePath) }]
+      : collected;
   const artifactsRef = useRef<Artifact[]>([]);
   artifactsRef.current = artifacts;
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -271,14 +279,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   const canRender = isRenderable(extLower);
   const canCode = isCodeViewable(extLower);
 
-  if (artifacts.length === 0) {
-    return (
-      <aside className="art-panel">
-        <div className="art-resize-handle" onMouseDown={onResizeStart} />
-        <div className="art-panel-placeholder">{t("artifacts.placeholder")}</div>
-      </aside>
-    );
-  }
+  if (artifacts.length === 0) return null;
 
   return (
     <aside className="art-panel">

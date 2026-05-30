@@ -15,9 +15,11 @@ class LLMClient:
         self,
         api_base: str | None = None,
         api_key: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self.api_base = api_base
         self.api_key = api_key
+        self.extra_headers = extra_headers
 
     def _kwargs(
         self,
@@ -36,6 +38,8 @@ class LLMClient:
             kwargs["api_base"] = self.api_base
         if self.api_key:
             kwargs["api_key"] = self.api_key
+        if self.extra_headers:
+            kwargs["extra_headers"] = self.extra_headers
         if extra_body:
             kwargs["extra_body"] = extra_body
         return kwargs

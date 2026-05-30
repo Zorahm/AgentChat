@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, X, Plus, Paperclip } from "@phosphor-icons/react";
 import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
+import { mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
 import { McpMenuSection } from "./MCPChip";
+import { WebSearchMenuSection } from "./WebSearchMenuSection";
 import type { AttachmentInfo } from "../../types/chat";
-import { buildMentionSuggestion, extractText } from "../../utils/mentions";
+import { buildMentionSuggestion, extractText, mentionDisplay } from "../../utils/mentions";
 import { MentionNodeView } from "./MentionNodeView";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../utils/apiBase";
@@ -32,6 +34,9 @@ interface ChatInputProps {
   dirSlug?: string | null;
   mcpEnabled?: string[];
   onToggleMcpServer?: (serverId: string) => void;
+  webSearchEnabled?: boolean;
+  webSearchMode?: string;
+  onWebSearchChange?: (enabled: boolean, mode?: string) => void;
 }
 
 interface PendingFile {
@@ -61,6 +66,7 @@ export function ChatInput({
   fillText, onFillTextConsumed,
   dirSlug,
   mcpEnabled, onToggleMcpServer,
+  webSearchEnabled, webSearchMode, onWebSearchChange,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const [textLen, setTextLen] = useState(0);
@@ -175,6 +181,18 @@ export function ChatInput({
   const CustomMention = Mention.extend({
     addNodeView() {
       return ReactNodeViewRenderer(MentionNodeView);
+    },
+    // getHTML() (used for the persisted/sent displayHtml) bypasses the React
+    // NodeView, so without this the chip serialized as the raw "@skill:NAME"
+    // label. Mirror the NodeView: strip the "type:" prefix and capitalize.
+    renderHTML({ node, HTMLAttributes }) {
+      const label = String(node.attrs.label ?? node.attrs.id ?? "");
+      const { type, text } = mentionDisplay(label);
+      return [
+        "span",
+        mergeAttributes({ class: `mention-chip--${type}` }, HTMLAttributes),
+        `@${text}`,
+      ];
     },
   });
 
@@ -464,6 +482,13 @@ export function ChatInput({
                     <McpMenuSection
                       enabledIds={mcpEnabled ?? []}
                       onToggle={onToggleMcpServer}
+                    />
+                  )}
+                  {onWebSearchChange && (
+                    <WebSearchMenuSection
+                      enabled={webSearchEnabled ?? false}
+                      mode={webSearchMode ?? "auto"}
+                      onChange={onWebSearchChange}
                     />
                   )}
                 </div>

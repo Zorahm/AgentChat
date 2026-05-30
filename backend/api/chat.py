@@ -27,6 +27,7 @@ from tools.edit_file import EditFileTool
 from tools.read_file import ReadFileTool
 from tools.read_photo import ReadPhotoTool
 from tools.registry import ToolRegistry
+from tools.web_search_tool import WebSearchTool
 from tools.write_file import WriteFileTool
 
 INLINE_CONTENT_LIMIT = 50_000
@@ -357,16 +358,22 @@ async def chat(
 
     api_key = provider.api_key if provider else None
     api_base = provider.api_base if provider else None
+    extra_headers = provider.extra_headers if provider else None
 
     # LiteLLM only routes by a fixed set of native provider prefixes. OpenAI-
-    # compatible endpoints — user-added custom providers (LM Studio, vLLM, …) and
-    # the opencode built-in — carry OUR provider id as the prefix, which LiteLLM
-    # can't resolve ("LLM Provider NOT provided. You passed model=<id>/<model>").
+    # compatible endpoints — user-added custom providers (LM Studio, vLLM, …),
+    # the opencode built-in, and gemini when pointed at the OpenAI-compatible
+    # Google endpoint — carry OUR provider id as the prefix, which LiteLLM can't
+    # resolve ("LLM Provider NOT provided. You passed model=<id>/<model>").
     # Strip our prefix and re-tag as `openai/<model>` so LiteLLM uses its OpenAI-
     # compatible client together with api_base. split('/', 1)[1] preserves the
     # raw model id even when it itself contains slashes (e.g. HF-style org/name).
     lite_model = model
-    needs_openai_prefix = provider is not None and (provider.custom or provider.id == "opencode")
+    needs_openai_prefix = provider is not None and (
+        provider.custom
+        or provider.id in {"opencode", "yandex"}
+        or (provider.id == "gemini" and bool(provider.api_base))
+    )
     if needs_openai_prefix and "/" in model:
         lite_model = f"openai/{model.split('/', 1)[1]}"
         # Local OpenAI-compatible servers usually accept any key, but LiteLLM's
@@ -395,8 +402,30 @@ async def chat(
     mcp_proxies = await _build_mcp_proxies(
         body.mcp_enabled_servers, store, app_state.mcp_manager
     )
+
+    # ── web search wiring ───────────────────────────────────────────────
+    # Resolve the fallback chain (native → litellm/Tavily → searxng → none).
+    # Native = a provider-side tool appended to the LiteLLM tools array; the
+    # local backends = a `web_search` function-tool overlaid on the registry.
+    from main import build_web_search_config
+
+    overlay_tools: list[BaseTool] = list(mcp_proxies)
+    native_web_tools: list[dict[str, Any]] = []
+    web_search_effective = "none"
+    provider_id = provider.id if provider else ""
+    if body.web_search_enabled:
+        ws_service = app_state.web_search_service
+        ws_config = build_web_search_config(store)
+        requested = body.web_search_mode or store.web_search_mode
+        resolved = ws_service.resolve(provider_id, model, requested, ws_config)
+        web_search_effective = resolved.effective
+        if resolved.effective == "native" and resolved.native_tool:
+            native_web_tools = [resolved.native_tool]
+        elif resolved.effective in ("litellm", "searxng"):
+            overlay_tools.append(WebSearchTool(ws_service, ws_config, resolved.effective))
+
     registry: ToolRegistry = (
-        MCPAwareRegistry(base_registry, mcp_proxies) if mcp_proxies else base_registry
+        MCPAwareRegistry(base_registry, overlay_tools) if overlay_tools else base_registry
     )
 
     # Build the per-chat sandbox policy and push it into every tool that can
@@ -438,6 +467,7 @@ async def chat(
         temperature=store.temperature,
         max_iterations=store.max_iterations,
         extra_body=extra_body,
+        extra_headers=extra_headers,
     )
 
     policy = SandboxPolicy(
@@ -466,8 +496,14 @@ async def chat(
     if isinstance(edit, EditFileTool):
         edit.set_policy(policy)
 
-    llm = LLMClient(api_base=config.api_base, api_key=config.api_key)
-    agent = AgentLoop(config=config, tools=registry, llm=llm, policy=policy)
+    llm = LLMClient(api_base=config.api_base, api_key=config.api_key, extra_headers=config.extra_headers)
+    agent = AgentLoop(
+        config=config,
+        tools=registry,
+        llm=llm,
+        policy=policy,
+        extra_tools=native_web_tools or None,
+    )
     app_state.skill_reader.rebuild()
     agent.set_manifest(app_state.skill_reader.render_prompt())
 
@@ -481,10 +517,19 @@ async def chat(
     )
 
     async def event_stream() -> Any:
+        # Announce the effective web-search backend up front so the UI can badge
+        # the assistant message (mode + later, result count from the tool step).
+        if web_search_effective != "none":
+            yield _sse_event("web_search_status", {"mode": web_search_effective})
         try:
             async for event in agent.run_stream(user_content):
                 yield _sse_event(event["type"], event)
         except Exception as exc:
+            # Native search is optimistic for some providers (e.g. OpenAI). If the
+            # provider rejected the native tool, remember that so the next turn
+            # falls back down the chain instead of failing again.
+            if web_search_effective == "native":
+                app_state.web_search_service.mark_native_unsupported(provider_id, model)
             yield _sse_event("error", {"message": str(exc)})
         finally:
             if body.chat_id:

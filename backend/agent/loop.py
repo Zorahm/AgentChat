@@ -227,12 +227,16 @@ class AgentLoop:
         tools: ToolRegistry,
         llm: LLMClient,
         policy: SandboxPolicy | None = None,
+        extra_tools: list[dict[str, Any]] | None = None,
     ) -> None:
         self.config = config
         self.tools = tools
         self.llm = llm
         # Default policy is unrestricted — api/chat.py overrides per request.
         self._policy: SandboxPolicy = policy or SandboxPolicy(unrestricted=True)
+        # Provider-side tools (e.g. native web search) appended verbatim to the
+        # LiteLLM tools array. The provider executes these; the loop never does.
+        self._extra_tools: list[dict[str, Any]] = extra_tools or []
         self.messages: list[dict[str, Any]] = []
         self.steps: list[dict[str, Any]] = []
         self._manifest_text: str = ""
@@ -249,6 +253,8 @@ class AgentLoop:
         self.messages.append({"role": "user", "content": user_input})
 
         tool_defs = self.tools.to_openai_schema()
+        if self._extra_tools:
+            tool_defs = tool_defs + self._extra_tools
         tool_defs_or_none = tool_defs if tool_defs else None
 
         for iteration_idx in range(self.config.max_iterations):

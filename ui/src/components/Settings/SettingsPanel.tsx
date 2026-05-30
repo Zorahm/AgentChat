@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowClockwise, WarningCircle, User, Keyboard, Info, Cube, Cpu, Books, Folder, Plugs } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
@@ -17,6 +17,7 @@ export interface ProviderConfig {
   id: string; name: string; api_key: string | null;
   api_base: string | null; enabled: boolean; api_key_set: boolean;
   custom?: boolean;
+  extra_headers?: Record<string, string> | null;
 }
 export interface ModelConfig {
   id: string; name?: string | null; thinking?: boolean | null;
@@ -50,6 +51,9 @@ export interface SettingsData {
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
   shell_preference?: "auto" | "wsl" | "powershell";
+  web_search_mode?: string;
+  searxng_url?: string | null;
+  tavily_api_key_set?: boolean;
   mcp_servers?: MCPServerConfig[];
 }
 
@@ -115,7 +119,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
     return true;
   };
 
-  const addProvider = async (body: { id: string; name: string; api_base: string; api_key?: string }) => {
+  const addProvider = async (body: { id: string; name: string; api_base: string; api_key?: string; extra_headers?: Record<string, string> }) => {
     setError(null);
     const r = await fetch(`${API_BASE}/settings/providers`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -171,7 +175,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         <NavItem t="skills" cur={tab} label={t("settings.nav.skills")} ic={<Books size={16} />} onClick={setTab} />
 
         <div className="st2-group">{t("settings.nav.systemGroup")}</div>
-        <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<Folder size={16} />} onClick={setTab} />
+        <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<DeviceMobile size={16} />} onClick={setTab} />
         <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={setTab} />
 
         <div className="st2-nav-pad" />
@@ -183,7 +187,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
       <div className="st2-body">
         {error && <div className="st2-error">{error}</div>}
         {tab === "main" && <MainTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} />}
-        {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} />}
+        {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} onUpdateGlobal={updateGlobal} />}
         {tab === "models" && <ModelsTab settings={settings} loading={modelsLoading} onUpdate={updateGlobal} onRefresh={() => fetchModels(true)} />}
         {tab === "paths" && <PathsTab />}
         {tab === "skills" && <SkillsManager />}

@@ -58,6 +58,8 @@ from tools.read_photo import ReadPhotoTool
 from tools.read_skill import ReadSkillTool
 from tools.registry import ToolRegistry
 from tools.write_file import WriteFileTool
+from web_search.config import WebSearchConfig
+from web_search.service import WebSearchService
 
 # ---------------------------------------------------------------------------
 # build version
@@ -99,6 +101,11 @@ AGENTS_SKILLS_DIR = USER_AGENTS_SKILLS_DIR
 USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
 USER_HOME = os.path.expanduser("~")
 WSL_USER_HOME = f"/home/{USER_NAME.lower()}" if USER_NAME else "/home/user"
+
+# Web search backends. Tavily key enables the "litellm" local backend; the
+# SearXNG URL (env or settings) enables the self-hosted backend.
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY") or None
+SEARXNG_URL_ENV = os.environ.get("SEARXNG_URL") or None
 
 # Tauri bundle identifier — keeps Local AppData/com.zorahm.agentchat off-limits
 # to the model alongside the agents settings/db folder.
@@ -180,6 +187,19 @@ def resolve_active_shell(preference: str) -> str:
     if preference == "powershell":
         return "powershell"
     return "wsl" if wsl_available() else "powershell"
+
+
+def build_web_search_config(store: "SettingsStore") -> WebSearchConfig:
+    """Assemble the per-request web search config from settings + env.
+
+    SearXNG URL from settings overrides the SEARXNG_URL env var; the Tavily key
+    is env-only.
+    """
+    return WebSearchConfig(
+        tavily_api_key=store.tavily_api_key or TAVILY_API_KEY,
+        searxng_url=store.searxng_url or SEARXNG_URL_ENV,
+        default_mode=store.web_search_mode,  # type: ignore[arg-type]
+    )
 
 
 def get_blocked_read_prefixes() -> tuple[str, ...]:
@@ -363,10 +383,15 @@ Common failure modes (the tool will tell you which):
 DEFAULT_PROVIDERS: list[ProviderConfig] = [
     ProviderConfig(id="openai", name="OpenAI", api_base="https://api.openai.com/v1"),
     ProviderConfig(id="anthropic", name="Anthropic", api_base="https://api.anthropic.com"),
-    ProviderConfig(id="gemini", name="Google Gemini"),
+    ProviderConfig(id="gemini", name="Google Gemini", api_base="https://generativelanguage.googleapis.com/v1beta/openai/"),
     ProviderConfig(id="deepseek", name="DeepSeek", api_base="https://api.deepseek.com/v1"),
     ProviderConfig(
         id="openrouter", name="OpenRouter", api_base="https://openrouter.ai/api/v1"
+    ),
+    ProviderConfig(
+        id="yandex",
+        name="Yandex AI Studio",
+        api_base="https://ai.api.cloud.yandex.net/v1",
     ),
     ProviderConfig(
         id="opencode",
@@ -383,6 +408,7 @@ def _resolve_env_api_key(provider_id: str) -> str | None:
         "gemini": "GEMINI_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
+        "yandex": "YANDEX_API_KEY",
         "groq": "GROQ_API_KEY",
         "mistral": "MISTRAL_API_KEY",
         "cohere": "COHERE_API_KEY",
@@ -428,6 +454,11 @@ class SettingsStore:
         self._unrestricted_mode = False
         self._shell_preference = "auto"
         self._remote_access_enabled = False
+        self._web_search_mode = "auto"
+        # None → fall back to the SEARXNG_URL env var at request time.
+        self._searxng_url: str | None = None
+        # None → fall back to the TAVILY_API_KEY env var at request time.
+        self._tavily_api_key: str | None = None
         # Long-lived shared secret for remote (phone) access. Generated lazily
         # the first time remote access is enabled; persisted in settings.json.
         self._remote_token = ""
@@ -500,6 +531,15 @@ class SettingsStore:
             rt = global_block.get("remote_token")
             if isinstance(rt, str):
                 self._remote_token = rt
+            wsm = global_block.get("web_search_mode")
+            if isinstance(wsm, str) and wsm in ("auto", "native", "litellm", "searxng"):
+                self._web_search_mode = wsm
+            sx = global_block.get("searxng_url")
+            if isinstance(sx, str):
+                self._searxng_url = sx or None
+            tav = global_block.get("tavily_api_key")
+            if isinstance(tav, str):
+                self._tavily_api_key = tav or None
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -525,6 +565,8 @@ class SettingsStore:
                     if saved.api_base:
                         existing.api_base = saved.api_base
                     existing.enabled = saved.enabled
+                    if saved.extra_headers:
+                        existing.extra_headers = saved.extra_headers
 
         mcp_block = data.get("mcp", {})
         if isinstance(mcp_block, dict):
@@ -558,6 +600,9 @@ class SettingsStore:
                 "shell_preference": self._shell_preference,
                 "remote_access_enabled": self._remote_access_enabled,
                 "remote_token": self._remote_token,
+                "web_search_mode": self._web_search_mode,
+                "searxng_url": self._searxng_url,
+                "tavily_api_key": self._tavily_api_key,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -606,6 +651,9 @@ class SettingsStore:
             unrestricted_mode=self._unrestricted_mode,
             shell_preference=self._shell_preference,
             remote_access_enabled=self._remote_access_enabled,
+            web_search_mode=self._web_search_mode,
+            searxng_url=self._searxng_url,
+            tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
             mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
         )
 
@@ -638,6 +686,17 @@ class SettingsStore:
             # afterwards so paired phones keep working across toggles.
             if patch.remote_access_enabled and not self._remote_token:
                 self._remote_token = secrets.token_urlsafe(32)
+        if patch.web_search_mode is not None:
+            if patch.web_search_mode not in ("auto", "native", "litellm", "searxng"):
+                raise ValueError(
+                    "web_search_mode must be one of auto|native|litellm|searxng, "
+                    f"got {patch.web_search_mode!r}"
+                )
+            self._web_search_mode = patch.web_search_mode
+        if patch.searxng_url is not None:
+            self._searxng_url = patch.searxng_url.strip() or None
+        if patch.tavily_api_key is not None:
+            self._tavily_api_key = patch.tavily_api_key.strip() or None
         self._save()
         return self.get()
 
@@ -652,6 +711,8 @@ class SettingsStore:
             p.api_base = patch.api_base if patch.api_base else None
         if patch.enabled is not None:
             p.enabled = patch.enabled
+        if patch.extra_headers is not None:
+            p.extra_headers = dict(patch.extra_headers) or None
         self._save()
         return p.model_copy()
 
@@ -666,6 +727,7 @@ class SettingsStore:
             api_key_set=bool(body.api_key),
             enabled=True,
             custom=True,
+            extra_headers=dict(body.extra_headers) if body.extra_headers else None,
         )
         self._providers[provider.id] = provider
         self._save()
@@ -778,6 +840,18 @@ class SettingsStore:
         return self._unrestricted_mode
 
     @property
+    def web_search_mode(self) -> str:
+        return self._web_search_mode
+
+    @property
+    def searxng_url(self) -> str | None:
+        return self._searxng_url
+
+    @property
+    def tavily_api_key(self) -> str | None:
+        return self._tavily_api_key
+
+    @property
     def shell_preference(self) -> str:
         return self._shell_preference
 
@@ -821,6 +895,13 @@ def create_app() -> FastAPI:
     registry.register(WriteFileTool())
     registry.register(EditFileTool())
     registry.register(ReadSkillTool(reader))
+
+    # --- web search (native capability cache + Tavily/SearXNG client) ---
+    def _native_web_search_cap(model_id: str) -> bool | None:
+        cached = models_fetcher.get_cached_model(model_id)
+        return cached.web_search if cached else None
+
+    web_search_service = WebSearchService(capability_lookup=_native_web_search_cap)
 
     # --- MCP manager (lazy-spawn supervisor for external MCP servers) ---
     mcp_manager = MCPManager()
@@ -895,6 +976,7 @@ def create_app() -> FastAPI:
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
+    app.state.web_search_service = web_search_service
     app.state.system_prompt_factory: Callable[[], str] = lambda: build_system_prompt(
         user_name=settings_store.user_name,
         shell=resolve_active_shell(settings_store.shell_preference),

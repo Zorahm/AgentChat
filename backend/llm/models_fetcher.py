@@ -109,6 +109,7 @@ class ModelsFetcher:
                 thinking=m.get("thinking"),
                 thinking_types=m.get("thinking_types"),
                 effort_levels=m.get("effort_levels"),
+                web_search=m.get("web_search"),
             )
             for m in models
         ]
@@ -140,6 +141,8 @@ def _format_model_name(raw: str) -> str:
         "minimax": "MiniMax", "gemini": "Gemini",
         "openai": "OpenAI", "anthropic": "Anthropic",
         "glm": "GLM",
+        "yandexgpt": "YandexGPT", "aliceai": "Alice AI",
+        "llm": "LLM", "llms": "LLMs",
     }
     parts: list[str] = []
     for word in name.split():
@@ -178,6 +181,10 @@ async def _fetch_provider_models(p: ProviderConfig) -> list[dict[str, Any]]:
         url = f"{base}/models"
         headers = {"Authorization": f"Bearer {p.api_key}"} if p.api_key else {}
 
+    # Merge provider-level extra headers (e.g. x-folder-id for Yandex)
+    if p.extra_headers:
+        headers.update(p.extra_headers)
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
@@ -188,6 +195,28 @@ async def _fetch_provider_models(p: ProviderConfig) -> list[dict[str, Any]]:
 
 def _extract_models(provider_id: str, data: Any) -> list[dict[str, Any]]:
     """Return list of model info dicts from provider response."""
+    if provider_id == "yandex":
+        # Yandex returns OpenAI-compat {"data": [...]} with IDs like gpt://<folder>/<slug>/<version>
+        entries = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        out: list[dict[str, Any]] = []
+        for m in entries:
+            if not isinstance(m, dict) or not m.get("id"):
+                continue
+            mid = m["id"]
+            if mid.startswith("gpt://"):
+                # Drop folder_id (first segment), join remaining slug/version with space
+                # so _format_model_name sees "aliceai-llm latest" → "Alice AI LLM Latest"
+                parts = mid[len("gpt://"):].split("/")
+                name = " ".join(parts[1:]) if len(parts) > 1 else parts[0]
+            else:
+                name = m.get("name") or mid
+            out.append({
+                "id": mid,
+                "name": name,
+                "thinking": True if looks_thinking(mid) else None,
+            })
+        return out
+
     if provider_id == "gemini":
         entries = data.get("models", []) if isinstance(data, dict) else []
         out: list[dict[str, Any]] = []
@@ -222,12 +251,15 @@ def _extract_models(provider_id: str, data: Any) -> list[dict[str, Any]]:
                 lvl for lvl in ("low", "medium", "high", "max", "xhigh")
                 if effort_cap.get(lvl, {}).get("supported", False)
             ] if effort_cap.get("supported", False) else None
+            web_search_cap = caps.get("web_search", {})
+            web_search = True if web_search_cap.get("supported", False) else None
             out.append({
                 "id": mid,
                 "name": m.get("display_name", mid),
                 "thinking": True if thinking_supported else (True if looks_thinking(mid) else None),
                 "thinking_types": thinking_types if thinking_types else None,
                 "effort_levels": effort_levels,
+                "web_search": web_search,
             })
         return out
 

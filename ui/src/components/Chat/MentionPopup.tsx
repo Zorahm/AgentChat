@@ -80,7 +80,9 @@ export const MentionPopup = forwardRef<any, any>((props, ref) => {
           onClick={() => selectItem(i)}
           onMouseEnter={() => setSelectedIndex(i)}
         >
-          <span className="mp-item-ic">{ICON_MAP[item.type] ?? ICON_MAP.file}</span>
+          <span className={`mp-item-ic mp-item-ic--${item.type}`}>
+            {ICON_MAP[item.type] ?? ICON_MAP.file}
+          </span>
           <span className="mp-item-info">
             <span className="mp-item-label">{item.label}</span>
             {item.desc && <span className="mp-item-sub">{item.desc}</span>}

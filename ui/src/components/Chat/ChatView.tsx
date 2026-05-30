@@ -39,6 +39,9 @@ interface ChatViewProps {
   onEffortChange: (v: string | null) => void;
   mcpEnabled: string[];
   onToggleMcpServer: (serverId: string) => void;
+  webSearchEnabled: boolean;
+  webSearchMode: string;
+  onWebSearchChange: (enabled: boolean, mode?: string) => void;
 }
 
 /** Animates `text` character-by-character. `done` derives from displayed
@@ -82,6 +85,7 @@ export function ChatView({
   thinkingEnabled, onThinkingToggle,
   effortLevel, onEffortChange,
   mcpEnabled, onToggleMcpServer,
+  webSearchEnabled, webSearchMode, onWebSearchChange,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -171,6 +175,9 @@ export function ChatView({
               dirSlug={dirSlug}
               mcpEnabled={mcpEnabled}
               onToggleMcpServer={onToggleMcpServer}
+              webSearchEnabled={webSearchEnabled}
+              webSearchMode={webSearchMode}
+              onWebSearchChange={onWebSearchChange}
             />
           </div>
         </div>
@@ -231,6 +238,9 @@ export function ChatView({
             dirSlug={dirSlug}
             mcpEnabled={mcpEnabled}
             onToggleMcpServer={onToggleMcpServer}
+            webSearchEnabled={webSearchEnabled}
+            webSearchMode={webSearchMode}
+            onWebSearchChange={onWebSearchChange}
           />
         </>
       )}

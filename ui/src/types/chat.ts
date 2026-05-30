@@ -16,6 +16,8 @@ export interface ChatMessage {
   /** Rich-text HTML for user bubbles (tiptap getHTML). Display-only — `content`
    * stays plain text for title derivation, copy, retry, and backend history. */
   displayHtml?: string;
+  /** Effective web-search backend for this assistant turn, when search ran. */
+  webSearchMode?: string;
 }
 
 export interface AttachmentInfo {
@@ -39,6 +41,9 @@ export interface AssistantVariant {
   reasoningContent?: string;
   createdAt: number;
   children: ChatNode[];
+  /** Effective web-search backend for this turn (native|litellm|searxng),
+   * reported by the backend's web_search_status event. Drives the indicator. */
+  webSearchMode?: string;
 }
 
 export interface UserVariant {
@@ -82,6 +87,10 @@ export interface ChatSession {
   pinned?: boolean;
   /** IDs of MCP servers enabled for this chat. Empty = no MCP. */
   mcpEnabledServers?: string[];
+  /** Per-chat web search toggle (globe button). */
+  webSearchEnabled?: boolean;
+  /** Requested web search mode: auto|native|litellm|searxng. Default "auto". */
+  webSearchMode?: string;
   /** Project this chat belongs to. Empty/undefined = standalone chat. */
   projectId?: string;
 }

@@ -40,3 +40,7 @@ class AgentConfig(BaseModel):
         default=None,
         description="Extra request body fields passed to LiteLLM (e.g. thinking config).",
     )
+    extra_headers: dict | None = Field(
+        default=None,
+        description="Extra HTTP headers added to every LiteLLM request for this provider.",
+    )
