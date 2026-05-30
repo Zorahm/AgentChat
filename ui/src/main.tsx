@@ -12,6 +12,13 @@ import "./styles/components.css";
 import "./styles/panels.css";
 import "./styles/tiptap.css";
 import "./styles/settings-v2.css";
+import "./styles/settings-providers.css";
+import "./styles/settings-main.css";
+import "./styles/settings-skills.css";
+import "./styles/settings-about.css";
+import "./styles/settings-models.css";
+import "./styles/settings-mcp.css";
+import "./styles/settings-paths.css";
 import "./styles/onboarding.css";
 import "./styles/projects.css";
 
