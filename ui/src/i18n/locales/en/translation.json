@@ -31,6 +31,10 @@
   },
   "chat": {
     "placeholder": "Message…",
+    "disclaimer": "AI can make mistakes. Please double-check important information.",
+    "thinking": "Waiting for a response…",
+    "slowConnection": "Still waiting — the connection may be slow.",
+    "dropToAttach": "Drop files here to add to chat",
     "send": "Send",
     "stop": "Stop",
     "add": "Add",
@@ -193,6 +197,33 @@
       }
     }
   },
+  "support": {
+    "title": "You don't have to go through this alone",
+    "body": "If you're going through a hard time or having thoughts of harming yourself, please reach out — talking to someone can help. Free, confidential support is available around the clock.",
+    "regionRU": "Russia",
+    "regionUS": "United States",
+    "regionIntl": "Other countries",
+    "ruHotline": "Helpline (free, 24/7)",
+    "emergency": "Emergency services",
+    "usLifeline": "Suicide & Crisis Lifeline (call or text)",
+    "usText": "Crisis Text Line — text HOME",
+    "findHelp": "Find a helpline in your country"
+  },
+  "filesGallery": {
+    "title": "Files",
+    "close": "Close",
+    "search": "Search files…",
+    "filter": {
+      "all": "All",
+      "attachment": "Uploaded",
+      "artifact": "Created"
+    },
+    "uploaded": "Uploaded",
+    "created": "Created",
+    "open": "Open",
+    "gotoChat": "Go to chat",
+    "empty": "No files yet. Files you upload or the assistant creates will appear here."
+  },
   "app": {
     "chatTitle": "Chat",
     "wslNotFound": "\u26a0 WSL not found — bash tool unavailable"
@@ -213,6 +244,7 @@
     "ghostWaiting": "Ghost waiting\u2026",
     "newChatButton": "+ New chat",
     "searchTooltip": "Search",
+    "filesTooltip": "Files",
     "skillsButton": "Skills",
     "projectsButton": "Projects",
     "recent": "Recent",
@@ -256,6 +288,7 @@
     "instructionsEmpty": "Add a prompt — it is passed to the model in every project chat.",
     "files": "Files",
     "addFiles": "Add files",
+    "dropToKnowledge": "Drop files here to add to project knowledge",
     "filesEmpty": "Word, PDF, Excel and text files are instantly turned into text for the model.",
     "instructionsModalTitle": "Project instructions",
     "instructionsHint": "Example: \"Answer concisely, in Russian. You are an assistant for Project X.\"",
@@ -327,6 +360,24 @@
       "systemGroup": "System",
       "paths": "Remote",
       "mcp": "MCP"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "description": "Click a shortcut, then press the new key combination. Press Esc to cancel.",
+      "recording": "Press keys…",
+      "rebindTooltip": "Click to rebind",
+      "reset": "Reset to default",
+      "resetAll": "Reset all to default",
+      "conflict": "Already used by \"{{action}}\"",
+      "hint": "Ctrl is ⌘ on macOS.",
+      "actions": {
+        "new_chat": "New chat",
+        "focus_input": "Focus message input",
+        "toggle_sidebar": "Collapse / expand sidebar",
+        "open_settings": "Open settings",
+        "goto_projects": "Go to Projects",
+        "goto_skills": "Go to Skills"
+      }
     },
     "general": {
       "title": "General",

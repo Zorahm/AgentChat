@@ -5,6 +5,8 @@ import type { Artifact } from "../types/artifact";
 interface ParseResult {
   cleanText: string;
   artifacts: Artifact[];
+  /** The model emitted <support /> — show the mental-health resources card. */
+  support: boolean;
 }
 
 // <artifact type="..." path="..." label="..." />
@@ -36,8 +38,14 @@ const EDIT_OPEN_RE = /<edit\s+[^>]*?(?<!\/)>/g;
 // Closing block-edit tag
 const EDIT_CLOSE_RE = /<\/edit>/g;
 
+// <support /> — the model's signal to surface the mental-health resources card.
+const SUPPORT_RE = /<support\s*\/>/gi;
+
 export function parseArtifacts(text: string): ParseResult {
   const artifacts: Artifact[] = [];
+
+  SUPPORT_RE.lastIndex = 0;
+  const support = SUPPORT_RE.test(text);
 
   // Collect artifacts ONLY from explicit <artifact /> tags.
   // <file> blocks are stripped from display text but do NOT create cards on their own.
@@ -70,8 +78,9 @@ export function parseArtifacts(text: string): ParseResult {
     .replace(EDIT_OPEN_RE, "")       // lone block-edit open (streaming)
     .replace(EDIT_CLOSE_RE, "")      // lone </edit>
     .replace(ARTIFACT_RE, "")        // <artifact /> inline tags
+    .replace(SUPPORT_RE, "")         // <support /> marker
     .replace(/\n{3,}/g, "\n\n")      // collapse excess blank lines
     .trim();
 
-  return { cleanText, artifacts };
+  return { cleanText, artifacts, support };
 }

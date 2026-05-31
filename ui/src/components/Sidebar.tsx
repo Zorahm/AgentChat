@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen } from "@phosphor-icons/react";
+import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
+import { useLongPress } from "../hooks/useLongPress";
 import { GhostChat } from "./GhostChat";
 import { useTranslation } from "react-i18next";
 
@@ -12,8 +13,8 @@ interface SidebarProps {
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onPin: (id: string) => void;
-  activeView: "chat" | "skills" | "settings" | "allchats" | "projects";
-  onNavigate: (view: "chat" | "skills" | "settings" | "allchats" | "projects") => void;
+  activeView: "chat" | "skills" | "settings" | "allchats" | "projects" | "files";
+  onNavigate: (view: "chat" | "skills" | "settings" | "allchats" | "projects" | "files") => void;
   collapsed: boolean;
   onToggle: () => void;
   userName: string;
@@ -198,6 +199,11 @@ export function Sidebar({
           <MagnifyingGlass size={15} weight="bold" />
         </button>
 
+        {/* Files */}
+        <button className="sb-col-search" onClick={() => onNavigate("files")} title={t("sidebar.filesTooltip")}>
+          <Images size={15} weight="bold" />
+        </button>
+
         {/* Chat chips */}
         <div className="sb-col-list">
           {hasPinned && (
@@ -329,6 +335,15 @@ export function Sidebar({
           >
             <MagnifyingGlass size={16} weight="bold" />
           </button>
+
+          <button
+            className="sb-col-search"
+            style={{ marginBottom: 0, width: '38px', height: '38px' }}
+            onClick={() => onNavigate("files")}
+            title={t("sidebar.filesTooltip")}
+          >
+            <Images size={16} weight="bold" />
+          </button>
         </div>
         <button className="sb-skills-btn" onClick={() => onNavigate("skills")}>
           <Books />
@@ -420,14 +435,15 @@ function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: Conte
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", handleClick);
+    // pointerdown covers both mouse and touch dismissals.
+    document.addEventListener("pointerdown", handleClick);
     document.addEventListener("keydown", handleKey);
     return () => {
-      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("pointerdown", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
   }, [onClose]);
@@ -547,11 +563,14 @@ function ChatItem({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [isPinning, setIsPinning] = useState(false);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY });
-  }, []);
+  // Right-click (desktop) or long-press (touch) opens the context menu.
+  const { bind: longPress, shouldSuppressClick } = useLongPress((x, y) => setMenu({ x, y }));
+
+  const handleSelect = useCallback(() => {
+    if (editing) return;
+    if (shouldSuppressClick()) return;
+    onSelect();
+  }, [editing, shouldSuppressClick, onSelect]);
 
   const handlePin = useCallback(() => {
     setIsPinning(true);
@@ -582,8 +601,8 @@ function ChatItem({
     <>
       <div
         className={`sb-chat-item${active ? " active" : ""}${session.pinned ? " is-pinned" : ""}${isPinning ? " is-pinning" : ""}${isDragOver ? " is-drag-over" : ""}`}
-        onClick={editing ? undefined : onSelect}
-        onContextMenu={handleContextMenu}
+        onClick={editing ? undefined : handleSelect}
+        {...(editing ? {} : longPress)}
         draggable={!editing}
         onDragStart={!editing ? onDragStart : undefined}
         onDragOver={!editing ? onDragOver : undefined}

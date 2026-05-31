@@ -21,7 +21,6 @@
 .tiptap-editor p {
   margin: 0;
 }
-.tiptap-editor.drag-over { background: var(--accent-soft); }
 
 .tiptap-wrap {
   position: relative;

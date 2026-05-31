@@ -1,6 +1,6 @@
-/** Code block with language header, copy button, and syntax highlighting. */
+/** Code block with language header, sticky copy button, and syntax highlighting. */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check } from "@phosphor-icons/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -29,6 +29,7 @@ const LANG_LABELS: Record<string, string> = {
 export function CodeBlockView({ language, code }: CodeBlockViewProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const lang = getLang(language) || language;
   const label = LANG_LABELS[language] ?? language;
 
@@ -49,11 +50,11 @@ export function CodeBlockView({ language, code }: CodeBlockViewProps) {
   }, [code]);
 
   return (
-    <div className="cb">
+    <div className="cb" ref={containerRef}>
       <div className="cb-head">
         <span className="cb-lang">{label}</span>
         <button className="cb-copy" onClick={handleCopy} title={copied ? t("chat.copied") : t("chat.copy")}>
-          {copied ? <Check /> : <Copy />}
+          {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
       </div>
       <div className="cb-body">
@@ -62,10 +63,10 @@ export function CodeBlockView({ language, code }: CodeBlockViewProps) {
           style={atomDark}
           customStyle={{
             margin: 0,
-            padding: "14px 16px",
+            padding: "8px 16px",
             background: "transparent",
             fontSize: "12px",
-            lineHeight: "1.65",
+            lineHeight: "1.6",
           }}
         >
           {code}

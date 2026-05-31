@@ -24,6 +24,8 @@ export interface SettingsContextValue {
   enabledProviders: Set<string>;
   models: ModelItem[];
   onboardingDone: boolean | null;
+  /** Saved keyboard-shortcut overrides (action id → combo). */
+  shortcuts: Record<string, string>;
   /** Persist a partial settings object to the backend and refresh local state. */
   updateSettings: (partial: Record<string, unknown>) => Promise<void>;
   /** Re-fetch all settings from the backend. */

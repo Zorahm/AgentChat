@@ -1,7 +1,7 @@
 /** Chat input — TipTap editor with @mentions + file attachments. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, X, Plus, Paperclip } from "@phosphor-icons/react";
+import { ArrowUp, X, Plus, Paperclip, Image as ImageIcon } from "@phosphor-icons/react";
 import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
 import { mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -10,6 +10,7 @@ import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
 import { McpMenuSection } from "./MCPChip";
 import { WebSearchMenuSection } from "./WebSearchMenuSection";
+import { useFileDrop } from "../../hooks/useFileDrop";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText, mentionDisplay } from "../../utils/mentions";
 import { MentionNodeView } from "./MentionNodeView";
@@ -37,6 +38,9 @@ interface ChatInputProps {
   webSearchEnabled?: boolean;
   webSearchMode?: string;
   onWebSearchChange?: (enabled: boolean, mode?: string) => void;
+  /** When true (e.g. a file is dragged anywhere over a project), show the drop
+   *  overlay even before the cursor reaches the composer. */
+  externalDragActive?: boolean;
 }
 
 interface PendingFile {
@@ -66,7 +70,7 @@ export function ChatInput({
   fillText, onFillTextConsumed,
   dirSlug,
   mcpEnabled, onToggleMcpServer,
-  webSearchEnabled, webSearchMode, onWebSearchChange,
+  webSearchEnabled, webSearchMode, onWebSearchChange, externalDragActive,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const [textLen, setTextLen] = useState(0);
@@ -281,6 +285,15 @@ export function ChatInput({
     onFillTextConsumed?.();
   }, [fillText, editor, onFillTextConsumed]);
 
+  /* ── focus from the "focus input" keyboard shortcut ─────────── */
+
+  useEffect(() => {
+    if (!editor) return;
+    const focusComposer = () => editor.commands.focus("end");
+    window.addEventListener("focus-composer", focusComposer);
+    return () => window.removeEventListener("focus-composer", focusComposer);
+  }, [editor]);
+
   /* ── file attach ──────────────────────────── */
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
@@ -373,41 +386,11 @@ export function ChatInput({
     return () => window.removeEventListener("global-files-drop", handler);
   }, [processFiles]);
 
-  /* ── drag & drop (tiptap-local) ─────────────── */
-
-  useEffect(() => {
-    if (!editor) return;
-    const el = editor.view.dom;
-
-    const onDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      el.classList.add("drag-over");
-    };
-
-    const onDragLeave = () => {
-      el.classList.remove("drag-over");
-    };
-
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      el.classList.remove("drag-over");
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
-      processFiles(files);
-    };
-
-    el.addEventListener("dragover", onDragOver);
-    el.addEventListener("dragleave", onDragLeave);
-    el.addEventListener("drop", onDrop);
-    return () => {
-      el.removeEventListener("dragover", onDragOver);
-      el.removeEventListener("dragleave", onDragLeave);
-      el.removeEventListener("drop", onDrop);
-    };
-  }, [editor, processFiles]);
+  /* ── drag & drop onto the composer ─────────────── */
+  // Drop files anywhere over the composer box, with a Claude-style overlay.
+  // `externalDragActive` lights it up as soon as a file enters the window.
+  const { dragging, handlers: dropHandlers } = useFileDrop(processFiles);
+  const showDrop = dragging || !!externalDragActive;
 
   const removeFile = useCallback((id: string) => {
     setPendingFiles((prev) => prev.filter((pf) => pf.id !== id));
@@ -421,7 +404,16 @@ export function ChatInput({
 
   return (
     <div className="composer">
-      <div className="composer-box">
+      <div
+        className={`composer-box${showDrop ? " composer-box--dragging" : ""}`}
+        {...dropHandlers}
+      >
+        {showDrop && (
+          <div className="composer-drop" aria-hidden>
+            <ImageIcon size={22} weight="light" />
+            <span>{t("chat.dropToAttach")}</span>
+          </div>
+        )}
         {pendingFiles.length > 0 && (
           <div className="ca-grid">
             {pendingFiles.map((pf) => {
@@ -528,6 +520,7 @@ export function ChatInput({
           </div>
         </div>
       </div>
+      <p className="composer-disclaimer">{t("chat.disclaimer")}</p>
     </div>
   );
 }

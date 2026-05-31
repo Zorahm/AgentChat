@@ -12,6 +12,7 @@ import { ModelsTab } from "./tabs/ModelsTab";
 import { PathsTab } from "./tabs/PathsTab";
 import { AboutTab } from "./tabs/AboutTab";
 import { MCPTab } from "./tabs/MCPTab";
+import { ShortcutsTab } from "./tabs/ShortcutsTab";
 
 export interface ProviderConfig {
   id: string; name: string; api_key: string | null;
@@ -192,7 +193,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         {tab === "paths" && <PathsTab />}
         {tab === "skills" && <SkillsManager />}
         {tab === "mcp" && <MCPTab />}
-        {tab === "shortcuts" && <Placeholder title={t("settings.nav.shortcuts")} />}
+        {tab === "shortcuts" && <ShortcutsTab />}
         {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
       </div>
     </div>
@@ -203,13 +204,6 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
 
 function NavItem({ t, cur, label, ic, onClick }: { t: NavTab; cur: NavTab; label: string; ic: React.ReactNode; onClick: (v: NavTab) => void }) {
   return <a className={`st2-nav-item${cur === t ? " active" : ""}`} onClick={() => onClick(t)}><span className="st2-nav-ic">{ic}</span>{label}</a>;
-}
-
-/* ── Placeholder ──────────────────── */
-
-function Placeholder({ title }: { title: string }) {
-  const { t } = useTranslation();
-  return <><h3 className="st2-h">{title}</h3><p className="st2-sub" style={{ color: "var(--muted)" }}>{t("settings.comingSoon")}</p></>;
 }
 
 /* ── Loading / Error ───────────────── */

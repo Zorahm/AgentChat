@@ -10,12 +10,15 @@ import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
+import { FilesGalleryPage } from "./components/FilesGalleryPage";
 import { ProjectsView } from "./components/Projects/ProjectsView";
 import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
+import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
+import { resolveBindings } from "./shortcuts/registry";
 import { i18n } from "./i18n";
 import { useTranslation } from "react-i18next";
 
@@ -26,7 +29,7 @@ const PANEL_DEFAULT = 600;
 export function App() {
   const { t } = useTranslation();
   const chats = useChats();
-  const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects" | "files">("chat");
   const [settingsTab, setSettingsTab] = useState<NavTab>("main");
   const [model, setModel] = useState("openai/gpt-4o");
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -45,6 +48,7 @@ export function App() {
   const [language, setLanguage] = useState("");
   const [wslWarning, setWslWarning] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const [shortcuts, setShortcuts] = useState<Record<string, string>>({});
   const panelWidthRef = useRef(panelWidth);
 
   const panelOpen = generalPanelOpen || openFilePath !== null;
@@ -130,6 +134,9 @@ export function App() {
         } else {
           setOnboardingDone(true);
         }
+        if (data.shortcuts && typeof data.shortcuts === "object") {
+          setShortcuts(data.shortcuts as Record<string, string>);
+        }
         if (data.providers?.length) {
           const enabled = new Set<string>();
           for (const p of data.providers as Array<{ id: string; enabled: boolean }>) {
@@ -199,7 +206,7 @@ export function App() {
     }
   }, [language]);
 
-  const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects") => {
+  const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects" | "files") => {
     setMobileNavOpen(false);
     if (v === "skills") {
       setSettingsTab("skills");
@@ -221,7 +228,7 @@ export function App() {
         setTimeout(fetchSettings, 300);
         return;
       }
-      if (v === "settings" || v === "skills" || v === "chat" || v === "allchats" || v === "projects") handleNavigate(v);
+      if (v === "settings" || v === "skills" || v === "chat" || v === "allchats" || v === "projects" || v === "files") handleNavigate(v);
     };
     window.addEventListener("navigate", handler);
     return () => window.removeEventListener("navigate", handler);
@@ -298,6 +305,44 @@ export function App() {
     setGeneralPanelOpen((v) => !v);
   };
 
+  // From the Files gallery: open a file's preview, switching chats first when
+  // it lives in another chat. The activeId-change effect clears openFilePath,
+  // so for a cross-chat open we set the path after that effect has run.
+  const openFileFromGallery = (sessionId: string, path: string) => {
+    setView("chat");
+    setGeneralPanelOpen(false);
+    if (sessionId !== chats.activeId) {
+      chats.switchChat(sessionId);
+      setTimeout(() => setOpenFilePath(path), 60);
+    } else {
+      setOpenFilePath(path);
+    }
+  };
+
+  const gotoChatFromGallery = (sessionId: string) => {
+    if (sessionId !== chats.activeId) chats.switchChat(sessionId);
+    setView("chat");
+  };
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────
+  const shortcutBindings = useMemo(() => resolveBindings(shortcuts), [shortcuts]);
+  const shortcutHandlers: ShortcutHandlers = {
+    new_chat: () => { chats.newChat(); setView("chat"); },
+    focus_input: () => {
+      setView("chat");
+      // Wait for the composer to be mounted/visible before focusing it.
+      setTimeout(() => window.dispatchEvent(new CustomEvent("focus-composer")), 50);
+    },
+    toggle_sidebar: () => {
+      if (isMobile) setMobileNavOpen((v) => !v);
+      else setSidebarCollapsed((v) => !v);
+    },
+    open_settings: () => handleNavigate("settings"),
+    goto_projects: () => handleNavigate("projects"),
+    goto_skills: () => handleNavigate("skills"),
+  };
+  useShortcuts(shortcutBindings, shortcutHandlers);
+
   const visibleModels = enabledProviders.size > 0
     ? models.filter((m) => {
         const provider = m.id.split("/")[0] ?? "";
@@ -308,8 +353,8 @@ export function App() {
   const settingsCtx = useMemo<SettingsContextValue>(() => ({
     model, setModel, theme, language, userName, thinkingEnabled, setThinkingEnabled,
     effortLevel, setEffortLevel,
-    enabledProviders, models, onboardingDone, updateSettings, refreshSettings: fetchSettings,
-  }), [model, theme, language, userName, thinkingEnabled, effortLevel, enabledProviders, models, onboardingDone, updateSettings, fetchSettings]);
+    enabledProviders, models, onboardingDone, shortcuts, updateSettings, refreshSettings: fetchSettings,
+  }), [model, theme, language, userName, thinkingEnabled, effortLevel, enabledProviders, models, onboardingDone, shortcuts, updateSettings, fetchSettings]);
 
   // On mobile the sidebar is a fixed drawer (not a grid column), so the grid is
   // a single column — responsive.css enforces this; the inline value is just a
@@ -322,7 +367,7 @@ export function App() {
   return (
     <SettingsContext.Provider value={settingsCtx}>
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <GlobalDropZone />
+      <GlobalDropZone enabled={view === "chat"} />
       {onboardingDone === false && (
         <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
       )}
@@ -431,6 +476,18 @@ export function App() {
               onDelete={chats.deleteChat}
               onRename={chats.renameChat}
               onPin={chats.pinChat}
+              onBack={() => handleNavigate("chat")}
+            />
+          </div>
+        </div>
+      )}
+      {view === "files" && (
+        <div className="ac-modal-overlay" onClick={() => handleNavigate("chat")}>
+          <div className="ac-modal-content" onClick={e => e.stopPropagation()}>
+            <FilesGalleryPage
+              sessions={chats.sessions}
+              onOpenFile={openFileFromGallery}
+              onGotoChat={gotoChatFromGallery}
               onBack={() => handleNavigate("chat")}
             />
           </div>

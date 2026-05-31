@@ -7,6 +7,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { ChatInput } from "../Chat/ChatInput";
+import { useFileDrop } from "../../hooks/useFileDrop";
+import { useWindowFileDrag } from "../../hooks/useWindowFileDrag";
 import type { ModelItem } from "../Chat/ChatView";
 import type { UseProjectsResult } from "../../hooks/useProjects";
 import { makeDirSlug } from "../../hooks/useChats";
@@ -112,6 +114,14 @@ export function ProjectDetail({
     [api, projectId, reload],
   );
 
+  // Drag files onto the Files card to add them to the project's knowledge.
+  const { dragging: filesDragging, handlers: filesDrop } = useFileDrop(
+    (files) => void handleUpload(files),
+  );
+  // The moment a file enters the window, light up BOTH drop zones (Claude-style)
+  // so the user can aim at either the composer or the project-knowledge card.
+  const windowDragging = useWindowFileDrag();
+
   const openFile = useCallback(
     async (f: ProjectFileInfo) => {
       setFileLoading(true);
@@ -188,6 +198,7 @@ export function ProjectDetail({
           onEffortChange={onEffortChange}
           placeholder={t("projects.chatPlaceholder")}
           dirSlug={composeSlug}
+          externalDragActive={windowDragging}
         />
 
         <div className="proj-chats-head">{t("projects.chatSectionTitle")}</div>
@@ -234,7 +245,16 @@ export function ProjectDetail({
           )}
         </div>
 
-        <div className="proj-card-panel">
+        <div
+          className={`proj-card-panel proj-files-panel${filesDragging || windowDragging ? " proj-files-panel--dragging" : ""}`}
+          {...filesDrop}
+        >
+          {(filesDragging || windowDragging) && (
+            <div className="proj-drop" aria-hidden>
+              <FileText size={26} weight="light" />
+              <span>{t("projects.dropToKnowledge")}</span>
+            </div>
+          )}
           <div className="proj-card-head">
             <span className="proj-card-title">{t("projects.files")}</span>
             <button

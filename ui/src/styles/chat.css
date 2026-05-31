@@ -273,45 +273,44 @@
 @keyframes ca-spin { to { transform: rotate(360deg); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Message image thumbnails ─────────────────────────────────────────── */
+/* ── Message attachments — mirror composer .ca-card, sized down ───────── */
 .msg-img-row {
-  display: flex; flex-wrap: wrap; gap: 6px;
+  display: flex; flex-wrap: wrap; gap: 8px;
   justify-content: flex-end; margin-bottom: 6px;
 }
 .msg-img-thumb {
-  width: 175px; height: 130px;
-  border-radius: 12px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.04); flex-shrink: 0;
+  width: 128px; height: 96px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2); flex-shrink: 0;
 }
 .msg-img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* ── Message file chips ────────────────────────────────────────────────── */
 .msg-file-chips {
   display: flex; flex-wrap: wrap; gap: 8px;
   justify-content: flex-end; margin-bottom: 6px;
 }
 .msg-file-chip {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px;
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 10px; max-width: 260px; min-width: 140px;
+  display: flex; flex-direction: column;
+  width: 128px; padding: 9px 10px;
+  background: var(--bg); border: 1px solid var(--line-2);
+  border-radius: 8px;
 }
-.msg-file-chip-info { flex: 1; min-width: 0; }
+.msg-file-chip-info { min-width: 0; }
 .msg-file-chip-name {
-  font-size: 13px; font-weight: 500; color: #e8e3db;
+  font-size: 12px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .msg-file-chip-meta {
   font-family: var(--font-mono); font-size: 10px;
-  color: rgba(255,255,255,.45); margin-top: 2px;
+  color: var(--muted); margin-top: 3px;
 }
 .msg-file-chip-badge {
+  align-self: flex-start; margin-top: 9px;
   font-size: 9px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 100px;
-  border: 1px solid rgba(255,255,255,.15);
-  color: rgba(255,255,255,.55); flex-shrink: 0;
+  padding: 2px 8px; border-radius: 100px;
+  border: 1px solid var(--line-2);
+  color: var(--muted);
 }
 
 /* ── Composer ──────────────────────────────────────────────────────────── */
@@ -320,6 +319,7 @@
   background: var(--bg);
 }
 .composer-box {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-lg);
@@ -327,6 +327,18 @@
   transition: border-color .15s;
 }
 .composer-box:focus-within { border-color: var(--ink-2); }
+.composer-box--dragging { border-color: transparent; }
+
+/* Claude-style drop overlay covering the whole composer while dragging files. */
+.composer-drop {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  border-radius: var(--radius-lg);
+  border: 2px dashed var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent); font-size: 14px; font-weight: 500;
+  pointer-events: none;
+}
 
 /* In an active chat, keep the composer at a sane width and centered instead
  * of stretching across the full (wide) chat width. Welcome screen unaffected. */
@@ -349,6 +361,77 @@
 .composer-left { display: flex; gap: 2px; align-items: center; }
 .composer-right { display: flex; align-items: center; gap: 6px; }
 .composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-left: 6px; }
+.composer-disclaimer {
+  text-align: center; font-size: 11px; color: var(--faint);
+  margin: 8px 0 0; padding: 0 12px; line-height: 1.4;
+}
+
+/* ── Waiting-for-response indicator (before the first token) ──────────── */
+.reply-wait {
+  display: flex; align-items: center; gap: 9px;
+  padding: 4px 0; color: var(--muted);
+}
+.reply-wait-dots { display: inline-flex; gap: 4px; }
+.reply-wait-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); opacity: .4;
+  animation: reply-wait-bounce 1.2s ease-in-out infinite;
+}
+.reply-wait-dots span:nth-child(2) { animation-delay: .18s; }
+.reply-wait-dots span:nth-child(3) { animation-delay: .36s; }
+.reply-wait-text { font-size: 13px; }
+@keyframes reply-wait-bounce {
+  0%, 80%, 100% { opacity: .35; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reply-wait-dots span { animation: reply-wait-pulse 1.4s ease-in-out infinite; }
+  @keyframes reply-wait-pulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+}
+
+/* ── Mental-health support card ───────────────────────────────────────── */
+.support-card {
+  margin: 10px 0; padding: 16px 18px;
+  border: 1px solid var(--line-2); border-radius: 14px;
+  background: var(--surface-2); max-width: 560px;
+}
+.support-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.support-card-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent); flex-shrink: 0;
+}
+.support-card-title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.support-card-body {
+  font-size: 13px; color: var(--ink-2); line-height: 1.55; margin: 0 0 14px;
+}
+.support-card-regions { display: flex; flex-direction: column; gap: 12px; }
+.support-region-name {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px;
+}
+.support-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.support-line {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--ink-2); flex-wrap: wrap;
+}
+.support-line > svg { color: var(--accent); flex-shrink: 0; }
+.support-line-val { font-weight: 600; color: var(--ink); text-decoration: none; }
+a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
+.support-line-note { font-size: 12px; color: var(--muted); }
+.support-find {
+  display: flex; align-items: center; gap: 11px;
+  margin: 0 0 16px; padding: 12px 14px;
+  border-radius: 10px; text-decoration: none;
+  background: var(--accent); color: #fff;
+  transition: filter .12s, transform .08s;
+}
+.support-find:hover { filter: brightness(1.07); }
+.support-find:active { transform: translateY(1px); }
+.support-find > svg { flex-shrink: 0; }
+.support-find-text { display: flex; flex-direction: column; line-height: 1.3; }
+.support-find-title { font-size: 13.5px; font-weight: 600; }
+.support-find-url { font-size: 11.5px; opacity: .85; font-family: var(--font-mono); }
 
 /* ── Composer "+" menu (attach files + MCP) ───────────────────────────── */
 

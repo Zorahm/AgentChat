@@ -11,6 +11,7 @@ import type { ChatMessage, AttachmentInfo } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import { ToolCallBlock } from "../ToolCalls/ToolCallBlock";
 import { ArtifactCard } from "../Artifacts/ArtifactCard";
+import { SupportCard } from "./SupportCard";
 import { Markdown } from "../Markdown/Markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -89,7 +90,7 @@ export function MessageBubble({
           .map((s) => s.content)
           .join("");
         const isLast = i === groups.length - 1;
-        const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", artifacts: [] };
+        const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", artifacts: [], support: false };
 
         // Spinner while: any tool in this group is still running,
         // OR the global SSE stream is active but this group has no text yet
@@ -114,6 +115,7 @@ export function MessageBubble({
             {parsed.artifacts.map((a, j) => (
               <ArtifactCard key={`art-${i}-${j}`} artifact={a} />
             ))}
+            {parsed.support && <SupportCard />}
           </div>
         );
       })}
@@ -122,12 +124,42 @@ export function MessageBubble({
       {fallback && fallback.artifacts.map((a, i) => (
         <ArtifactCard key={`art-fb-${i}`} artifact={a} />
       ))}
+      {fallback && fallback.support && <SupportCard />}
+
+      {/* Nothing streamed yet — reassure the user the model is still alive. */}
+      {isGlobalStreaming && !hasContent && <ThinkingIndicator />}
 
       {message.webSearchMode === "native" && <NativeWebSearchChip />}
 
       {iterExhausted && <IterationsExhaustedCard count={iterExhausted.count} />}
 
-      {!isGlobalStreaming && <MsgActions content={message.content} onRetry={isLastAssistantInBranch ? onRetry : undefined} />}
+      {!isGlobalStreaming && <MsgActions content={parseArtifacts(message.content).cleanText} onRetry={isLastAssistantInBranch ? onRetry : undefined} />}
+    </div>
+  );
+}
+
+/* ── Thinking indicator (waiting for the first token) ──────────────── */
+
+/** Shown while an assistant turn is streaming but has produced no text, tool
+ * call, or thought yet — so the user sees the model is alive even when the
+ * network or provider is slow. After a delay it hints at a slow connection. */
+function ThinkingIndicator() {
+  const { t } = useTranslation();
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 9000);
+    return () => clearTimeout(id);
+  }, []);
+
+  return (
+    <div className="reply-wait" role="status" aria-live="polite">
+      <span className="reply-wait-dots" aria-hidden>
+        <span /><span /><span />
+      </span>
+      <span className="reply-wait-text">
+        {slow ? t("chat.slowConnection") : t("chat.thinking")}
+      </span>
     </div>
   );
 }

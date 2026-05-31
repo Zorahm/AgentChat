@@ -4,6 +4,7 @@ import {
   PushPin, Chats, SortAscending, SortDescending,
 } from "@phosphor-icons/react";
 import type { ChatSession, ChatNode } from "../types/chat";
+import { useLongPress } from "../hooks/useLongPress";
 import { useTranslation } from "react-i18next";
 
 interface AllChatsPageProps {
@@ -267,13 +268,14 @@ function CardMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: CardMenu
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const down = (e: MouseEvent) => {
+    const down = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", down);
+    // pointerdown covers both mouse and touch dismissals.
+    document.addEventListener("pointerdown", down);
     document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
   }, [onClose]);
 
   return (
@@ -319,16 +321,15 @@ function ChatCard({
 
   const msgCount = useMemo(() => getMessageCount(session.root ?? []), [session.root]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY });
-  }, []);
+  // Right-click (desktop) or long-press (touch) opens the context menu.
+  const { bind: longPress, shouldSuppressClick } = useLongPress((x, y) => setMenu({ x, y }));
 
   const handleClick = useCallback(() => {
     if (editing) return;
+    if (shouldSuppressClick()) return;
     if (selectMode) { onToggleSelect(); return; }
     onSelect();
-  }, [editing, selectMode, onToggleSelect, onSelect]);
+  }, [editing, shouldSuppressClick, selectMode, onToggleSelect, onSelect]);
 
   const handleStartEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -357,7 +358,7 @@ function ChatCard({
           selected ? "ac-card--selected" : "",
         ].filter(Boolean).join(" ")}
         onClick={handleClick}
-        onContextMenu={handleContextMenu}
+        {...longPress}
       >
         {/* Top row */}
         <div className="ac-card-top">

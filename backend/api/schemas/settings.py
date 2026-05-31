@@ -61,6 +61,9 @@ class SettingsData(BaseModel):
     # True when a Tavily key is configured (settings or TAVILY_API_KEY env). The
     # raw key is never returned — set it via SettingsUpdate.tavily_api_key.
     tavily_api_key_set: bool = False
+    # User keyboard shortcuts: action id → normalized combo (e.g. "Mod+N").
+    # Empty/missing entries fall back to the frontend's built-in defaults.
+    shortcuts: dict[str, str] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
 
 
@@ -79,6 +82,8 @@ class SettingsUpdate(BaseModel):
     searxng_url: str | None = None
     # Empty string clears the stored key (falls back to TAVILY_API_KEY env).
     tavily_api_key: str | None = None
+    # Full replacement of the keyboard-shortcut map (action id → combo).
+    shortcuts: dict[str, str] | None = None
 
 
 class ProviderUpdate(BaseModel):

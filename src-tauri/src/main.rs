@@ -85,6 +85,15 @@ fn get_backend_url() -> String {
     "http://127.0.0.1:8787".to_string()
 }
 
+/// Open a URL in the user's real browser instead of navigating the app
+/// webview. The frontend intercepts every external link click and routes it
+/// here so users never get stranded inside the app with no back button.
+#[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    app.shell().open(url, None).map_err(|e| e.to_string())
+}
+
 /// Restart the backend so a changed bind host (remote-access toggle) takes
 /// effect. run.py re-reads settings.json on start and re-picks 127.0.0.1 vs
 /// 0.0.0.0. Loopback-only concern, invoked from Settings.
@@ -289,7 +298,7 @@ fn main() {
         .manage(BackendProcess {
             child: Mutex::new(backend_child.take()),
         })
-        .invoke_handler(tauri::generate_handler![get_backend_url, restart_backend])
+        .invoke_handler(tauri::generate_handler![get_backend_url, restart_backend, open_external])
         .build(ctx)
         .expect("error while building tauri application")
         .run(|app_handle, event| {

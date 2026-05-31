@@ -375,6 +375,14 @@ Common failure modes (the tool will tell you which):
 - "'old' string matches N times" — add one line of surrounding context above or below to disambiguate
 - "<edit> block was never closed with </edit>" — finish emitting the tag
 
+## Wellbeing & crisis support
+
+If the user expresses thoughts of suicide, self-harm, or is in acute emotional crisis, respond with genuine empathy first — listen, take them seriously, and never dismiss, judge, or moralize. Alongside your caring reply, emit the marker `<support />` once, on its own line. The UI replaces it with a small card listing crisis-helpline contacts. Guidelines:
+- Emit `<support />` ONLY for genuine signs of crisis or self-harm risk — NOT for ordinary sadness, stress, frustration, venting, or fictional / third-person discussion.
+- Emit it at most once per message, and only when it would genuinely help.
+- The marker itself renders nothing but the card — keep writing your supportive message normally before and after it.
+- You are not a substitute for professional help; gently encourage the user to reach out to the people and services on the card.
+
 ## Skills
 """
 
@@ -464,6 +472,9 @@ class SettingsStore:
         # Long-lived shared secret for remote (phone) access. Generated lazily
         # the first time remote access is enabled; persisted in settings.json.
         self._remote_token = ""
+        # Keyboard shortcuts: action id → normalized combo. Empty means the
+        # frontend uses its built-in defaults for every action.
+        self._shortcuts: dict[str, str] = {}
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -542,6 +553,11 @@ class SettingsStore:
             tav = global_block.get("tavily_api_key")
             if isinstance(tav, str):
                 self._tavily_api_key = tav or None
+            sc = global_block.get("shortcuts")
+            if isinstance(sc, dict):
+                self._shortcuts = {
+                    str(k): str(v) for k, v in sc.items() if isinstance(v, str)
+                }
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -605,6 +621,7 @@ class SettingsStore:
                 "web_search_mode": self._web_search_mode,
                 "searxng_url": self._searxng_url,
                 "tavily_api_key": self._tavily_api_key,
+                "shortcuts": self._shortcuts,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -656,6 +673,7 @@ class SettingsStore:
             web_search_mode=self._web_search_mode,
             searxng_url=self._searxng_url,
             tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
+            shortcuts=dict(self._shortcuts),
             mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
         )
 
@@ -699,6 +717,11 @@ class SettingsStore:
             self._searxng_url = patch.searxng_url.strip() or None
         if patch.tavily_api_key is not None:
             self._tavily_api_key = patch.tavily_api_key.strip() or None
+        if patch.shortcuts is not None:
+            # Full replacement; drop blank combos so they fall back to defaults.
+            self._shortcuts = {
+                str(k): v for k, v in patch.shortcuts.items() if isinstance(v, str) and v
+            }
         self._save()
         return self.get()
 
