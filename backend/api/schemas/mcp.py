@@ -6,7 +6,7 @@ be shared with the persistence layer without circular imports.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,3 +50,23 @@ class MCPTestResult(BaseModel):
     ok: bool
     tools: list[MCPToolView] = Field(default_factory=list)
     error: str | None = None
+
+
+class MCPInstallRequest(BaseModel):
+    """A one-shot install command pasted from an MCP server's README.
+
+    Runs on the *host* shell (PowerShell or CMD) — never WSL — since that is
+    where npx/uvx-based installers expect to write their config.
+    """
+
+    command: str = Field(min_length=1)
+    shell: Literal["powershell", "cmd"] = "powershell"
+
+
+class MCPInstallResult(BaseModel):
+    """Outcome of a ``POST /mcp/install`` run — combined output + exit code."""
+
+    ok: bool
+    exit_code: int
+    output: str
+    timed_out: bool = False

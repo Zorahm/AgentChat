@@ -1,11 +1,31 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
+
+
+class ToolCallSpec(BaseModel):
+    """A single tool invocation replayed from a prior assistant turn."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatMessage(BaseModel):
     role: str
     content: str
+    tool_calls: list[ToolCallSpec] | None = Field(
+        default=None,
+        description="On an assistant message: tool calls made during that turn, "
+        "replayed so the model remembers what it did.",
+    )
+    tool_call_id: str | None = Field(
+        default=None,
+        description="On a 'tool' message: the id of the assistant tool call this "
+        "result answers.",
+    )
 
 
 class AttachmentInfo(BaseModel):

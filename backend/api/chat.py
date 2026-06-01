@@ -15,7 +15,7 @@ from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
 from agent.wsl_exec import wsl_write_bytes
-from api.schemas.chat import AttachmentInfo, ChatRequest
+from api.schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
 from mcp_integration.manager import MCPManager
 from mcp_integration.registry_view import MCPAwareRegistry
@@ -88,6 +88,50 @@ async def _build_mcp_proxies(
                 )
             )
     return proxies
+
+
+def build_agent_messages(history: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Reconstruct prior turns as LiteLLM-format messages.
+
+    Plain user/assistant turns map to ``{"role", "content"}``. Assistant turns
+    that carried tool calls are rebuilt as an assistant message with a
+    ``tool_calls`` array, and each ``tool`` message is rebuilt with its
+    ``tool_call_id`` — so the model sees the calls it made and their results,
+    not just its closing text. Without this, every fact the model learned via a
+    tool (file contents, command output) is dropped between turns and it behaves
+    as if the work never happened.
+    """
+    out: list[dict[str, Any]] = []
+    for msg in history:
+        if msg.role == "tool":
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": msg.tool_call_id or "",
+                    "content": msg.content,
+                }
+            )
+        elif msg.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                            },
+                        }
+                        for tc in msg.tool_calls
+                    ],
+                }
+            )
+        else:
+            out.append({"role": msg.role, "content": msg.content})
+    return out
 
 
 def _sse_event(event_type: str, data: dict[str, Any]) -> str:
@@ -487,8 +531,7 @@ async def chat(
     app_state.skill_reader.rebuild()
     agent.set_manifest(app_state.skill_reader.render_prompt())
 
-    for msg in history:
-        agent.messages.append({"role": msg.role, "content": msg.content})
+    agent.messages.extend(build_agent_messages(history))
 
     user_content = _format_user_content(new_message, body.attachments)
 

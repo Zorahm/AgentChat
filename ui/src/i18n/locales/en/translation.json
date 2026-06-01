@@ -535,7 +535,20 @@
       "importButton": "Import",
       "importCancel": "Cancel",
       "deleteConfirm": "Delete MCP server '{{id}}'?",
-      "errorNetwork": "Network error"
+      "errorNetwork": "Network error",
+      "installCmd": "Install via command",
+      "installTitle": "Install MCP via command",
+      "installDescription": "Paste the install command from the server's README (e.g. npx -y @upstash/context7-mcp). It runs on the host — in PowerShell or CMD, not WSL.",
+      "installPlaceholder": "npx -y @upstash/context7-mcp",
+      "installShell": "Shell",
+      "installRun": "Run",
+      "installRunning": "Running…",
+      "installHostNote": "The command runs on the host, not in WSL.",
+      "installEmpty": "Enter a command",
+      "installExitOk": "Done (exit {{code}})",
+      "installExitFail": "Failed (exit {{code}})",
+      "installTimedOut": "Timed out (300s)",
+      "installAddServer": "Add as server"
     },
     "models": {
       "title": "Models",

@@ -79,6 +79,18 @@ export function ChatInput({
   const [plusUp, setPlusUp] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
+  // Always-current mirror of pendingFiles, so async handlers (handleSend after
+  // awaiting uploads, removeFile) read the latest paths instead of a stale closure.
+  const pendingRef = useRef<PendingFile[]>([]);
+  pendingRef.current = pendingFiles;
+  // In-flight immediate-uploads, keyed by pending-file id (value = the upload
+  // promise so handleSend can await them). Removal-during-upload is tracked so
+  // the just-written file gets wiped instead of lingering in uploads/.
+  const uploadsRef = useRef<Map<string, Promise<void>>>(new Map());
+  const removedDuringUploadRef = useRef<Set<string>>(new Set());
+  // Authoritative record of resolved upload paths, keyed by id. handleSend reads
+  // this rather than React state so it can't race the post-upload re-render.
+  const resolvedRef = useRef<Map<string, { path: string; content?: string }>>(new Map());
   // Bind the mention popup's "attach file" action to our file input.
   const mentionSuggestion = useRef(
     buildMentionSuggestion({
@@ -92,14 +104,34 @@ export function ChatInput({
     if (!editorRef.current) return;
     const html = editorRef.current.getHTML();
     const rawText = extractText(editorRef.current.getJSON());
-    if ((!rawText.trim() && pendingFiles.length === 0) || disabled) return;
+    if ((!rawText.trim() && pendingRef.current.length === 0) || disabled) return;
+
+    // Files upload the moment they're added, so by send-time they usually have
+    // a path already. Wait out any still-in-flight upload so every attachment
+    // carries its server path rather than racing the request.
+    if (uploadsRef.current.size > 0) {
+      try { await Promise.all([...uploadsRef.current.values()]); } catch { /* keep going */ }
+    }
 
     // ── Auto-convert large text to a .txt file attachment ─────────────────
     // content=null ensures the backend references it by path (read_file),
     // rather than inlining it into the model's context.
     let sendText = rawText;
     let sendHtml = html;
-    let basePending = pendingFiles;
+    // Fold in any paths resolved by the immediate upload — authoritative even if
+    // the post-upload re-render hasn't flushed into pendingRef yet.
+    let basePending = pendingRef.current.map((pf) => {
+      if (pf.uploadedPath) return pf;
+      const r = resolvedRef.current.get(pf.id);
+      if (!r) return pf;
+      return {
+        ...pf,
+        uploading: false,
+        uploadedPath: r.path,
+        content:
+          pf.content === null && pf.type === "text/plain" ? null : r.content ?? pf.content,
+      };
+    });
     if (rawText.trim().length > LARGE_TEXT_CHARS) {
       const body = rawText.trim();
       const fileName = `text_${Date.now()}.txt`;
@@ -107,7 +139,7 @@ export function ChatInput({
       basePending = [{
         id: nextFid(), file, name: fileName, size: file.size,
         type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
-      }, ...pendingFiles];
+      }, ...basePending];
       sendText = "";
       sendHtml = "";
     }
@@ -175,7 +207,8 @@ export function ChatInput({
     editorRef.current.commands.clearContent();
     setTextLen(0);
     setPendingFiles([]);
-  }, [disabled, onSend, pendingFiles]);
+    resolvedRef.current.clear();
+  }, [disabled, onSend, dirSlug]);
 
   /* ── editor ───────────────────────────────── */
 
@@ -392,9 +425,95 @@ export function ChatInput({
   const { dragging, handlers: dropHandlers } = useFileDrop(processFiles);
   const showDrop = dragging || !!externalDragActive;
 
+  /* ── immediate upload lifecycle ───────────────── */
+
+  const deleteFromDisk = useCallback((path: string) => {
+    const form = new FormData();
+    form.append("path", path);
+    if (dirSlug) form.append("chat_dir_slug", dirSlug);
+    return fetch(`${API_BASE}/files/delete`, { method: "POST", body: form }).catch(() => {});
+  }, [dirSlug]);
+
+  // Upload a batch to the chat sandbox right away and record each server path.
+  const uploadFiles = useCallback(async (items: PendingFile[]) => {
+    if (items.length === 0) return;
+    const ids = new Set(items.map((i) => i.id));
+    setPendingFiles((prev) =>
+      prev.map((pf) => (ids.has(pf.id) ? { ...pf, uploading: true } : pf)),
+    );
+
+    const form = new FormData();
+    for (const it of items) form.append("files", it.file);
+    if (dirSlug) form.append("chat_dir_slug", dirSlug);
+
+    const run = (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/files/upload`, { method: "POST", body: form });
+        if (!r.ok) throw new Error("upload failed");
+        // Response preserves FormData order — pair by index (filenames get
+        // sanitised server-side so name matching is unreliable).
+        const uploaded: Array<{ name: string; path: string; size: number; mime_type: string; content?: string }> = await r.json();
+        uploaded.forEach((up, i) => {
+          const src = items[i];
+          if (!src) return;
+          // Removed mid-upload → wipe the file we just wrote, don't restore it.
+          if (removedDuringUploadRef.current.has(src.id)) {
+            removedDuringUploadRef.current.delete(src.id);
+            void deleteFromDisk(up.path);
+            return;
+          }
+          resolvedRef.current.set(src.id, { path: up.path, content: up.content });
+          setPendingFiles((prev) =>
+            prev.map((pf) =>
+              pf.id === src.id
+                ? {
+                    ...pf,
+                    uploading: false,
+                    uploadedPath: up.path,
+                    content:
+                      pf.content === null && pf.type === "text/plain"
+                        ? null
+                        : up.content ?? pf.content,
+                  }
+                : pf,
+            ),
+          );
+        });
+      } catch {
+        // Leave the file pathless; handleSend retries the upload, and the model
+        // can still receive it by inline content / data URL.
+        setPendingFiles((prev) =>
+          prev.map((pf) => (ids.has(pf.id) ? { ...pf, uploading: false } : pf)),
+        );
+      }
+    })();
+
+    for (const it of items) uploadsRef.current.set(it.id, run);
+    await run;
+    for (const it of items) uploadsRef.current.delete(it.id);
+  }, [dirSlug, deleteFromDisk]);
+
+  // Auto-upload every freshly added file once, regardless of entry point
+  // (drop, paste, picker, large-text conversion).
+  useEffect(() => {
+    const toUpload = pendingFiles.filter(
+      (pf) => !pf.uploadedPath && !pf.uploading && !pf.error && !uploadsRef.current.has(pf.id),
+    );
+    if (toUpload.length > 0) void uploadFiles(toUpload);
+  }, [pendingFiles, uploadFiles]);
+
   const removeFile = useCallback((id: string) => {
-    setPendingFiles((prev) => prev.filter((pf) => pf.id !== id));
-  }, []);
+    const pf = pendingRef.current.find((p) => p.id === id);
+    setPendingFiles((prev) => prev.filter((p) => p.id !== id));
+    // Path may live in resolvedRef before the re-render lands it on pf.
+    const path = pf?.uploadedPath ?? resolvedRef.current.get(id)?.path;
+    resolvedRef.current.delete(id);
+    if (path) {
+      void deleteFromDisk(path); // already on disk — delete now
+    } else if (uploadsRef.current.has(id)) {
+      removedDuringUploadRef.current.add(id); // in flight — delete on completion
+    }
+  }, [deleteFromDisk]);
 
   /* ── render ───────────────────────────────── */
 

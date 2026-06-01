@@ -543,7 +543,20 @@
       "importButton": "Импортировать",
       "importCancel": "Отмена",
       "deleteConfirm": "Удалить MCP-сервер '{{id}}'?",
-      "errorNetwork": "Ошибка сети"
+      "errorNetwork": "Ошибка сети",
+      "installCmd": "Установить командой",
+      "installTitle": "Установка MCP командой",
+      "installDescription": "Вставьте установочную команду из README сервера (например npx -y @upstash/context7-mcp). Она выполнится на хосте — в PowerShell или CMD, не в WSL.",
+      "installPlaceholder": "npx -y @upstash/context7-mcp",
+      "installShell": "Оболочка",
+      "installRun": "Выполнить",
+      "installRunning": "Выполняется…",
+      "installHostNote": "Команда выполняется на хосте, не в WSL.",
+      "installEmpty": "Введите команду",
+      "installExitOk": "Готово (код {{code}})",
+      "installExitFail": "Ошибка (код {{code}})",
+      "installTimedOut": "Превышено время ожидания (300 с)",
+      "installAddServer": "Добавить как сервер"
     },
     "models": {
       "title": "Модели",

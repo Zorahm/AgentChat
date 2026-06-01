@@ -198,3 +198,35 @@ async def upload_files(
         results.append(result)
 
     return results
+
+
+@router.post("/delete")
+async def delete_upload(
+    request: Request,
+    path: str = Form(...),
+    chat_dir_slug: str | None = Form(default=None),
+) -> dict[str, object]:
+    """Delete a previously uploaded file from the chat's uploads folder.
+
+    The on-disk target is recomputed from ``chat_dir_slug`` + the basename, so a
+    caller can only ever delete a file *inside* the resolved uploads directory —
+    the client path is trusted for its filename only, never as an absolute
+    target (no traversal, no escaping the sandbox). Missing files are a no-op.
+    """
+    from main import USER_HOME, resolve_active_shell
+
+    name = _safe_filename(Path(path).name)
+    if name in ("", ".", "..") or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    preference = getattr(request.app.state.settings_store, "shell_preference", "auto")
+    shell = resolve_active_shell(preference)
+
+    if shell == "powershell":
+        target = _win_upload_dir(chat_dir_slug, USER_HOME) / name
+        await asyncio.to_thread(lambda: target.unlink(missing_ok=True))
+    else:
+        up_dir = await _wsl_upload_dir(chat_dir_slug)
+        await wsl_run(f"rm -f {shlex.quote(f'{up_dir}/{name}')}")
+
+    return {"deleted": True, "name": name}

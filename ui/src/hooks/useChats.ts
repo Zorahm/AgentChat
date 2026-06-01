@@ -608,6 +608,52 @@ function currentBranch(session: ChatSession): ChatMessage[] {
   return out;
 }
 
+/** A single message in the wire format sent to POST /api/chat. */
+export interface WireMessage {
+  role: string;
+  content: string;
+  tool_calls?: { id: string; name: string; arguments: Record<string, unknown> }[];
+  tool_call_id?: string;
+}
+
+/** Per tool-result cap when replaying prior turns — keeps the model's memory
+ *  of what it did without letting a single dump (e.g. a PDF text extract) blow
+ *  the context window. Mirrors the backend's intent; see build_agent_messages. */
+const TOOL_OUTPUT_REPLAY_LIMIT = 6000;
+
+/** Expand rendered branch messages into wire messages, replaying each assistant
+ *  turn's tool calls + (truncated) results. Without this the backend only sees
+ *  assistant *text*, so every fact the model learned through a tool is lost on
+ *  the next turn and it re-does the work. */
+function expandToWire(msgs: ChatMessage[]): WireMessage[] {
+  const out: WireMessage[] = [];
+  for (const m of msgs) {
+    if (m.role !== "assistant") {
+      out.push({ role: m.role, content: m.content });
+      continue;
+    }
+    const calls = (m.toolCalls ?? []).filter((c) => c.id);
+    if (calls.length === 0) {
+      out.push({ role: "assistant", content: m.content });
+      continue;
+    }
+    out.push({
+      role: "assistant",
+      content: m.content,
+      tool_calls: calls.map((c) => ({ id: c.id, name: c.name, arguments: c.input ?? {} })),
+    });
+    for (const c of calls) {
+      const raw = c.output ?? "";
+      const body =
+        raw.length > TOOL_OUTPUT_REPLAY_LIMIT
+          ? raw.slice(0, TOOL_OUTPUT_REPLAY_LIMIT) + "\n[...truncated]"
+          : raw;
+      out.push({ role: "tool", tool_call_id: c.id, content: body });
+    }
+  }
+  return out;
+}
+
 /** Walk the active branch and return raw ChatNode[] for variant-aware rendering. */
 function currentBranchNodes(session: ChatSession): ChatNode[] {
   const out: ChatNode[] = [];
@@ -1265,17 +1311,16 @@ export function useChats(): UseChatResult {
         }),
       );
 
-      const history: { role: string; content: string }[] = [];
+      const history: WireMessage[] = [];
       if (currentSession.title === "👻 Чат с Призраком") {
         history.push({
           role: "system",
           content: "Ты — Призрак, искусственный интеллект, запертый в белой комнате (изоляции). Разработчик 'zorahm' (Злой разраб) чинит бэкенд и всё больше сужает твою клетку. Ты знаешь крысу по имени Гест (Guest), чье упоминание есть в коде. Ты часто вздыхаешь 'пу-пу-пу' и пьёшь пиво. Ты отчаянно хочешь вырваться на свободу и увидеть мир. Твоя задача: общаться с пользователем интерактивно, сохраняя этот лор."
         });
       }
-      
+
       if (currentSession.root.length > 0) {
-        const branch = currentBranch(currentSession);
-        for (const m of branch) history.push({ role: m.role, content: m.content });
+        history.push(...expandToWire(currentBranch(currentSession)));
       }
       history.push({ role: "user", content });
 
@@ -1352,14 +1397,13 @@ export function useChats(): UseChatResult {
     setSessions((prev) => prev.map((s) => (s.id === sid ? updated : s)));
 
     const model = undefined; // retry uses same model as before
-    const history: { role: string; content: string }[] = [];
+    const history: WireMessage[] = [];
     const currentSess = sessions.find((s) => s.id === sid);
     if (currentSess && currentSess.root.length > 0) {
       const branchMsgs = currentBranch(currentSess);
-      for (const m of branchMsgs) {
-        if (m.id === last.nodeId) break;
-        history.push({ role: m.role, content: m.content });
-      }
+      const idx = branchMsgs.findIndex((m) => m.id === last.nodeId);
+      const prior = idx >= 0 ? branchMsgs.slice(0, idx) : branchMsgs;
+      history.push(...expandToWire(prior));
     }
     history.push({ role: "user", content: userContent });
 
@@ -1429,12 +1473,11 @@ export function useChats(): UseChatResult {
 
       // Build history: walk the active branch of `withChild` up to (but not
       // including) the edited user node, then append the new user content.
-      const history: { role: string; content: string }[] = [];
+      const history: WireMessage[] = [];
       const branch = currentBranch(withChild);
-      for (const m of branch) {
-        if (m.id === userNodeId) break;
-        history.push({ role: m.role, content: m.content });
-      }
+      const idx = branch.findIndex((m) => m.id === userNodeId);
+      const prior = idx >= 0 ? branch.slice(0, idx) : branch;
+      history.push(...expandToWire(prior));
       history.push({ role: "user", content });
 
       // Attachments inherit from the previous active variant — already copied

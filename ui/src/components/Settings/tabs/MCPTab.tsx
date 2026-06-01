@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Plugs, Trash, CaretDown, CaretRight, ArrowsClockwise,
-  Upload, FolderOpen, Plus, X, CheckCircle, XCircle,
+  Upload, FolderOpen, Plus, X, CheckCircle, XCircle, Terminal,
 } from "@phosphor-icons/react";
 import { API_BASE } from "../../../utils/apiBase";
 import type { MCPTransportConfig, MCPStdioConfig, MCPHttpConfig } from "../SettingsPanel";
@@ -75,7 +75,9 @@ export function MCPTab() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [addInitial, setAddInitial] = useState<AddInitial | null>(null);
   const [importing, setImporting] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -130,6 +132,9 @@ export function MCPTab() {
           >
             <FolderOpen size={14} />
           </button>
+          <button className="st2-btn" onClick={() => setInstalling(true)}>
+            <Terminal size={14} /> {t("settings.mcp.installCmd")}
+          </button>
           <button className="st2-btn" onClick={() => setImporting(true)}>
             <Upload size={14} /> {t("settings.mcp.import")}
           </button>
@@ -163,12 +168,14 @@ export function MCPTab() {
 
       {adding ? (
         <AddServerForm
+          key={addInitial ? "prefill" : "blank"}
+          initial={addInitial ?? undefined}
           existingIds={new Set(servers.map((s) => s.id))}
-          onCancel={() => setAdding(false)}
-          onAdded={async () => { setAdding(false); await reload(); }}
+          onCancel={() => { setAdding(false); setAddInitial(null); }}
+          onAdded={async () => { setAdding(false); setAddInitial(null); await reload(); }}
         />
       ) : (
-        <button className="mcp-add-btn" onClick={() => setAdding(true)}>
+        <button className="mcp-add-btn" onClick={() => { setAddInitial(null); setAdding(true); }}>
           <Plus size={14} /> {t("settings.mcp.addServer")}
         </button>
       )}
@@ -177,6 +184,13 @@ export function MCPTab() {
         <ImportModal
           onClose={() => setImporting(false)}
           onDone={async () => { setImporting(false); await reload(); }}
+        />
+      )}
+
+      {installing && (
+        <InstallModal
+          onClose={() => setInstalling(false)}
+          onUseCommand={(init) => { setInstalling(false); setAddInitial(init); setAdding(true); }}
         />
       )}
     </>
@@ -407,16 +421,21 @@ function HttpFields({ form, onChange }: { form: HttpForm; onChange: (f: ConfigFo
 
 /* ── AddServerForm ────────────────────────────────────────────────────── */
 
-function AddServerForm({ existingIds, onCancel, onAdded }: {
+function AddServerForm({ existingIds, onCancel, onAdded, initial }: {
   existingIds: Set<string>;
   onCancel: () => void;
   onAdded: () => void;
+  initial?: AddInitial;
 }) {
   const { t } = useTranslation();
-  const [id, setId] = useState("");
-  const [name, setName] = useState("");
+  const [id, setId] = useState(initial?.id ?? "");
+  const [name, setName] = useState(initial?.name ?? "");
   const [transport, setTransport] = useState<"stdio" | "http">("stdio");
-  const [form, setForm] = useState<ConfigForm>({ transport: "stdio", command: "", argsText: "", env: [], runtime: "host" });
+  const [form, setForm] = useState<ConfigForm>(
+    initial
+      ? { transport: "stdio", command: initial.command, argsText: initial.args.join("\n"), env: [], runtime: initial.runtime }
+      : { transport: "stdio", command: "", argsText: "", env: [], runtime: "host" },
+  );
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -560,7 +579,186 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   );
 }
 
+/* ── InstallModal ─────────────────────────────────────────────────────── */
+
+interface InstallResult {
+  ok: boolean;
+  exit_code: number;
+  output: string;
+  timed_out: boolean;
+}
+
+function InstallModal({ onClose, onUseCommand }: {
+  onClose: () => void;
+  onUseCommand: (init: AddInitial) => void;
+}) {
+  const { t } = useTranslation();
+  const [command, setCommand] = useState("");
+  const [shell, setShell] = useState<"powershell" | "cmd">("powershell");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<InstallResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async () => {
+    const cmd = command.trim();
+    if (!cmd) { setErr(t("settings.mcp.installEmpty")); return; }
+    setErr(null);
+    setResult(null);
+    setRunning(true);
+    try {
+      const r = await fetch(`${API_BASE}/mcp/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd, shell }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({})) as { detail?: string };
+        setErr(j.detail ?? `HTTP ${r.status}`);
+        return;
+      }
+      setResult(await r.json() as InstallResult);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : t("settings.mcp.errorNetwork"));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const statusText = result
+    ? result.timed_out
+      ? t("settings.mcp.installTimedOut")
+      : result.ok
+        ? t("settings.mcp.installExitOk", { code: result.exit_code })
+        : t("settings.mcp.installExitFail", { code: result.exit_code })
+    : null;
+
+  const parsed = command.trim() ? buildAddInitial(command) : null;
+
+  return (
+    <div className="mcp-add-form" style={{ marginTop: 12 }}>
+      <div className="mcp-add-form-head">
+        <span>{t("settings.mcp.installTitle")}</span>
+        <button className="mcp-add-form-close" onClick={onClose}><X size={14} /></button>
+      </div>
+      <p className="st2-sub2">{t("settings.mcp.installDescription")}</p>
+
+      <textarea
+        rows={2}
+        style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12, boxSizing: "border-box" }}
+        value={command}
+        onChange={(e) => setCommand(e.target.value)}
+        placeholder={t("settings.mcp.installPlaceholder")}
+      />
+
+      <div className="mcp-field" style={{ marginTop: 8 }}>
+        <span>{t("settings.mcp.installShell")}</span>
+        <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
+          {(["powershell", "cmd"] as const).map((s) => (
+            <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 400 }}>
+              <input type="radio" checked={shell === s} onChange={() => setShell(s)} />
+              {s === "powershell" ? "PowerShell" : "CMD"}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <p className="st2-sub2" style={{ marginTop: 8, color: "var(--muted)" }}>{t("settings.mcp.installHostNote")}</p>
+
+      {err && <div className="st2-error" style={{ margin: "8px 0 0", position: "static" }}>{err}</div>}
+
+      {statusText && (
+        <div className={result?.ok ? "mcp-test-ok" : "mcp-test-err"} style={{ marginTop: 8 }}>
+          {result?.ok ? <CheckCircle size={14} weight="fill" /> : <XCircle size={14} weight="fill" />} {statusText}
+        </div>
+      )}
+      {result && result.output && (
+        <pre
+          style={{
+            marginTop: 8, maxHeight: 240, overflow: "auto",
+            whiteSpace: "pre-wrap", wordBreak: "break-word",
+            fontFamily: "var(--font-mono)", fontSize: 12,
+            background: "var(--bg-2, rgba(0,0,0,0.2))", padding: 10, borderRadius: 8,
+          }}
+        >
+          {result.output}
+        </pre>
+      )}
+
+      <div className="mcp-actions" style={{ marginTop: 12 }}>
+        <button className={`st2-btn${result ? "" : " st2-btn--primary"}`} onClick={run} disabled={running}>
+          {running ? t("settings.mcp.installRunning") : t("settings.mcp.installRun")}
+        </button>
+        {result && parsed && (
+          <button className="st2-btn st2-btn--primary" onClick={() => onUseCommand(parsed)} disabled={running}>
+            {t("settings.mcp.installAddServer")}
+          </button>
+        )}
+        <button className="st2-btn" onClick={onClose} disabled={running}>{t("settings.mcp.cancel")}</button>
+      </div>
+    </div>
+  );
+}
+
 /* ── helpers ──────────────────────────────────────────────────────────── */
+
+/** Initial values for the add-server form, parsed from an install command. */
+interface AddInitial {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  runtime: "host" | "wsl";
+}
+
+/** Split a shell-ish command line into tokens, honouring single/double quotes. */
+function tokenizeCommand(raw: string): string[] {
+  const tokens: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  for (const ch of raw) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      if (cur) { tokens.push(cur); cur = ""; }
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
+/** Derive a slug id + display name from the package-looking token. */
+function guessIdName(command: string, args: string[]): { id: string; name: string } {
+  const pkg = args.find((a) => !a.startsWith("-")) ?? command;
+  let base = pkg.split("/").pop() ?? pkg;        // @upstash/context7-mcp → context7-mcp
+  base = base.replace(/^@/, "");
+  base = base.replace(/[-_]?mcp([-_]server)?$/i, ""); // context7-mcp → context7
+  base = base.replace(/^mcp[-_]?server[-_]?/i, "");   // mcp-server-git → git
+  base = base.replace(/^server[-_]/i, "");
+  const id = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "mcp-server";
+  const name = id.split("-").filter(Boolean).map((s) => s[0]!.toUpperCase() + s.slice(1)).join(" ") || "MCP Server";
+  return { id, name };
+}
+
+/** Turn an install command into prefilled add-server values, or null if empty.
+ *  Unwraps a `claude mcp add <id> -- <runner …>` wrapper to the real runner.
+ *  Runtime is always "host" — these commands run on the host shell, not WSL. */
+function buildAddInitial(raw: string): AddInitial | null {
+  let tokens = tokenizeCommand(raw.trim());
+  if (tokens.length === 0) return null;
+  if (tokens[0] === "claude" && tokens.includes("--")) {
+    tokens = tokens.slice(tokens.indexOf("--") + 1);
+  }
+  if (tokens.length === 0) return null;
+  const command = tokens[0]!;
+  const args = tokens.slice(1);
+  const { id, name } = guessIdName(command, args);
+  return { id, name, command, args, runtime: "host" };
+}
 
 function parseKV(text: string): Record<string, string> | null {
   const out: Record<string, string> = {};

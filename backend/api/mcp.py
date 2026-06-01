@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from api.schemas.mcp import (
     MCPImportPayload,
+    MCPInstallRequest,
+    MCPInstallResult,
     MCPServerView,
     MCPTestResult,
     MCPToolView,
@@ -26,6 +29,10 @@ from mcp_integration.config import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
+
+# Installers (npx/uvx) may download packages on first run — give them room,
+# but cap it so a hung command can't pin the request forever.
+_INSTALL_TIMEOUT_S = 300
 
 
 def _view(cfg: MCPServerConfig, request: Request) -> MCPServerView:
@@ -59,6 +66,58 @@ async def open_config_dir() -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"path": path}
+
+
+@router.post("/install", response_model=MCPInstallResult)
+async def run_install_command(body: MCPInstallRequest) -> MCPInstallResult:
+    """Run a one-shot MCP install command on the host shell and return its output.
+
+    This deliberately executes the user-supplied command verbatim — it is a
+    convenience for the install lines MCP servers print in their README (the
+    user could equally paste them into their own terminal). It always runs on
+    the host (PowerShell or CMD on Windows; ``/bin/sh`` elsewhere), never WSL.
+    stdout and stderr are merged so the UI shows everything in order.
+    """
+    command = body.command.strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="Empty command")
+
+    if sys.platform == "win32":
+        if body.shell == "cmd":
+            argv = ["cmd.exe", "/c", command]
+        else:
+            argv = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command]
+    else:
+        # Non-Windows hosts: a plain login shell. Still the host, not WSL.
+        argv = ["/bin/sh", "-lc", command]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Shell not found: {exc}") from exc
+
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=_INSTALL_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return MCPInstallResult(
+            ok=False,
+            exit_code=-1,
+            output=f"… killed after {_INSTALL_TIMEOUT_S}s timeout",
+            timed_out=True,
+        )
+
+    code = proc.returncode if proc.returncode is not None else -1
+    return MCPInstallResult(
+        ok=code == 0,
+        exit_code=code,
+        output=out.decode("utf-8", errors="replace"),
+    )
 
 
 @router.get("/servers", response_model=list[MCPServerView])
