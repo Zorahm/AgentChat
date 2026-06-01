@@ -229,14 +229,33 @@ class WebSearchService:
         if not config.searxng_url:
             raise RuntimeError("SearXNG backend selected but SEARXNG_URL is not set.")
         base = config.searxng_url.rstrip("/")
+        # A SearXNG-friendly UA: the default ``python-httpx/x.y`` UA can trip
+        # the bot-detection middleware on newer SearXNG builds.
+        headers = {
+            "User-Agent": "AgentChat/1.0 (+https://github.com/anomalyco/AgentChat)",
+            "Accept": "application/json",
+        }
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.get(
                 f"{base}/search",
                 params={"q": query, "format": "json"},
-                headers={"Accept": "application/json"},
+                headers=headers,
             )
-            resp.raise_for_status()
-            data = resp.json()
+        if resp.status_code == 403:
+            # Most common cause: the JSON format is not enabled in the
+            # SearXNG ``settings.yml`` (default for self-hosted instances).
+            # On the bundled installer this can also be Docker Desktop's
+            # WSL2 bind-mount silently dropping our config — Settings →
+            # Providers → SearXNG has a "Repair config" button for that.
+            raise RuntimeError(
+                f"SearXNG returned 403 Forbidden for {base}/search?format=json. "
+                "The JSON format is likely disabled in settings.yml — make "
+                "sure 'json' is listed under search.formats and limiter is "
+                "off, then restart SearXNG. If you installed it via AgentChat, "
+                "open Settings → Providers → SearXNG and click \"Repair config\"."
+            )
+        resp.raise_for_status()
+        data = resp.json()
         out: list[SearchResult] = []
         for r in data.get("results", [])[:max_results]:
             if not isinstance(r, dict):

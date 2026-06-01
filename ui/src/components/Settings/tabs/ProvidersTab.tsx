@@ -333,6 +333,8 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
   const [dockerLog, setDockerLog] = useState("");
   const [dockerError, setDockerError] = useState<string | null>(null);
   const [dockerBusy, setDockerBusy] = useState(false);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairResult, setRepairResult] = useState<{ ok: boolean; message: string } | null>(null);
   const notifiedRef = useRef(false);
 
   const refreshStatus = () => {
@@ -408,6 +410,25 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
       .catch(() => setDockerBusy(false));
   };
 
+  // Re-apply settings.yml into an already-running container. Useful when
+  // /search?format=json returns 403 because Docker Desktop + WSL2 silently
+  // dropped our bind-mounted config.
+  const repair = () => {
+    setRepairBusy(true);
+    setRepairResult(null);
+    fetch(`${API_BASE}/searxng/repair`, { method: "POST" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { success: boolean; output: string }) => {
+        setRepairResult({ ok: d.success, message: d.output });
+        refreshStatus();
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        setRepairResult({ ok: false, message });
+      })
+      .finally(() => setRepairBusy(false));
+  };
+
   if (!status) return null;
 
   return (
@@ -442,13 +463,28 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
           <p className="st2-ws-hint">
             {status.docker_available ? t(`${WS}.installHint`) : t(`${WS}.dockerSetupHint`)}
           </p>
-          <button className="st2-btn" onClick={install} disabled={busy}>
-            {busy
-              ? t(`${WS}.installing`)
-              : status.running
-                ? t(`${WS}.reinstall`)
-                : t(`${WS}.install`)}
-          </button>
+          <div className="st2-ws-btn-row">
+            <button className="st2-btn" onClick={install} disabled={busy || repairBusy}>
+              {busy
+                ? t(`${WS}.installing`)
+                : status.running
+                  ? t(`${WS}.reinstall`)
+                  : t(`${WS}.install`)}
+            </button>
+            {status.running && (
+              <button
+                className="st2-btn st2-btn-secondary"
+                onClick={repair}
+                disabled={busy || repairBusy}
+                title={t(`${WS}.repairHint`)}
+              >
+                {repairBusy ? t(`${WS}.repairing`) : t(`${WS}.repair`)}
+              </button>
+            )}
+          </div>
+          {status.running && (
+            <p className="st2-ws-hint st2-ws-hint-sub">{t(`${WS}.repairHint`)}</p>
+          )}
         </>
       )}
 
@@ -460,6 +496,10 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
 
       {(log || error) && (
         <pre className={`st2-ws-log${error ? " err" : ""}`}>{error ? `${log}\n${error}` : log}</pre>
+      )}
+
+      {repairResult && (
+        <pre className={`st2-ws-log${repairResult.ok ? "" : " err"}`}>{repairResult.message}</pre>
       )}
     </div>
   );

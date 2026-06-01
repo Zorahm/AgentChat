@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -23,7 +24,7 @@ import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agent.wsl_exec import decode_loose, wsl_run, wsl_write_bytes
+from agent.wsl_exec import decode_loose, wsl_read_text, wsl_run, wsl_write_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,90 @@ async def _health_ok() -> bool:
         return resp.status_code == 200
     except Exception:
         return False
+
+
+# ── settings push (bypasses bind-mount) ──────────────────────────────────────
+
+# Docker Desktop + WSL2 sometimes resolves the bind-mount source path inside
+# the ``docker-desktop`` distro instead of the user's distro. The container
+# then sees an empty mount, SearXNG's entrypoint writes a default
+# ``settings.yml`` with JSON output OFF, and ``/search?format=json`` returns
+# 403 Forbidden. ``docker cp`` goes through the daemon API and is immune.
+
+_SECRET_KEY_RE = re.compile(r'secret_key:\s*"([^"]+)"')
+
+
+def _extract_secret_key(text: str) -> str | None:
+    m = _SECRET_KEY_RE.search(text)
+    return m.group(1) if m else None
+
+
+async def _host_secret_key(path: str) -> str | None:
+    """Read the existing ``secret_key`` from the host settings.yml, if any."""
+    try:
+        return _extract_secret_key(await wsl_read_text(path))
+    except (FileNotFoundError, OSError):
+        return None
+
+
+async def _container_secret_key(container: str) -> str | None:
+    """Read the existing ``secret_key`` from the container's settings.yml."""
+    r = await wsl_run(
+        f"docker exec {shlex.quote(container)} cat /etc/searxng/settings.yml",
+        timeout=20,
+    )
+    if r.returncode != 0:
+        return None
+    return _extract_secret_key(decode_loose(r.stdout))
+
+
+async def _apply_settings_into_container(
+    container: str, content: str
+) -> tuple[bool, str | None]:
+    """Push ``content`` to ``/etc/searxng/settings.yml`` inside ``container``
+    via ``docker cp``, then restart the container. Returns (success, error)."""
+    tmp = f"/tmp/searxng-settings-{secrets.token_hex(4)}.yml"
+    try:
+        try:
+            await wsl_write_bytes(tmp, content.encode())
+        except OSError as exc:
+            return False, f"write tempfile: {exc}"
+        cp = await wsl_run(
+            f"docker cp {shlex.quote(tmp)} "
+            f"{shlex.quote(container)}:/etc/searxng/settings.yml",
+            timeout=60,
+        )
+        if cp.returncode != 0:
+            err = decode_loose(cp.stderr).strip() or f"docker cp exit {cp.returncode}"
+            return False, err
+        # The image runs as ``searxng`` (uid 977); make sure it can still read
+        # the file after we overwrote it as the cp user.
+        await wsl_run(
+            f"docker exec -u root {shlex.quote(container)} "
+            f"chown searxng:searxng /etc/searxng/settings.yml",
+            timeout=20,
+        )
+        restart = await wsl_run(
+            f"docker restart {shlex.quote(container)}", timeout=60
+        )
+        if restart.returncode != 0:
+            err = (
+                decode_loose(restart.stderr).strip()
+                or f"docker restart exit {restart.returncode}"
+            )
+            return False, err
+        return True, None
+    finally:
+        await wsl_run(f"rm -f {shlex.quote(tmp)}", timeout=10)
+
+
+async def _wait_for_health(attempts: int = 20, delay: float = 2.0) -> bool:
+    """Poll the JSON endpoint until it returns 200 or attempts run out."""
+    for _ in range(attempts):
+        if await _health_ok():
+            return True
+        await asyncio.sleep(delay)
+    return False
 
 
 # ── Docker Desktop (Windows host) ───────────────────────────────────────────
@@ -418,11 +503,15 @@ async def _run_install(set_url: Callable[[str], None]) -> None:
         settings_dir = f"{home}/AgentChat/searxng"
         settings_path = f"{settings_dir}/settings.yml"
 
-        # Write settings.yml once (preserve an existing secret_key on reinstall).
-        exists = await wsl_run(f"test -f {shlex.quote(settings_path)}", timeout=15)
-        if exists.returncode != 0:
-            emit("Writing settings.yml (JSON output enabled)…")
-            await wsl_write_bytes(settings_path, _settings_yml(secrets.token_hex(32)).encode())
+        # Preserve an existing secret_key across reinstalls so user sessions
+        # don't churn, otherwise mint a fresh one.
+        secret = await _host_secret_key(settings_path) or secrets.token_hex(32)
+        settings_content = _settings_yml(secret)
+
+        # Always write the host file: it's our source of truth and lets the
+        # bind-mount carry the config on setups where it works.
+        emit("Writing settings.yml (JSON output enabled)…")
+        await wsl_write_bytes(settings_path, settings_content.encode())
 
         emit("Pulling searxng/searxng and starting the container (first run takes a few minutes)…")
         # No shell variable assignments — this host returns them empty inside
@@ -442,13 +531,23 @@ async def _run_install(set_url: Callable[[str], None]) -> None:
             _install_error = f"docker run failed (exit {r.returncode}) — see log."
             return
 
+        # Docker Desktop on Windows resolves bind-mount sources inside its own
+        # ``docker-desktop`` WSL distro rather than the user's, so SearXNG can
+        # start with a default settings.yml (JSON OFF) even when our file is
+        # in place on the host. ``docker cp`` makes this reliable regardless.
+        emit("Pushing settings.yml into the container (docker cp)…")
+        ok, msg = await _apply_settings_into_container(_CONTAINER, settings_content)
+        if not ok:
+            _install_error = (
+                f"Could not push settings.yml into the container: {msg}"
+            )
+            return
+
         emit("Container started. Waiting for SearXNG to answer JSON queries…")
-        for _ in range(20):
-            if await _health_ok():
-                set_url(_URL)
-                emit(f"✓ SearXNG is up at {_URL} and answering JSON. Saved as the SearXNG URL.")
-                return
-            await asyncio.sleep(2)
+        if await _wait_for_health():
+            set_url(_URL)
+            emit(f"✓ SearXNG is up at {_URL} and answering JSON. Saved as the SearXNG URL.")
+            return
         _install_error = (
             "Container is running but did not answer a JSON query in time. "
             "Check the container logs (docker logs agentchat-searxng)."
@@ -495,3 +594,45 @@ async def stop() -> ActionResult:
     r = await wsl_run(f"docker stop {_CONTAINER}", timeout=30)
     out = decode_loose(r.stdout).strip() or decode_loose(r.stderr).strip()
     return ActionResult(success=r.returncode == 0, output=out or "stopped")
+
+
+@router.post("/repair", response_model=ActionResult)
+async def repair() -> ActionResult:
+    """Re-apply settings.yml inside the already-running container.
+
+    Use this when the container is up but ``/search?format=json`` returns 403:
+    a known Docker Desktop + WSL2 quirk silently drops the bind-mounted
+    config, so SearXNG starts with the default settings (JSON output OFF).
+    """
+    if not await _container_running():
+        return ActionResult(
+            success=False,
+            output=f"Container {_CONTAINER!r} is not running — install it first.",
+        )
+
+    # Preserve the existing secret_key (live one inside the container, falling
+    # back to the host file, finally a fresh key) so user sessions survive.
+    secret = (
+        await _container_secret_key(_CONTAINER)
+        or await _host_secret_key((await _wsl_home() or "") + "/AgentChat/searxng/settings.yml")
+        or secrets.token_hex(32)
+    )
+    content = _settings_yml(secret)
+
+    ok, msg = await _apply_settings_into_container(_CONTAINER, content)
+    if not ok:
+        return ActionResult(success=False, output=msg or "repair failed")
+
+    if await _wait_for_health():
+        return ActionResult(
+            success=True,
+            output=f"SearXNG settings re-applied; JSON endpoint is responding at {_URL}.",
+        )
+    return ActionResult(
+        success=False,
+        output=(
+            "Settings re-applied but the JSON endpoint did not respond in time. "
+            "Check `docker logs agentchat-searxng`."
+        ),
+    )
+

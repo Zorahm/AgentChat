@@ -374,8 +374,10 @@ async def chat(
                 extra_body = {}
             extra_body["reasoning_effort"] = body.effort
 
-    # Build fresh system prompt (includes current date + artifact instructions)
-    system_prompt: str = app_state.system_prompt_factory()
+    # Build fresh system prompt (includes current date + model identity +
+    # artifact instructions). The model id goes in so the assistant knows
+    # which LLM it is when asked.
+    system_prompt: str = app_state.system_prompt_factory(model)
 
     base_registry: ToolRegistry = app_state.tool_registry
     mcp_proxies = await _build_mcp_proxies(

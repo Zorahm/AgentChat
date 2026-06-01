@@ -221,15 +221,22 @@ def get_allowed_read_prefixes() -> tuple[str, ...]:
     return (str(USER_AGENTS_DIR), _wsl_form(USER_AGENTS_DIR))
 
 
-def build_system_prompt(user_name: str = "", shell: str = "wsl") -> str:
+def build_system_prompt(user_name: str = "", shell: str = "wsl", model: str = "") -> str:
     """Build the system prompt with fresh date on every call.
 
     ``shell`` controls which terminal the bash_tool description advertises —
     "wsl" (bash inside WSL) or "powershell" (Windows PowerShell). The chat
     working folder lives on the matching filesystem.
+
+    ``model`` is the id of the LLM that will receive this prompt (e.g.
+    "anthropic/claude-3-5-sonnet-20241022"). When non-empty, it surfaces as a
+    "Model: …" line so the assistant knows its own identity — useful when the
+    user asks which model they're talking to. All providers are reached
+    through LiteLLM, so the line spells that out explicitly.
     """
     name = user_name or os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
     now = datetime.now().strftime("%d %B %Y, %H:%M")
+    model_line = f"Model: {model} (routed via LiteLLM)\n" if model else ""
 
     if shell == "powershell":
         shell_block = (
@@ -261,7 +268,7 @@ You are an AI assistant running in a desktop application called "AgentChat".
 User: {name}
 {shell_block}
 Date: {now}
-
+{model_line}
 ## Tools
 
 {bash_desc}
@@ -1003,9 +1010,10 @@ def create_app() -> FastAPI:
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
     app.state.web_search_service = web_search_service
-    app.state.system_prompt_factory: Callable[[], str] = lambda: build_system_prompt(
+    app.state.system_prompt_factory: Callable[[str], str] = lambda model="": build_system_prompt(
         user_name=settings_store.user_name,
         shell=resolve_active_shell(settings_store.shell_preference),
+        model=model,
     )
 
     # --- routers ---

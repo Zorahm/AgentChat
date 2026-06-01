@@ -599,7 +599,10 @@
         "installHint": "Запускает официальный образ searxng/searxng через Docker в WSL на порту 8080 с включённым JSON-выводом.",
         "install": "Установить SearXNG",
         "installing": "Устанавливаю…",
-        "reinstall": "Переустановить"
+        "reinstall": "Переустановить",
+        "repair": "Починить конфиг",
+        "repairing": "Чиню…",
+        "repairHint": "Перезаписывает settings.yml внутри запущенного контейнера. Помогает, если веб-поиск отдаёт 403 — Docker Desktop в WSL2 иногда молча игнорирует bind-mount с нашим конфигом."
       },
       "validationRequired": "Название и API base обязательны",
       "validationFormat": "Название должно содержать хотя бы одну латинскую букву или цифру",

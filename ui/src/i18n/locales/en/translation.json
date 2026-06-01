@@ -591,7 +591,10 @@
         "installHint": "Runs the official searxng/searxng image via Docker in WSL on port 8080, with JSON output enabled.",
         "install": "Install SearXNG",
         "installing": "Installing…",
-        "reinstall": "Reinstall"
+        "reinstall": "Reinstall",
+        "repair": "Repair config",
+        "repairing": "Repairing…",
+        "repairHint": "Re-applies settings.yml inside the running container. Use this if web search returns 403 — Docker Desktop on WSL2 sometimes silently drops the bind-mounted config."
       },
       "validationRequired": "Name and API base are required",
       "validationFormat": "Name must contain at least one latin letter or digit",
