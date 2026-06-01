@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChats, type AgentChatState } from "./hooks/useChats";
 import { Sidebar } from "./components/Sidebar";
 import { useAvatar } from "./hooks/useAvatar";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
@@ -44,6 +45,7 @@ export function App() {
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
   const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
+  const appUpdate = useAppUpdate();
   const [theme, setTheme] = useState("system");
   const [language, setLanguage] = useState("");
   const [wslWarning, setWslWarning] = useState(false);
@@ -396,6 +398,7 @@ export function App() {
           userName={userName}
           avatarUrl={avatarUrl}
           mobileOpen={isMobile && mobileNavOpen}
+          update={appUpdate}
         />
 
         {view === "projects" ? (

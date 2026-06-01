@@ -258,7 +258,14 @@
     "confirmYes": "Yes",
     "save": "Save",
     "unpinTooltip": "Unpin",
-    "pinTooltip": "Pin"
+    "pinTooltip": "Pin",
+    "updateAvailable": "Update available v{{version}}",
+    "updateRestart": "Restart & update",
+    "updateLater": "Install later",
+    "updateDownloading": "Downloading {{progress}}%",
+    "updateInstalling": "Installing…",
+    "updateFailed": "Update failed",
+    "updateRetry": "Retry"
   },
   "projects": {
     "title": "Projects",

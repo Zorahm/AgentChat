@@ -265,7 +265,14 @@
     "confirmYes": "Да",
     "save": "Сохранить",
     "unpinTooltip": "Открепить",
-    "pinTooltip": "Закрепить"
+    "pinTooltip": "Закрепить",
+    "updateAvailable": "Доступно обновление v{{version}}",
+    "updateRestart": "Перезагрузить для обновления",
+    "updateLater": "Установить позже",
+    "updateDownloading": "Загрузка {{progress}}%",
+    "updateInstalling": "Установка…",
+    "updateFailed": "Не удалось обновить",
+    "updateRetry": "Повторить"
   },
   "projects": {
     "title": "Проекты",

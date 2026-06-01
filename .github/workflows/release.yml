@@ -13,6 +13,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the tag object itself (annotated tag message) — a shallow
+          # checkout may omit it, so fetch full history + tags.
+          fetch-depth: 0
+
+      - name: Read release notes from the git tag message
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # The annotated tag's own message is the release text. `%(contents)`
+          # yields subject + body (the maintainer writes it at `git tag -a`).
+          $body = git tag -l $tag --format='%(contents)'
+          $body = ($body -join "`n").Trim()
+          if (-not $body) { $body = $tag }
+          Write-Host "==> release notes:`n$body"
+          $delim = "NOTES_EOF_$(Get-Random)"
+          "body<<$delim"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $body           | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $delim          | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -66,8 +86,10 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AgentChat ${{ github.ref_name }}"
-          releaseBody: |
-            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          # This body is also written verbatim into latest.json `notes`, which
+          # the in-app "About" update card displays — so it must be the real
+          # release text, not a link to CHANGELOG.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           projectPath: src-tauri

@@ -433,6 +433,80 @@ body.resizing { cursor: ew-resize !important; user-select: none; }
   padding: 20px 10px; text-align: center; font-size: 13px; color: var(--faint);
 }
 
+/* ── Update banner (auto-update at startup) ─────────────────────────────── */
+.sb-update {
+  position: relative;
+  flex-shrink: 0;
+  margin: 0 10px 8px;
+  padding: 10px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+  display: flex; flex-direction: column; gap: 8px;
+  animation: sb-update-in .2s ease;
+}
+@keyframes sb-update-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sb-update--busy { flex-direction: row; align-items: center; gap: 8px; }
+.sb-update--busy svg { color: var(--accent); flex-shrink: 0; }
+.sb-update--error {
+  border-color: var(--err-line);
+  background: var(--err-soft);
+}
+
+.sb-update-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+.sb-update-head svg { color: var(--accent); flex-shrink: 0; }
+.sb-update--error .sb-update-head svg { color: var(--err); }
+
+.sb-update-msg {
+  font-size: 11.5px; color: var(--muted);
+  line-height: 1.35; word-break: break-word;
+}
+
+.sb-update-actions { display: flex; gap: 6px; }
+.sb-update-btn {
+  flex: 1; padding: 6px 8px;
+  border-radius: 7px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink);
+  font-size: 11.5px; font-weight: 500; cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.sb-update-btn:hover:not(:disabled) { background: var(--hover); }
+.sb-update-btn:disabled { opacity: .5; cursor: default; }
+.sb-update-btn--primary {
+  background: var(--accent); border-color: var(--accent); color: var(--on-ink);
+}
+.sb-update-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+.sb-update-x {
+  position: absolute; top: 6px; right: 6px;
+  width: 20px; height: 20px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--muted); display: flex; align-items: center; justify-content: center;
+  border-radius: 5px; transition: background .12s, color .12s;
+}
+.sb-update-x:hover { background: var(--hover); color: var(--ink); }
+
+/* Collapsed-sidebar chip */
+.sb-col-update {
+  width: 32px; height: 32px; margin: 2px auto 4px;
+  border-radius: 8px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background .12s;
+}
+.sb-col-update:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, var(--surface-2)); }
+.sb-col-update:disabled { opacity: .6; cursor: default; }
+.sb-col-update--error { border-color: var(--err-line); background: var(--err-soft); color: var(--err); }
+
 .sb-foot {
   flex-shrink: 0; padding: 8px 10px;
   border-top: 1px solid var(--line);

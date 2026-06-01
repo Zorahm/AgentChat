@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images } from "@phosphor-icons/react";
+import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images, ArrowClockwise, CloudArrowDown, WarningCircle } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
+import type { AppUpdate } from "../hooks/useAppUpdate";
 import { useLongPress } from "../hooks/useLongPress";
 import { GhostChat } from "./GhostChat";
 import { useTranslation } from "react-i18next";
@@ -21,6 +22,8 @@ interface SidebarProps {
   avatarUrl: string | null;
   /** Mobile only: when true the sidebar slides in as an off-canvas drawer. */
   mobileOpen?: boolean;
+  /** Desktop auto-update banner state (absent in the browser/dev build). */
+  update?: AppUpdate;
 }
 
 const RECENT_LIMIT = 15;
@@ -28,7 +31,7 @@ const RECENT_LIMIT = 15;
 export function Sidebar({
   sessions, activeId, onNew, onSwitch, onDelete, onRename, onPin,
   activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
-  mobileOpen = false,
+  mobileOpen = false, update,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [orderIds, setOrderIds] = useState<string[]>(() => {
@@ -245,6 +248,9 @@ export function Sidebar({
           )}
         </div>
 
+        {/* Update chip */}
+        {update?.visible && <UpdateChip update={update} />}
+
         {/* Bottom nav */}
         <nav className="sb-col-foot">
           <button
@@ -384,6 +390,8 @@ export function Sidebar({
 
       </div>
 
+      {update?.visible && <UpdateBanner update={update} />}
+
       <div className="sb-foot">
         <div className="sb-user" onClick={() => onNavigate("settings")}>
           <AvatarCircle url={avatarUrl} name={userName} size={30} />
@@ -415,6 +423,107 @@ export function Sidebar({
 
       {ghostOpen && <GhostChat onClose={handleGhostClose} />}
     </aside>
+  );
+}
+
+/* ── Update Banner (expanded sidebar) ───────────────────────────────────── */
+
+function UpdateBanner({ update }: { update: AppUpdate }) {
+  const { t } = useTranslation();
+  const { status, busy, install, dismiss } = update;
+
+  if (status.state === "downloading") {
+    return (
+      <div className="sb-update sb-update--busy">
+        <ArrowClockwise className="spin" />
+        <span className="sb-update-msg">{t("sidebar.updateDownloading", { progress: status.progress })}</span>
+      </div>
+    );
+  }
+
+  if (status.state === "installing") {
+    return (
+      <div className="sb-update sb-update--busy">
+        <ArrowClockwise className="spin" />
+        <span className="sb-update-msg">{t("sidebar.updateInstalling")}</span>
+      </div>
+    );
+  }
+
+  if (status.state === "error") {
+    return (
+      <div className="sb-update sb-update--error">
+        <button className="sb-update-x" onClick={dismiss} title={t("sidebar.updateLater")}><X /></button>
+        <div className="sb-update-head">
+          <WarningCircle />
+          <span>{t("sidebar.updateFailed")}</span>
+        </div>
+        <div className="sb-update-msg">{status.message}</div>
+        <div className="sb-update-actions">
+          <button className="sb-update-btn sb-update-btn--primary" onClick={() => void install()}>
+            {t("sidebar.updateRetry")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state !== "available") return null;
+
+  return (
+    <div className="sb-update sb-update--available">
+      <div className="sb-update-head">
+        <CloudArrowDown />
+        <span>{t("sidebar.updateAvailable", { version: status.version })}</span>
+      </div>
+      <div className="sb-update-actions">
+        <button
+          className="sb-update-btn sb-update-btn--primary"
+          onClick={() => void install()}
+          disabled={busy}
+        >
+          {t("sidebar.updateRestart")}
+        </button>
+        <button className="sb-update-btn" onClick={dismiss} disabled={busy}>
+          {t("sidebar.updateLater")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Update Chip (collapsed sidebar) ────────────────────────────────────── */
+
+function UpdateChip({ update }: { update: AppUpdate }) {
+  const { t } = useTranslation();
+  const { status, busy, install } = update;
+
+  const title =
+    status.state === "downloading"
+      ? t("sidebar.updateDownloading", { progress: status.progress })
+      : status.state === "installing"
+        ? t("sidebar.updateInstalling")
+        : status.state === "error"
+          ? t("sidebar.updateFailed")
+          : status.state === "available"
+            ? t("sidebar.updateAvailable", { version: status.version })
+            : "";
+
+  return (
+    <button
+      className={`sb-col-update${status.state === "error" ? " sb-col-update--error" : ""}`}
+      onClick={() => void install()}
+      disabled={busy}
+      title={title}
+    >
+      {status.state === "error" ? (
+        <WarningCircle size={16} />
+      ) : busy ? (
+        <ArrowClockwise size={16} className="spin" />
+      ) : (
+        <CloudArrowDown size={16} />
+      )}
+    </button>
   );
 }
 
