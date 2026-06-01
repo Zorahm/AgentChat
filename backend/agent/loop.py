@@ -26,6 +26,81 @@ from tools.edit_file import (
 from tools.registry import ToolRegistry
 
 
+# Provider error fragments that mean "this model can't accept image input".
+# We require an image/vision *subject* together with a *negation* so unrelated
+# failures that merely mention "image" don't trip the fallback.
+_VISION_SUBJECT_MARKERS: tuple[str, ...] = (
+    "image",
+    "vision",
+    "multimodal",
+    "image_url",
+)
+_VISION_NEGATION_MARKERS: tuple[str, ...] = (
+    "not support",
+    "does not support",
+    "doesn't support",
+    "do not support",
+    "unsupported",
+    "cannot",
+    "can't",
+    "invalid",
+    "no vision",
+    "not a valid",
+    "only support",
+    "text-only",
+    "text only",
+    "not allowed",
+    "not multimodal",
+)
+
+
+def _is_vision_rejection(message: str) -> bool:
+    """Heuristic: does this provider error read like an image/vision rejection?"""
+    s = message.lower()
+    return any(k in s for k in _VISION_SUBJECT_MARKERS) and any(
+        k in s for k in _VISION_NEGATION_MARKERS
+    )
+
+
+def _strip_image_blocks(messages: list[dict[str, Any]], error: str) -> bool:
+    """Replace image content with a text note explaining the model can't see it.
+
+    Returns True if any image block was found and replaced. Used to recover when
+    a provider rejects image input on a model without vision: we swap the pixels
+    for the provider's own error so the model can keep going in text (e.g. open
+    the file via bash) instead of crashing the request."""
+    note = (
+        "[Image could not be read — this model has no vision. "
+        f"Provider error: {error}. The file is still on disk; "
+        "use bash_tool to inspect it (identify, exiftool, pdftotext, etc.).]"
+    )
+    found = False
+    for m in messages:
+        content = m.get("content")
+        if not isinstance(content, list):
+            continue
+        if not any(
+            isinstance(b, dict) and b.get("type") == "image_url" for b in content
+        ):
+            continue
+        found = True
+        if m.get("role") == "tool":
+            # The whole tool result was image content → replace with the note.
+            m["content"] = note
+            continue
+        new_blocks: list[dict[str, Any]] = []
+        noted = False
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "image_url":
+                if not noted:
+                    new_blocks.append({"type": "text", "text": note})
+                    noted = True
+            else:
+                new_blocks.append(b)
+        m["content"] = new_blocks
+    return found
+
+
 _MATH_RENDERING_ADDENDUM = """## Math rendering
 This chat renders LaTeX via KaTeX. Use `$...$` for inline math and `$$...$$`
 for display equations on their own line. Prefer display (`$$`) for anything
@@ -257,9 +332,13 @@ class AgentLoop:
             tool_defs = tool_defs + self._extra_tools
         tool_defs_or_none = tool_defs if tool_defs else None
 
+        # Set when we transparently retried a pass after stripping image blocks
+        # the model couldn't read — suppresses the reasoning break for the retry.
+        retrying_vision = False
         for iteration_idx in range(self.config.max_iterations):
-            if iteration_idx > 0:
+            if iteration_idx > 0 and not retrying_vision:
                 yield {"type": "reasoning_break"}
+            retrying_vision = False
             accumulated_content = ""
             accumulated_reasoning = ""
             tool_call_state: dict[int, dict[str, Any]] = {}
@@ -321,6 +400,16 @@ class AgentLoop:
                         self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
                         for event in emit_write_file_chunks(tool_call_state, wf_state):
                             yield event
+            except Exception as exc:
+                # Model without vision rejected an image block. Swap the pixels
+                # for the provider's error and retry the pass in text, so the
+                # model can keep going instead of failing the whole request.
+                if _is_vision_rejection(str(exc)) and _strip_image_blocks(
+                    self.messages, str(exc)
+                ):
+                    retrying_vision = True
+                    continue
+                raise
             finally:
                 # Promptly close the upstream HTTP stream — matters when we break
                 # out early on an aborted tag rather than draining to completion.

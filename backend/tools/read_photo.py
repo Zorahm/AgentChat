@@ -37,13 +37,9 @@ class ReadPhotoTool(BaseTool):
 
     def __init__(self) -> None:
         self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
-        self._vision_supported: bool = True
 
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
-
-    def set_vision_supported(self, supported: bool) -> None:
-        self._vision_supported = supported
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -64,14 +60,6 @@ class ReadPhotoTool(BaseTool):
         )
 
     async def execute(self, path: str) -> str | list[dict[str, Any]]:  # type: ignore[override]
-        if not self._vision_supported:
-            return (
-                f"Model does not support vision — pixel content is not accessible.\n"
-                f"File available at: {path}\n"
-                f"You can: read metadata (bash_tool: exiftool / identify -verbose), "
-                f"convert, rename, embed into a document — or ask the user to describe the content."
-            )
-
         denied = self._policy.check_read(path)
         if denied:
             return f"Error: {denied}"

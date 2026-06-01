@@ -8,7 +8,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-import litellm
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -96,30 +95,16 @@ def _sse_event(event_type: str, data: dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {payload}\n\n"
 
 
-def _model_supports_vision(model: str) -> bool:
-    """Best-effort check via LiteLLM's capability registry.
-
-    Unknown providers / proxy aliases raise — treat any exception as
-    "unknown, assume no vision" so we degrade safely instead of crashing
-    the request with an unsupported image_url block."""
-    try:
-        return bool(litellm.supports_vision(model=model))
-    except Exception:
-        return False
-
-
 def _format_user_content(
     text: str,
     attachments: list[AttachmentInfo] | None,
-    *,
-    vision: bool,
 ) -> str | list[dict[str, Any]]:
     """Build the user message content with attachment info inline.
 
-    Returns a plain string for text-only messages, or a vision-format list
-    when images are attached AND the model supports vision. For non-vision
-    models, images are still mentioned by path so the model can move,
-    embed, or transform the file via bash / python — it just can't *see* it.
+    Images are always attached as vision blocks (optimistically — we don't try
+    to guess whether the model can see). If the model can't, the provider
+    rejects the request and the agent loop swaps the pixels for the provider's
+    error and retries in text. See agent.loop._is_vision_rejection.
 
     Text attachments smaller than INLINE_CONTENT_LIMIT chars are inlined.
     Larger ones are referenced by path with a read_file hint so the model
@@ -172,7 +157,7 @@ def _format_user_content(
             "(e.g. offset=1, limit=200). Do not read the entire file at once."
         )
 
-    use_vision = vision and any(img.data_url for img in images)
+    use_vision = any(img.data_url for img in images)
 
     if use_vision:
         text_parts: list[str] = [header]
@@ -205,8 +190,8 @@ def _format_user_content(
                 })
         return content_blocks
 
-    # No vision (model can't see images, or there are no images) — plain text
-    # with file paths. Model can still operate on images by path.
+    # No inline-able images (none attached, or attached without a data URL) —
+    # plain text with file paths. Model can still operate on images by path.
     parts: list[str] = [header]
     for tf in inline_files:
         parts.append(f"\n--- {tf.name} ---\n{tf.content}")
@@ -216,15 +201,9 @@ def _format_user_content(
         parts.append(f"\nFile available at: {bf.path}\n(use read_file or bash_tool to read it)")
     for img in images:
         if img.path:
-            note = (
-                "(model without vision — pixel content is not visible, but the file "
-                "is accessible: can move, copy, embed into .docx/.pdf, "
-                "convert via convert/ffmpeg/PIL, read metadata via "
-                "`identify` or `exiftool`)"
-                if not vision
-                else "(use bash_tool to process)"
+            parts.append(
+                f"\nImage \"{img.name}\": {img.path}\n(use bash_tool to process)"
             )
-            parts.append(f"\nImage \"{img.name}\": {img.path}\n{note}")
     parts.append(f"\n---\n{text}")
     return "\n".join(parts)
 
@@ -488,7 +467,6 @@ async def chat(
     read_photo = registry.get(ReadPhotoTool.name)
     if isinstance(read_photo, ReadPhotoTool):
         read_photo.set_policy(policy)
-        read_photo.set_vision_supported(_model_supports_vision(lite_model))
     write = registry.get(WriteFileTool.name)
     if isinstance(write, WriteFileTool):
         write.set_policy(policy)
@@ -510,11 +488,7 @@ async def chat(
     for msg in history:
         agent.messages.append({"role": msg.role, "content": msg.content})
 
-    user_content = _format_user_content(
-        new_message,
-        body.attachments,
-        vision=_model_supports_vision(lite_model),
-    )
+    user_content = _format_user_content(new_message, body.attachments)
 
     async def event_stream() -> Any:
         # Announce the effective web-search backend up front so the UI can badge
