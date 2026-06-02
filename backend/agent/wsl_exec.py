@@ -1,4 +1,12 @@
-"""WSL subprocess helpers — blocking subprocess in a thread.
+"""Shell subprocess helpers — blocking subprocess in a thread.
+
+On Windows the agent reaches its POSIX filesystem through ``wsl.exe``; on a
+native Linux/macOS host (``sys.platform != "win32"``) the very same helpers run
+against the local filesystem and ``/bin/bash`` directly — no ``wsl.exe``, no
+``/mnt/c`` translation. Every file tool (read_file, write_file, edit_file,
+read_photo, the <file>/<edit> stream tags, uploads, chat-dir purge) funnels
+through here, so this single platform switch is what makes those tools work on
+Linux without per-tool changes.
 
 asyncio.create_subprocess_exec raises NotImplementedError on Windows
 SelectorEventLoop (which uvicorn sometimes installs). Running blocking
@@ -10,6 +18,12 @@ from __future__ import annotations
 import asyncio
 import shlex
 import subprocess
+import sys
+from pathlib import Path
+
+# True on a native POSIX host — the agent runs bash and touches files directly
+# instead of tunnelling through wsl.exe.
+IS_POSIX = sys.platform != "win32"
 
 # Suppress the black console flash that Windows would otherwise pop for every
 # wsl.exe spawn when the parent (backend.exe / python.exe) itself has no
@@ -39,18 +53,24 @@ async def wsl_run(
     stdin: bytes | None = None,
     timeout: float = 300,
 ) -> subprocess.CompletedProcess[bytes]:
-    """Run ``wsl.exe -- bash -lc <bash_cmd>``; return the CompletedProcess.
+    """Run *bash_cmd* in a login bash and return the CompletedProcess.
 
-    Uses ``--`` to separate wsl.exe options from the command, and ``-l``
-    (login shell) so startup files are sourced — without it ``$HOME``
-    and PATH may be incomplete inside the distro.
+    Windows: ``wsl.exe -- bash -lc <bash_cmd>`` — ``--`` separates wsl.exe
+    options from the command, ``-l`` (login shell) sources startup files so
+    ``$HOME`` and PATH are complete inside the distro.
+
+    POSIX (Linux/macOS): ``bash -lc <bash_cmd>`` directly against the host.
 
     Does not raise on non-zero exit — caller inspects ``.returncode``.
-    Raises ``FileNotFoundError`` if wsl.exe is missing from PATH.
+    Raises ``FileNotFoundError`` if the shell binary is missing from PATH.
     """
+    if IS_POSIX:
+        argv = ["bash", "-lc", bash_cmd]
+    else:
+        argv = ["wsl.exe", "--", "bash", "-lc", bash_cmd]
     return await asyncio.to_thread(
         subprocess.run,
-        ["wsl.exe", "--", "bash", "-lc", bash_cmd],
+        argv,
         input=stdin,
         capture_output=True,
         timeout=timeout,
@@ -59,7 +79,14 @@ async def wsl_run(
 
 
 async def wsl_read_text(path: str) -> str:
-    """Read a UTF-8 file from WSL. Raises FileNotFoundError or OSError on failure."""
+    """Read a UTF-8 file. Raises FileNotFoundError or OSError on failure.
+
+    POSIX reads natively; bytes are decoded leniently (matching the WSL path's
+    ``decode_loose``) so a non-UTF-8 file never raises mid-tool.
+    """
+    if IS_POSIX:
+        data = await asyncio.to_thread(Path(path).read_bytes)
+        return decode_loose(data)
     result = await wsl_run(f"cat {shlex.quote(path)}")
     if result.returncode != 0:
         err = decode_loose(result.stderr).strip()
@@ -70,7 +97,9 @@ async def wsl_read_text(path: str) -> str:
 
 
 async def wsl_read_bytes(path: str) -> bytes:
-    """Read a binary file from WSL. Returns raw bytes. Raises FileNotFoundError or OSError."""
+    """Read a binary file. Returns raw bytes. Raises FileNotFoundError or OSError."""
+    if IS_POSIX:
+        return await asyncio.to_thread(Path(path).read_bytes)
     result = await wsl_run(f"cat {shlex.quote(path)}")
     if result.returncode != 0:
         err = decode_loose(result.stderr).strip()
@@ -81,10 +110,22 @@ async def wsl_read_bytes(path: str) -> bytes:
 
 
 async def wsl_write_bytes(path: str, data: bytes, *, mkdir: bool = True, append: bool = False) -> None:
-    """Write *data* to a WSL path. Creates parent dirs by default.
+    """Write *data* to a path. Creates parent dirs by default.
 
-    ``append=True`` uses ``cat >>`` so existing content is preserved.
+    ``append=True`` preserves existing content. POSIX writes natively; Windows
+    pipes the bytes into ``cat >`` inside WSL.
     """
+    if IS_POSIX:
+        def _write() -> None:
+            p = Path(path)
+            if mkdir:
+                p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("ab" if append else "wb") as fp:
+                fp.write(data)
+
+        await asyncio.to_thread(_write)
+        return
+
     redirect = ">>" if append else ">"
     quoted = shlex.quote(path)
     parts = [f"cat {redirect} {quoted}"]

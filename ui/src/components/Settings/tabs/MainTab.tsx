@@ -310,8 +310,9 @@ interface ShellStatus {
   docx: boolean;
   dns_ok: boolean;
   powershell_available: boolean;
-  active_shell: "wsl" | "powershell";
+  active_shell: "wsl" | "powershell" | "posix";
   shell_preference: "auto" | "wsl" | "powershell";
+  os_platform: "windows" | "linux" | "darwin";
 }
 
 function ShellSection({
@@ -409,6 +410,44 @@ function ShellSection({
   const wslOk = !!status?.wsl_installed && !!status?.distro_running;
   const psOk = !!status?.powershell_available;
   const activeShell = status?.active_shell ?? (preference === "powershell" ? "powershell" : "wsl");
+
+  // Native Linux/macOS host: no WSL/PowerShell split. Show a simple native-bash
+  // readout and hide the picker + install actions entirely.
+  if (status && status.os_platform !== "windows") {
+    return (
+      <section>
+        <div className="st2-mh">
+          <span className="st2-mn">04</span>
+          <h2>{t("settings.general.terminal")}</h2>
+        </div>
+        <p className="st2-md">{t("settings.general.terminalNativeDescription")}</p>
+        <div className="st2-mrows">
+          <div className="st2-mrow stack">
+            <div className="st2-mctl">
+              <div className="st2-shell-grid">
+                <ShellStatusCard
+                  title={t("settings.general.nativeBash")}
+                  ok={true}
+                  lines={[
+                    t("settings.general.nativeBashActive"),
+                    [
+                      status.node ? "node ✓" : "node ✗",
+                      status.python ? "python3 ✓" : "python3 ✗",
+                      status.npm ? "npm ✓" : "npm ✗",
+                      status.pandoc ? "pandoc ✓" : "pandoc ✗",
+                      status.libreoffice ? "libreoffice ✓" : "libreoffice ✗",
+                      status.poppler ? "poppler ✓" : "poppler ✗",
+                    ].join(" · "),
+                  ]}
+                  active={true}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section>

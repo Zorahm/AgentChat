@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.wsl_exec import decode_loose, wsl_run
+from agent.wsl_exec import IS_POSIX, decode_loose, wsl_run
 
 # On Windows, hide the CMD window when spawning npm in a new console.
 _NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # 0x08000000
@@ -107,6 +107,12 @@ async def _purge_chat_dir(dir_slug: str) -> None:
 
     _purge_windows_chat_dir(dir_slug)
 
+    # On a native POSIX host chat folders live under the real home, which the
+    # call above (Path.home()) already removed — there's no separate WSL
+    # filesystem to clean, so skip the bash purge.
+    if IS_POSIX:
+        return
+
     cmd = _build_purge_chat_dir_command(dir_slug, _default_wsl_home())
     if not cmd:
         logger.warning("WSL purge skipped: empty command for dir_slug %r", dir_slug)
@@ -188,8 +194,14 @@ async def get_chat(request: Request, chat_id: str) -> ChatFull:
     return ChatFull(**row)
 
 
-async def _init_chat_dir_powershell(dir_slug: str) -> None:
-    """Initialise the chat directory: npm init -y + python3 -m venv .venv."""
+async def _init_chat_dir_native(dir_slug: str) -> None:
+    """Initialise the chat directory natively: npm init -y + python3 -m venv .venv.
+
+    Used for both Windows PowerShell mode and a native POSIX host — both create
+    the folder under the real OS home and shell out to npm/python3 directly
+    (no WSL). On Windows-WSL mode the chat folder lives inside the distro, so
+    ``_init_chat_dir_wsl`` is used instead.
+    """
     if not dir_slug or not _SAFE_SLUG_RE.match(dir_slug):
         return
     from main import USER_HOME
@@ -276,10 +288,10 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
     from main import resolve_active_shell
     settings = request.app.state.settings_store
     active_shell = resolve_active_shell(settings.shell_preference)
-    if active_shell == "powershell":
-        asyncio.ensure_future(_init_chat_dir_powershell(body.dir_slug))
-    else:
+    if active_shell == "wsl":
         asyncio.ensure_future(_init_chat_dir_wsl(body.dir_slug))
+    else:
+        asyncio.ensure_future(_init_chat_dir_native(body.dir_slug))
 
     return ChatFull(**row)
 

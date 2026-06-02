@@ -237,7 +237,7 @@ class SandboxPolicy:
         # than silently dropping the cage. `command -v` returns non-zero → we
         # print the install hint and exit 127.
         fallback = (
-            "echo '[sandbox] bubblewrap (bwrap) is not installed in WSL. "
+            "echo '[sandbox] bubblewrap (bwrap) is not installed. "
             "Install it with: sudo apt update && sudo apt install -y bubblewrap. "
             "Or toggle Unrestricted mode in Settings.' >&2; exit 127"
         )

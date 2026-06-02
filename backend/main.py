@@ -102,6 +102,11 @@ AGENTS_SKILLS_DIR = USER_AGENTS_SKILLS_DIR
 USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
 USER_HOME = os.path.expanduser("~")
 WSL_USER_HOME = f"/home/{USER_NAME.lower()}" if USER_NAME else "/home/user"
+# Default $HOME for the outer bash_tool envelope. On Windows the agent's bash
+# lives inside WSL (synthetic /home/<user>); on a native POSIX host it's the
+# real home. The per-chat bwrap cage overrides HOME to the chat dir regardless,
+# so this only matters for the uncaged outer shell.
+DEFAULT_BASH_HOME = WSL_USER_HOME if sys.platform == "win32" else USER_HOME
 
 # Web search backends. Tavily key enables the "litellm" local backend; the
 # SearXNG URL (env or settings) enables the self-hosted backend.
@@ -178,11 +183,18 @@ def powershell_available() -> bool:
 
 
 def resolve_active_shell(preference: str) -> str:
-    """Resolve the auto/wsl/powershell preference to a concrete "wsl" or "powershell".
+    """Resolve the shell preference to a concrete "wsl" | "powershell" | "posix".
 
-    Auto: WSL when available, otherwise PowerShell. Forced modes return as-is;
-    BashTool then surfaces a clear error if the chosen shell isn't installed.
+    On a native Linux/macOS host there is no WSL/PowerShell split — the agent
+    runs the host's own bash, so we always return "posix" regardless of the
+    saved preference (which only ever meant anything on Windows).
+
+    On Windows: auto picks WSL when available, otherwise PowerShell. Forced
+    modes return as-is; BashTool then surfaces a clear error if the chosen
+    shell isn't installed.
     """
+    if sys.platform != "win32":
+        return "posix"
     if preference == "wsl":
         return "wsl"
     if preference == "powershell":
@@ -248,6 +260,17 @@ def build_system_prompt(user_name: str = "", shell: str = "wsl", model: str = ""
             f"current chat's folder under {USER_HOME}\\AgentChat\\chats\\chat-<id>-<timestamp>\\. "
             "Use PowerShell syntax: `$env:VAR`, `Get-ChildItem`, `Set-Location`, backtick for line "
             "continuation. `&&` is NOT available — chain with `;` or `if ($?) { ... }`."
+        )
+    elif shell == "posix":
+        shell_block = (
+            f"Home: {USER_HOME}\n"
+            f"Shell: bash (native Linux/macOS)."
+        )
+        bash_desc = (
+            "- bash_tool — execute bash commands on the local machine. $USER and $HOME are set. "
+            "Working directory is the current chat's folder under "
+            "~/AgentChat/chats/chat-<id>-<timestamp>/ — files you create with relative paths land "
+            "there. Use absolute paths only when you explicitly need to write somewhere else."
         )
     else:
         shell_block = (
@@ -929,7 +952,7 @@ def create_app() -> FastAPI:
 
     # --- tools ---
     registry = ToolRegistry()
-    registry.register(BashTool(user_name=USER_NAME, user_home=WSL_USER_HOME))
+    registry.register(BashTool(user_name=USER_NAME, user_home=DEFAULT_BASH_HOME))
     registry.register(ReadFileTool())
     registry.register(ReadPhotoTool())
     registry.register(WriteFileTool())

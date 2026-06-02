@@ -34,6 +34,12 @@ class BashTool(BaseTool):
         "Set-Location, backtick line continuation). `&&` is not available — "
         "use `;` or `if ($?) { ... }` to chain."
     )
+    _DESC_POSIX = (
+        "Execute a bash command on the local machine. "
+        "Use this to run shell commands, scripts, git, Python, etc., "
+        "with cwd set to the current chat's working folder. "
+        "$USER and $USER_HOME are pre-set environment variables."
+    )
     description = _DESC_WSL
 
     def __init__(self, user_name: str, user_home: str | None = None, shell: str = "wsl") -> None:
@@ -52,20 +58,25 @@ class BashTool(BaseTool):
         self._shell = policy.shell
 
     def get_definition(self) -> ToolDefinition:
+        if self._shell == "powershell":
+            desc = self._DESC_PS
+            cmd_desc = "The PowerShell command to execute."
+        elif self._shell == "posix":
+            desc = self._DESC_POSIX
+            cmd_desc = "The bash command to execute on the local machine."
+        else:
+            desc = self._DESC_WSL
+            cmd_desc = "The bash command to execute inside WSL."
         return ToolDefinition(
             function=ToolSchema(
                 name=self.name,
-                description=self._DESC_PS if self._shell == "powershell" else self._DESC_WSL,
+                description=desc,
                 parameters={
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": (
-                                "The PowerShell command to execute."
-                                if self._shell == "powershell"
-                                else "The bash command to execute inside WSL."
-                            ),
+                            "description": cmd_desc,
                         }
                     },
                     "required": ["command"],
@@ -74,15 +85,19 @@ class BashTool(BaseTool):
         )
 
     async def execute(self, command: str) -> str:
-        """Dispatch to bash-in-WSL or PowerShell based on the active shell.
+        """Dispatch to native bash, bash-in-WSL, or PowerShell by active shell.
 
-        Two auto-fallback layers for "wsl" mode:
+        On a native POSIX host the command runs against the local bash directly.
+        On Windows there are two auto-fallback layers for "wsl" mode:
           1. wsl.exe missing from PATH → PowerShell.
           2. WSL spawns but reports "no installed distributions" or similar
              setup failure → PowerShell (one retry).
         Keeps the chat working when the user couldn't finish the WSL install.
         """
         shell = self._shell
+        if shell == "posix":
+            return await self._exec_posix(command)
+
         ps_present = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
 
         if shell == "wsl" and shutil.which("wsl") is None and ps_present:
@@ -129,6 +144,34 @@ class BashTool(BaseTool):
             return "[bash_tool error] command timed out after 300s."
         except OSError as exc:
             return f"[bash_tool error] failed to spawn wsl.exe: {exc}"
+
+        return _format_result(result)
+
+    async def _exec_posix(self, command: str) -> str:
+        # Native Linux/macOS: the bwrap envelope wrap_bash produces is plain
+        # bash, so we run it through the host's own /bin/bash — no wsl.exe. The
+        # outer USER/HOME export mirrors the WSL path; the cage overrides HOME to
+        # the chat dir via --setenv.
+        inner = self._policy.wrap_bash(command)
+        full_cmd = (
+            f"export USER='{self._user_name}' "
+            f"USER_HOME='{self._user_home}' "
+            f"HOME='{self._user_home}'; {inner}"
+        )
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["bash", "-c", full_cmd],
+                capture_output=True,
+                timeout=300,
+                creationflags=_NO_WINDOW,
+            )
+        except FileNotFoundError:
+            return "[bash_tool error] bash not found in PATH."
+        except subprocess.TimeoutExpired:
+            return "[bash_tool error] command timed out after 300s."
+        except OSError as exc:
+            return f"[bash_tool error] failed to spawn bash: {exc}"
 
         return _format_result(result)
 

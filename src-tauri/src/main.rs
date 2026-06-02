@@ -16,9 +16,13 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// Image name of the bundled backend sidecar. Kept unique (not a generic
-/// "backend.exe") so taskkill / installer hooks only ever hit our own process.
+/// File/process name of the bundled backend sidecar. Kept unique (not a generic
+/// "backend.exe") so taskkill / pkill / installer hooks only ever hit our own
+/// process. ``.exe`` on Windows; bare name on Linux/macOS.
+#[cfg(windows)]
 const SIDECAR_EXE: &str = "agentchat-backend.exe";
+#[cfg(not(windows))]
+const SIDECAR_EXE: &str = "agentchat-backend";
 
 /// Apply CREATE_NO_WINDOW on Windows. No-op on other platforms.
 fn hide_console(cmd: &mut Command) -> &mut Command {
@@ -76,6 +80,36 @@ fn kill_port_owner(port: u16) {
     }
 }
 
+// --- POSIX (Linux/macOS) equivalents -------------------------------------
+// The sidecar is spawned as its own process-group leader (see spawn_sidecar),
+// so killing the negative PID reaps the PyInstaller bootloader together with the
+// interpreter it forks — the same orphan-avoidance the Windows /T flag gives us.
+
+/// Force-kill every sidecar process by name (parent + children).
+#[cfg(not(windows))]
+fn kill_sidecar_by_image() {
+    // -KILL by exact process name. psmisc's pkill is present on essentially
+    // every desktop Linux; best-effort if it isn't.
+    let _ = Command::new("pkill").args(["-KILL", "-x", SIDECAR_EXE]).output();
+}
+
+/// Force-kill a process group by its leader PID.
+#[cfg(not(windows))]
+fn kill_process_tree(pid: u32) {
+    // Negative target = process group. The sidecar leads its own group, so this
+    // takes down the PyInstaller child interpreter too.
+    let _ = Command::new("kill").args(["-KILL", &format!("-{pid}")]).output();
+}
+
+/// Force-kill whatever owns `port` (best-effort). Mirrors the Windows netstat
+/// path; `fuser` clears a stray sidecar still holding the socket.
+#[cfg(not(windows))]
+fn kill_port_owner(port: u16) {
+    let _ = Command::new("fuser")
+        .args(["-k", &format!("{port}/tcp")])
+        .output();
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -102,7 +136,6 @@ fn restart_backend(state: tauri::State<'_, BackendProcess>) -> Result<(), String
     // Stop the tracked child (and its tree).
     if let Ok(mut guard) = state.child.lock() {
         if let Some(ref mut child) = *guard {
-            #[cfg(windows)]
             kill_process_tree(child.id());
             let _ = child.kill();
             let _ = child.wait();
@@ -111,11 +144,8 @@ fn restart_backend(state: tauri::State<'_, BackendProcess>) -> Result<(), String
     }
     // Catch any stray sidecar still holding the port before we rebind —
     // by image name, then by whoever owns 8787 (covers a legacy backend.exe).
-    #[cfg(windows)]
-    {
-        kill_sidecar_by_image();
-        kill_port_owner(8787);
-    }
+    kill_sidecar_by_image();
+    kill_port_owner(8787);
 
     let child = start_backend().ok_or_else(|| "failed to spawn backend".to_string())?;
     wait_for_backend();
@@ -169,6 +199,13 @@ fn find_backend_dir() -> PathBuf {
 fn spawn_sidecar(path: &PathBuf) -> Option<Child> {
     let mut cmd = Command::new(path);
     hide_console(&mut cmd);
+    // On Unix, lead a new process group so kill_process_tree(-pid) reaps the
+    // PyInstaller bootloader and the interpreter it forks in one shot.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     cmd.spawn().ok()
 }
 
@@ -266,11 +303,8 @@ fn main() {
                 if running.as_deref() == Some(expected_version.as_str()) {
                     None // our backend is already up — reuse it
                 } else {
-                    #[cfg(windows)]
-                    {
-                        kill_sidecar_by_image();
-                        kill_port_owner(8787);
-                    }
+                    kill_sidecar_by_image();
+                    kill_port_owner(8787);
                     spawn_sidecar(&sidecar)
                 }
             }
@@ -309,7 +343,6 @@ fn main() {
                             // Tear down the whole tree first: child.kill() only
                             // reaps the PyInstaller bootloader and would orphan the
                             // interpreter it spawned, leaking a backend on 8787.
-                            #[cfg(windows)]
                             kill_process_tree(child.id());
                             let _ = child.kill();
                             let _ = child.wait();

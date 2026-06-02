@@ -466,7 +466,9 @@ async def chat(
         resolve_active_shell,
     )
     active_shell = resolve_active_shell(store.shell_preference)
-    home = USER_HOME if active_shell == "powershell" else WSL_USER_HOME
+    # WSL has its own synthetic home (/home/<user>); PowerShell and native POSIX
+    # both use the real OS home.
+    home = WSL_USER_HOME if active_shell == "wsl" else USER_HOME
     chat_dir = _resolve_chat_cwd(body.chat_dir_slug, home, shell=active_shell)
 
     # Project context: prepend the project's instructions + extracted file text

@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -19,6 +20,15 @@ from agent.wsl_exec import decode_loose
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wsl", tags=["wsl"])
+
+
+def _os_platform() -> str:
+    """Coarse host OS for the UI: windows | darwin | linux."""
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
 
 # Suppress the Windows console flash for wsl/probe subprocesses.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -59,10 +69,13 @@ class WSLStatus(BaseModel):
     docx: bool  # global npm `docx` package available
     dns_ok: bool  # hostname resolution works inside the distro
     powershell_available: bool
-    # Resolved shell the next chat will use: "wsl" or "powershell".
+    # Resolved shell the next chat will use: "wsl" | "powershell" | "posix".
     active_shell: str
     # Raw preference from settings ("auto" | "wsl" | "powershell").
     shell_preference: str
+    # Host OS: "windows" | "linux" | "darwin". On non-Windows the UI hides the
+    # WSL/PowerShell picker and the onboarding WSL step entirely.
+    os_platform: str
 
 
 class InstallResult(BaseModel):
@@ -401,6 +414,29 @@ async def status(request: Request) -> WSLStatus:
 
     settings_store = request.app.state.settings_store
     preference = settings_store.shell_preference
+
+    # Native POSIX host: no WSL/PowerShell split — report a native-bash status so
+    # the UI hides the picker and the onboarding WSL step. Tool presence is read
+    # cheaply from PATH (no subprocess) purely for an informational readout.
+    if sys.platform != "win32":
+        return WSLStatus(
+            wsl_installed=False,
+            default_distro=None,
+            distro_running=False,
+            node=shutil.which("node"),
+            python=shutil.which("python3") or shutil.which("python"),
+            npm=shutil.which("npm"),
+            pandoc=shutil.which("pandoc"),
+            libreoffice=shutil.which("libreoffice") or shutil.which("soffice"),
+            poppler=shutil.which("pdftotext") is not None,
+            docx=False,
+            dns_ok=True,
+            powershell_available=False,
+            active_shell="posix",
+            shell_preference=preference,
+            os_platform=_os_platform(),
+        )
+
     ps_available = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
     wsl_installed = shutil.which("wsl") is not None
 
@@ -420,6 +456,7 @@ async def status(request: Request) -> WSLStatus:
             powershell_available=ps_available,
             active_shell=resolve_active_shell(preference),
             shell_preference=preference,
+            os_platform=_os_platform(),
         )
 
     distro = await _wsl_default_distro()
@@ -463,6 +500,7 @@ async def status(request: Request) -> WSLStatus:
         powershell_available=ps_available,
         active_shell=resolve_active_shell(preference),
         shell_preference=preference,
+        os_platform=_os_platform(),
     )
 
 

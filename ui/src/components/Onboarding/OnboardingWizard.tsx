@@ -60,6 +60,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [error, setError] = useState<string | null>(null);
   const [skillsInstalling, setSkillsInstalling] = useState(false);
   const [skillsInstalled, setSkillsInstalled] = useState<number | null>(null);
+  // Host OS — gates the WSL step. On a native Linux/macOS host there's no
+  // WSL/PowerShell choice, so the shell step is skipped entirely.
+  const [osPlatform, setOsPlatform] = useState<string>("windows");
+  const isWindows = osPlatform === "windows";
 
   // Initial load: fetch providers list
   useEffect(() => {
@@ -73,6 +77,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         }
       })
       .catch(() => setError(t("onboarding.connectionError")));
+    // Cheap platform probe (no WSL spawning) so we know whether to show the
+    // WSL setup step at all.
+    fetch(`${API_BASE}/system-status`)
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.os_platform === "string") setOsPlatform(d.os_platform); })
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshModels = useCallback(async () => {
@@ -179,7 +189,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         body: JSON.stringify({ default_model: defaultModel }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setStep(3);
+      setStep(isWindows ? 3 : 4);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("onboarding.modelSaveError"));
     } finally {
@@ -324,7 +334,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="ob-steps">
             <span className={step === 1 ? "active" : step > 1 ? "done" : ""}>{t("onboarding.stepName")}</span>
             <span className={step === 2 ? "active" : step > 2 ? "done" : ""}>{t("onboarding.stepProvider")}</span>
-            <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>{t("onboarding.stepWsl")}</span>
+            {isWindows && (
+              <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>{t("onboarding.stepWsl")}</span>
+            )}
             <span className={step === 4 ? "active" : ""}>{t("onboarding.stepSkills")}</span>
           </div>
         </div>
@@ -414,7 +426,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             <div className="ob-actions">
               <button className="ob-btn ob-btn--ghost" onClick={() => setStep(1)}>{t("onboarding.back")}</button>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.skip")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(isWindows ? 3 : 4)}>{t("onboarding.skip")}</button>
               <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
                 {saving ? "…" : t("onboarding.next")}
               </button>
@@ -559,7 +571,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             )}
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.back")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(isWindows ? 3 : 2)}>{t("onboarding.back")}</button>
               {skillsInstalled === null ? (
                 <>
                   <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>

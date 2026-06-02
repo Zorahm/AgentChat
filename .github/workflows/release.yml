@@ -7,7 +7,15 @@ on:
 
 jobs:
   release:
-    runs-on: windows-latest
+    strategy:
+      # Build every platform even if one fails, so a Windows hiccup doesn't
+      # block the Linux artifacts (and vice versa).
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
 
@@ -54,6 +62,20 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Tauri v2 on Linux needs the WebKitGTK 4.1 stack + patchelf (AppImage)
+      # and libssl for the updater's TLS. ubuntu-latest ships GTK already.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev
+
       - name: Bump tauri.conf.json version from tag
         shell: pwsh
         run: |
@@ -73,8 +95,13 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r backend/requirements.txt pyinstaller
 
-      - name: Build backend sidecar
+      - name: Build backend sidecar (Windows)
+        if: runner.os == 'Windows'
         run: .\scripts\build-backend.ps1
+
+      - name: Build backend sidecar (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/build-backend.sh
 
       - name: Build and publish Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -88,13 +115,15 @@ jobs:
           releaseName: "AgentChat ${{ github.ref_name }}"
           # This body is also written verbatim into latest.json `notes`, which
           # the in-app "About" update card displays — so it must be the real
-          # release text, not a link to CHANGELOG.
+          # release text, not a link to CHANGELOG. tauri-action merges each
+          # matrix job's platforms into the single release + updater manifest.
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           projectPath: src-tauri
 
       - name: Package portable ZIP
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v',''
@@ -107,6 +136,7 @@ jobs:
           Write-Host "Portable: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
 
       - name: Upload portable to release
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v',''
