@@ -1,7 +1,7 @@
 /** Root application — sidebar, chat, artifacts panel layout. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useChats, type AgentChatState } from "./hooks/useChats";
+import { useChats, setWebSearchDefault, type AgentChatState } from "./hooks/useChats";
 import { Sidebar } from "./components/Sidebar";
 import { useAvatar } from "./hooks/useAvatar";
 import { useAppUpdate } from "./hooks/useAppUpdate";
@@ -139,6 +139,12 @@ export function App() {
         if (data.shortcuts && typeof data.shortcuts === "object") {
           setShortcuts(data.shortcuts as Record<string, string>);
         }
+        // Mirror the persisted web-search default into useChats so new chats
+        // seed from settings (not localStorage) and the toggle survives restart.
+        setWebSearchDefault({
+          enabled: data.web_search_enabled === true,
+          mode: typeof data.web_search_mode === "string" ? data.web_search_mode : "auto",
+        });
         if (data.providers?.length) {
           const enabled = new Set<string>();
           for (const p of data.providers as Array<{ id: string; enabled: boolean }>) {
@@ -169,6 +175,18 @@ export function App() {
       await fetchSettings();
     } catch { /* offline */ }
   }, [fetchSettings]);
+
+  // Toggle web search on the active chat AND persist the choice to backend
+  // settings, so it sticks across restarts and devices (replaces localStorage).
+  const handleWebSearchChange = useCallback(
+    (enabled: boolean, mode?: string) => {
+      chats.setWebSearch(enabled, mode);
+      const patch: Record<string, unknown> = { web_search_enabled: enabled };
+      if (mode) patch.web_search_mode = mode;
+      void updateSettings(patch);
+    },
+    [chats, updateSettings],
+  );
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
@@ -444,7 +462,7 @@ export function App() {
             onToggleMcpServer={chats.toggleMcpServer}
             webSearchEnabled={chats.activeWebSearchEnabled}
             webSearchMode={chats.activeWebSearchMode}
-            onWebSearchChange={chats.setWebSearch}
+            onWebSearchChange={handleWebSearchChange}
           />
         )}
         {view === "chat" && panelOpen && !openFilePath && (

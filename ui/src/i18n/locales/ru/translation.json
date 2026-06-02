@@ -489,7 +489,7 @@
       "updateAvailable": "Доступно обновление",
       "updateTo": "v{{from}} → v{{to}}",
       "updateAndRestart": "Обновить и перезапустить",
-      "downloading": "Загрузка… {{progress}}%",
+      "downloading": "Загрузка…",
       "installing": "Установка… приложение перезапустится.",
       "latestVersion": "У вас последняя версия"
     },
@@ -868,7 +868,7 @@
     "close": "Закрыть",
     "writing": "Файл записывается…",
     "loading": "Загрузка…",
-    "previewUnavailable": "Превью недоступно для {{ext}}",
+    "previewUnavailable": "Превью недоступно для",
     "downloadHint": "нажмите «Скачать», чтобы открыть в нативном приложении",
     "fileNotAvailable": "Файл недоступен",
     "refreshHint": "нажмите ↺ для обновления",

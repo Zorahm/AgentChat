@@ -2,7 +2,7 @@
 name = "agentchat"
 version = "0.1.0"
 description = "Desktop AI chat with agent loop"
-authors = ["zorahm"]
+authors = ["Zorahm"]
 edition = "2021"
 rust-version = "1.77"
 

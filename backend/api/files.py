@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import os
 import re
 import shlex
@@ -54,19 +55,37 @@ async def read_content(
 async def serve_file(
     path: str = Query(..., description="Absolute file path"),
 ) -> FileResponse:
-    """Serve a binary file (images, PDFs) with auto content-type. Supports WSL paths."""
+    """Serve a binary file (images, PDFs) with auto content-type. Supports WSL paths.
+
+    Disposition is ``inline`` so previews render in an <iframe>/<img>. With the
+    default ``attachment`` (which Starlette emits whenever a ``filename`` is set),
+    the webview downloads the bytes instead of rendering them — that's why PDFs
+    showed a blank pane. Downloads go through a separate client-side blob path,
+    so inline here doesn't affect them.
+    """
     try:
+        media_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
         if path.startswith("/"):
             data = await _wsl_read_bytes(path)
             suffix = Path(path).suffix
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.write(data)
             tmp.close()
-            return FileResponse(tmp.name, filename=Path(path).name)
+            return FileResponse(
+                tmp.name,
+                media_type=media_type,
+                filename=Path(path).name,
+                content_disposition_type="inline",
+            )
         p = Path(path).resolve()
         if not p.exists():
             raise HTTPException(status_code=404, detail="File not found")
-        return FileResponse(p)
+        return FileResponse(
+            p,
+            media_type=media_type,
+            filename=p.name,
+            content_disposition_type="inline",
+        )
     except HTTPException:
         raise
     except FileNotFoundError:

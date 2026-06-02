@@ -141,10 +141,19 @@ class SandboxPolicy:
         loud error so the model doesn't silently break out.
         """
         if self.unrestricted:
-            # No cage: just cd into chat_dir if known, else run raw.
+            # No cage and no path checks — but keep the per-chat dev environment
+            # so base functionality isn't lost: create + cd into the chat folder,
+            # point HOME at it (pip --user / npm / caches stay per-chat, matching
+            # restricted mode), and lead PATH with {chat_dir}/.venv/bin so a venv
+            # the model created is active without re-activation. PATH is extended,
+            # not replaced — unrestricted users expect host tools to stay reachable.
             if self.chat_dir:
                 cwd_q = shlex.quote(self.chat_dir)
-                return f"mkdir -p {cwd_q} && cd {cwd_q} && {inner_cmd}"
+                venv_q = shlex.quote(f"{self.chat_dir}/.venv/bin")
+                return (
+                    f"mkdir -p {cwd_q} && cd {cwd_q} && "
+                    f'export HOME={cwd_q} && export PATH={venv_q}:"$PATH" && {inner_cmd}'
+                )
             return inner_cmd
 
         if not self.chat_dir:
@@ -156,6 +165,19 @@ class SandboxPolicy:
             )
 
         chat_q = shlex.quote(self.chat_dir)
+        # Expose the read-allowlist (skill/agent resource dirs) into the cage
+        # read-only. read_file already lets the model open these paths; without
+        # mounting them here, `cd <skill_dir> && python scripts/x.py` would fail
+        # because bwrap only binds chat_dir. We mount only the WSL/posix-form
+        # entries (the cage runs inside WSL); the Windows-form duplicates are
+        # skipped. --ro-bind-try tolerates a missing path. Scripts read their
+        # own assets here and write outputs to cwd (= chat_dir).
+        ro_skill_binds: list[str] = []
+        for prefix in self.allowed_read_prefixes:
+            if prefix.startswith("/") and not _is_under(
+                _normalize(self.chat_dir), _normalize(prefix)
+            ):
+                ro_skill_binds += ["--ro-bind-try", prefix, prefix]
         path_entries = [
             f"{self.chat_dir}/.venv/bin",
             "/usr/local/sbin",
@@ -187,6 +209,7 @@ class SandboxPolicy:
             "--dev", "/dev",
             "--tmpfs", "/tmp",
             "--tmpfs", "/run",
+            *ro_skill_binds,
             "--bind", self.chat_dir, self.chat_dir,
             "--chdir", self.chat_dir,
             "--setenv", "HOME", self.chat_dir,

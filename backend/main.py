@@ -472,6 +472,7 @@ class SettingsStore:
         self._shell_preference = "auto"
         self._remote_access_enabled = False
         self._web_search_mode = "auto"
+        self._web_search_enabled = False
         # None → fall back to the SEARXNG_URL env var at request time.
         self._searxng_url: str | None = None
         # None → fall back to the TAVILY_API_KEY env var at request time.
@@ -554,6 +555,9 @@ class SettingsStore:
             wsm = global_block.get("web_search_mode")
             if isinstance(wsm, str) and wsm in ("auto", "native", "litellm", "searxng"):
                 self._web_search_mode = wsm
+            wse = global_block.get("web_search_enabled")
+            if isinstance(wse, bool):
+                self._web_search_enabled = wse
             sx = global_block.get("searxng_url")
             if isinstance(sx, str):
                 self._searxng_url = sx or None
@@ -626,6 +630,7 @@ class SettingsStore:
                 "remote_access_enabled": self._remote_access_enabled,
                 "remote_token": self._remote_token,
                 "web_search_mode": self._web_search_mode,
+                "web_search_enabled": self._web_search_enabled,
                 "searxng_url": self._searxng_url,
                 "tavily_api_key": self._tavily_api_key,
                 "shortcuts": self._shortcuts,
@@ -678,6 +683,7 @@ class SettingsStore:
             shell_preference=self._shell_preference,
             remote_access_enabled=self._remote_access_enabled,
             web_search_mode=self._web_search_mode,
+            web_search_enabled=self._web_search_enabled,
             searxng_url=self._searxng_url,
             tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
             shortcuts=dict(self._shortcuts),
@@ -720,6 +726,8 @@ class SettingsStore:
                     f"got {patch.web_search_mode!r}"
                 )
             self._web_search_mode = patch.web_search_mode
+        if patch.web_search_enabled is not None:
+            self._web_search_enabled = patch.web_search_enabled
         if patch.searxng_url is not None:
             self._searxng_url = patch.searxng_url.strip() or None
         if patch.tavily_api_key is not None:

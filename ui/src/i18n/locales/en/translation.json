@@ -481,7 +481,7 @@
       "updateAvailable": "Update available",
       "updateTo": "v{{from}} \u2192 v{{to}}",
       "updateAndRestart": "Update and restart",
-      "downloading": "Downloading\u2026 {{progress}}%",
+      "downloading": "Downloading\u2026",
       "installing": "Installing\u2026 the app will restart.",
       "latestVersion": "You have the latest version"
     },
@@ -860,7 +860,7 @@
     "close": "Close",
     "writing": "File is being written\u2026",
     "loading": "Loading\u2026",
-    "previewUnavailable": "Preview unavailable for {{ext}}",
+    "previewUnavailable": "Preview unavailable for",
     "downloadHint": "click Download to open in native app",
     "fileNotAvailable": "File not available",
     "refreshHint": "click \u21ba to refresh",

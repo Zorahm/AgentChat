@@ -56,6 +56,9 @@ class SettingsData(BaseModel):
     remote_access_enabled: bool = False
     # Default web search mode offered in the UI (auto|native|litellm|searxng).
     web_search_mode: str = "auto"
+    # Sticky on/off state of the web-search toggle. Persisted here (not in
+    # localStorage) so it survives app restarts and is shared across devices.
+    web_search_enabled: bool = False
     # Optional self-hosted SearXNG base URL. Overrides the SEARXNG_URL env var.
     searxng_url: str | None = None
     # True when a Tavily key is configured (settings or TAVILY_API_KEY env). The
@@ -79,6 +82,7 @@ class SettingsUpdate(BaseModel):
     shell_preference: str | None = None
     remote_access_enabled: bool | None = None
     web_search_mode: str | None = None
+    web_search_enabled: bool | None = None
     searxng_url: str | None = None
     # Empty string clears the stored key (falls back to TAVILY_API_KEY env).
     tavily_api_key: str | None = None

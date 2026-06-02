@@ -83,28 +83,24 @@ function savePinnedIds(ids: Set<string>): void {
 
 // Web-search toggle is a sticky user preference: the last enabled/mode the user
 // picked seeds every new chat, instead of resetting to off/auto each time.
-const WEB_SEARCH_PREF_KEY = "aic-web-search-pref";
-
 interface WebSearchPref {
   enabled: boolean;
   mode: string;
 }
 
-function loadWebSearchPref(): WebSearchPref {
-  try {
-    const raw = localStorage.getItem(WEB_SEARCH_PREF_KEY);
-    if (raw) {
-      const p = JSON.parse(raw) as Partial<WebSearchPref>;
-      return { enabled: !!p.enabled, mode: typeof p.mode === "string" ? p.mode : "auto" };
-    }
-  } catch { /* ignore */ }
-  return { enabled: false, mode: "auto" };
-}
+// Sticky web-search default for new chats. Mirrored from backend settings
+// (web_search_enabled / web_search_mode) by App via setWebSearchDefault, so the
+// toggle survives app restarts and is shared across devices — no localStorage.
+let webSearchDefault: WebSearchPref = { enabled: false, mode: "auto" };
 
-function saveWebSearchPref(pref: WebSearchPref): void {
-  try {
-    localStorage.setItem(WEB_SEARCH_PREF_KEY, JSON.stringify(pref));
-  } catch { /* ignore */ }
+/** Sync the sticky default from persisted settings. Called by App after it
+ *  loads /api/settings, and re-applied on every toggle so new chats opened
+ *  before the settings round-trip still inherit the latest choice. */
+export function setWebSearchDefault(pref: Partial<WebSearchPref>): void {
+  webSearchDefault = {
+    enabled: !!pref.enabled,
+    mode: typeof pref.mode === "string" ? pref.mode : "auto",
+  };
 }
 
 const STORAGE_KEY = "aic-sessions-v2";
@@ -335,7 +331,6 @@ function makeSession(projectId?: string, dirSlug?: string): ChatSession {
   // `onClick={onNew}` forwards the MouseEvent here, and a DOM event is a
   // deeply circular object that poisons every JSON.stringify of the session.
   const pid = typeof projectId === "string" && projectId ? projectId : undefined;
-  const wsPref = loadWebSearchPref();
   return {
     id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     title: i18n.t("chat.newChatTitle"),
@@ -346,10 +341,10 @@ function makeSession(projectId?: string, dirSlug?: string): ChatSession {
     // chat's sandbox, so the slug has to be known up front).
     dirSlug: dirSlug || makeDirSlug(),
     projectId: pid,
-    // Seed from the sticky web-search preference so the toggle persists across
-    // new chats.
-    webSearchEnabled: wsPref.enabled,
-    webSearchMode: wsPref.mode,
+    // Seed from the sticky web-search default (mirrored from settings) so the
+    // toggle persists across new chats and app restarts.
+    webSearchEnabled: webSearchDefault.enabled,
+    webSearchMode: webSearchDefault.mode,
   };
 }
 
@@ -1722,8 +1717,9 @@ export function useChats(): UseChatResult {
         prev.map((s) => {
           if (s.id !== activeId) return s;
           const nextMode = mode ?? s.webSearchMode ?? "auto";
-          // Remember the choice so future new chats inherit it.
-          saveWebSearchPref({ enabled, mode: nextMode });
+          // Update the sticky default so further new chats inherit immediately;
+          // App persists it to backend settings via onWebSearchChange.
+          webSearchDefault = { enabled, mode: nextMode };
           return { ...s, webSearchEnabled: enabled, webSearchMode: nextMode };
         }),
       );
