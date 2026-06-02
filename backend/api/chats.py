@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.wsl_exec import IS_POSIX, decode_loose, wsl_run
+from agent.wsl_exec import IS_POSIX, decode_loose, host_tool_env, wsl_run
 
 # On Windows, hide the CMD window when spawning npm in a new console.
 _NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # 0x08000000
@@ -215,14 +215,15 @@ async def _init_chat_dir_native(dir_slug: str) -> None:
             capture_output=True,
             timeout=30,
             creationflags=_NO_WINDOW,
+            env=host_tool_env(),
         )
         logger.info(
-            "npm init -y (powershell) for %s: exit=%d, stdout=%s",
+            "npm init -y (native) for %s: exit=%d, stdout=%s",
             dir_slug, result.returncode,
             result.stdout.decode("utf-8", errors="replace").strip()[:200],
         )
     except FileNotFoundError:
-        logger.warning("npm not found on Windows for chat %s", dir_slug)
+        logger.warning("npm not found for chat %s", dir_slug)
     except Exception:
         logger.warning("npm init -y failed for chat %s", dir_slug, exc_info=True)
 
@@ -233,13 +234,14 @@ async def _init_chat_dir_native(dir_slug: str) -> None:
             capture_output=True,
             timeout=60,
             creationflags=_NO_WINDOW,
+            env=host_tool_env(),
         )
         logger.info(
-            "python3 -m venv (powershell) for %s: exit=%d",
+            "python3 -m venv (native) for %s: exit=%d",
             dir_slug, venv_result.returncode,
         )
     except FileNotFoundError:
-        logger.warning("python3 not found on Windows for chat %s", dir_slug)
+        logger.warning("python3 not found for chat %s", dir_slug)
     except Exception:
         logger.warning("python3 -m venv failed for chat %s", dir_slug, exc_info=True)
 

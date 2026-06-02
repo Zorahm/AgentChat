@@ -131,3 +131,34 @@ async def test_bash_tool_posix_execute_routes_to_native(
 
     assert out == "native-ok"
     assert seen["command"] == "echo hi"
+
+
+# ── host_tool_env — strip AppImage/PyInstaller lib pollution ────────────
+
+
+def test_host_tool_env_strips_bundle_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An AppImage prepends $APPDIR/usr/lib to LD_LIBRARY_PATH; a spawned bash
+    # would otherwise load the bundled (mismatched) libreadline and die.
+    monkeypatch.setenv("APPDIR", "/tmp/.mount_AgentXY")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_AgentXY/usr/lib:/usr/lib")
+    env = wsl_exec.host_tool_env()
+    assert env is not None
+    # Bundle path dropped, the genuine host path kept.
+    assert env["LD_LIBRARY_PATH"] == "/usr/lib"
+
+
+def test_host_tool_env_drops_var_when_all_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APPDIR", "/tmp/.mount_AgentXY")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_AgentXY/usr/lib")
+    monkeypatch.delenv("LD_PRELOAD", raising=False)
+    env = wsl_exec.host_tool_env()
+    assert env is not None
+    assert "LD_LIBRARY_PATH" not in env
+
+
+def test_host_tool_env_none_when_clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No LD_* pollution → None, so subprocess.run(env=None) just inherits.
+    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+    monkeypatch.delenv("LD_PRELOAD", raising=False)
+    monkeypatch.delenv("APPDIR", raising=False)
+    assert wsl_exec.host_tool_env() is None

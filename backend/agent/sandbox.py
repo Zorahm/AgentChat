@@ -238,7 +238,8 @@ class SandboxPolicy:
         # print the install hint and exit 127.
         fallback = (
             "echo '[sandbox] bubblewrap (bwrap) is not installed. "
-            "Install it with: sudo apt update && sudo apt install -y bubblewrap. "
+            "Install it (Debian/Ubuntu: sudo apt install -y bubblewrap; "
+            "Arch: sudo pacman -S bubblewrap; Fedora: sudo dnf install bubblewrap). "
             "Or toggle Unrestricted mode in Settings.' >&2; exit 127"
         )
         return f"mkdir -p {chat_q}; if command -v bwrap >/dev/null 2>&1; then {bwrap_str}; else {fallback}; fi"

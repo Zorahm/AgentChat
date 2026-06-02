@@ -7,6 +7,7 @@ import shutil
 import subprocess
 
 from agent.sandbox import SandboxPolicy
+from agent.wsl_exec import host_tool_env
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 # Hide the Windows console window for spawned wsl.exe / powershell.exe — no
@@ -165,6 +166,7 @@ class BashTool(BaseTool):
                 capture_output=True,
                 timeout=300,
                 creationflags=_NO_WINDOW,
+                env=host_tool_env(),
             )
         except FileNotFoundError:
             return "[bash_tool error] bash not found in PATH."

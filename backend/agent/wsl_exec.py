@@ -16,6 +16,7 @@ subprocess.run in asyncio.to_thread works on any event loop policy.
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import subprocess
 import sys
@@ -29,6 +30,56 @@ IS_POSIX = sys.platform != "win32"
 # wsl.exe spawn when the parent (backend.exe / python.exe) itself has no
 # console attached. 0 on non-Windows so the kwarg is a no-op.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def host_tool_env() -> dict[str, str] | None:
+    """Env for spawning host tools (bash/node/python/pdftotext) from a bundled app.
+
+    A PyInstaller onefile sidecar — and the AppImage that launched it — prepend
+    their own private lib dirs to ``LD_LIBRARY_PATH``/``LD_PRELOAD``. A system
+    binary like ``bash`` then loads those bundled libraries (e.g. a mismatched
+    ``libreadline``/``libtinfo``) instead of the host's and dies with a
+    ``symbol lookup error`` / exit 127. We strip only the bundle-private entries
+    so spawned tools resolve against the host's own libraries, while keeping any
+    genuine user-set paths.
+
+    Returns ``None`` when nothing needs cleaning (no LD_* pollution / not Linux),
+    so callers can pass it straight to ``subprocess.run(env=...)`` — ``None``
+    means "inherit the current environment unchanged".
+    """
+    markers: list[str] = []
+    appdir = os.environ.get("APPDIR")
+    if appdir:
+        markers.append(appdir)
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        markers.append(str(meipass))
+
+    def _is_bundle_path(p: str) -> bool:
+        if not p:
+            return True
+        if any(p.startswith(m) for m in markers):
+            return True
+        # AppImage mounts at /tmp/.mount_*; PyInstaller extracts to /tmp/_MEI*.
+        return "/.mount_" in p or "/_MEI" in p
+
+    env = dict(os.environ)
+    changed = False
+    # LD_LIBRARY_PATH / LD_PRELOAD are POSIX vars — always colon-separated,
+    # regardless of the host os.pathsep (which is ';' on Windows).
+    for var in ("LD_LIBRARY_PATH", "LD_PRELOAD"):
+        val = env.get(var)
+        if not val:
+            continue
+        parts = val.split(":")
+        kept = [p for p in parts if not _is_bundle_path(p)]
+        if len(kept) != len(parts):
+            changed = True
+            if kept:
+                env[var] = ":".join(kept)
+            else:
+                env.pop(var, None)
+    return env if changed else None
 
 
 def decode_loose(data: bytes) -> str:
@@ -66,8 +117,10 @@ async def wsl_run(
     """
     if IS_POSIX:
         argv = ["bash", "-lc", bash_cmd]
+        env = host_tool_env()
     else:
         argv = ["wsl.exe", "--", "bash", "-lc", bash_cmd]
+        env = None
     return await asyncio.to_thread(
         subprocess.run,
         argv,
@@ -75,6 +128,7 @@ async def wsl_run(
         capture_output=True,
         timeout=timeout,
         creationflags=_NO_WINDOW,
+        env=env,
     )
 
 
