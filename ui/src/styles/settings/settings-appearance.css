@@ -1,0 +1,179 @@
+/* Settings — Appearance tab (themes, identity, language) */
+
+/* ── Theme cards (visual preview picker) ───────────────────────────────── */
+
+.theme-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 520px;
+}
+.theme-card {
+  border: 1.5px solid var(--line-2);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--surface);
+  transition: border-color .15s, transform .15s;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+.theme-card:hover { border-color: var(--muted); }
+.theme-card.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.tc-preview {
+  height: 78px; padding: 10px;
+  display: flex; flex-direction: column; gap: 5px;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+.tc-preview .bar {
+  height: 6px; border-radius: 3px; background: currentColor; opacity: .85;
+}
+.tc-preview .b1 { width: 62% }
+.tc-preview .b2 { width: 40%; opacity: .45 }
+.tc-preview .b3 { width: 78%; opacity: .45 }
+.tc-preview .b4 {
+  width: 50%; height: 14px; border-radius: 7px;
+  margin-top: auto; align-self: flex-end;
+  background: currentColor; opacity: .9;
+}
+.tc-light { background: #f6f4ef; color: #1a1a1a }
+.tc-light .b4 { background: #1a1a1a; color: #fff }
+.tc-dark { background: #15130e; color: #f0ead8 }
+.tc-dark .b4 { background: #3a2f23; color: #f0ead8 }
+.tc-auto {
+  background: linear-gradient(105deg, #f6f4ef 50%, #15130e 50%);
+  color: #1a1a1a;
+}
+.tc-auto .bar { background: #1a1a1a; color: #1a1a1a }
+.tc-auto .b3 { background: #f0ead8; color: #f0ead8; margin-left: auto }
+.tc-auto .b4 { background: #3a2f23; color: #f0ead8; margin-left: auto; margin-right: 0 }
+
+.tc-preview-svg {
+  display: block; width: 100%; height: 78px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+}
+
+.tc-foot {
+  padding: 9px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+}
+.tc-foot .name {
+  font-size: 13px; font-weight: 500; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.tc-foot .name .ic { font-size: 13px; color: var(--muted) }
+.tc-foot .name svg { color: var(--muted); flex-shrink: 0; }
+.theme-card.sel .tc-foot .name .ic { color: var(--accent) }
+.theme-card.sel .tc-foot .name svg { color: var(--accent); }
+.tc-foot .check {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: transparent; font-size: 10px;
+  flex-shrink: 0;
+}
+.theme-card.sel .check {
+  background: var(--accent); border-color: var(--accent); color: var(--on-ink);
+}
+
+/* ── Avatar + name combo ──────────────────────────────────────────────── */
+
+.id-combo {
+  display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap;
+}
+.avatar-circle {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; position: relative; cursor: pointer;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line-2);
+  overflow: hidden;
+}
+.avatar-circle .edit-badge {
+  position: absolute; inset: auto -2px -2px auto;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--ink); color: var(--on-ink);
+  font-size: 10px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--surface);
+}
+.id-combo .input-wrap {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 0 12px; height: 38px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  max-width: 300px;
+  transition: border-color .15s;
+}
+.id-combo .input-wrap:focus-within { border-color: var(--ink-2); background: var(--surface) }
+.id-combo .input-wrap input {
+  border: none; outline: none; background: transparent;
+  flex: 1; min-width: 0; font: inherit; color: var(--ink); font-size: 14px;
+}
+.id-combo .input-wrap .char-hint {
+  font-family: var(--font-mono); font-size: 11px; color: var(--faint);
+  flex-shrink: 0;
+}
+
+/* ── Language picker ──────────────────────────────────────────────────── */
+
+.lang-picker {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 0 12px; height: 38px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  cursor: pointer;
+  max-width: 240px;
+  transition: border-color .15s;
+  position: relative;
+}
+.lang-picker:hover { border-color: var(--ink-2); }
+.lang-picker .flag { font-size: 16px; }
+.lang-picker .lang-name { font-size: 13px; color: var(--ink); flex: 1; }
+.lang-picker .arrow { font-size: 11px; color: var(--faint); }
+.lang-picker select {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  font-size: 14px;
+}
+
+/* ── Theme toggle (segmented buttons) ──────────────────────────────────── */
+
+.st2-theme {
+  display: inline-flex; gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+}
+.st2-theme button {
+  appearance: none; border: none; background: transparent;
+  font: inherit;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color .15s, background .15s;
+}
+.st2-theme button:hover { color: var(--ink); }
+.st2-theme button.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(var(--shadow-tone),.12);
+}
+.st2-theme svg { width: 14px; height: 14px; flex-shrink: 0; }

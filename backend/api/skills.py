@@ -7,7 +7,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
-from api.schemas.skills import InstallRequest, SkillContent, SkillFile, SkillInfo, SkillLocation
+from api.schemas.skills import (
+    CatalogInstallRequest,
+    InstallRequest,
+    SkillContent,
+    SkillFile,
+    SkillInfo,
+    SkillLocation,
+)
+from skills.catalog import CURATED_BY_KEY
 from skills.reader import SkillEntry
 
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -45,6 +53,22 @@ async def install_skill(request: Request, body: InstallRequest) -> list[SkillInf
     installer = request.app.state.skill_installer
     try:
         entries = installer.install(body.source)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return [_to_skill_info(e) for e in entries]
+
+
+@router.post("/install-catalog", response_model=list[SkillInfo])
+async def install_catalog_skill(request: Request, body: CatalogInstallRequest) -> list[SkillInfo]:
+    """Install one curated Anthropic skill (docx/xlsx/pptx/pdf/frontend-design)."""
+    installer = request.app.state.skill_installer
+    curated = CURATED_BY_KEY.get(body.key)
+    if curated is None:
+        raise HTTPException(status_code=400, detail=f"Unknown catalog skill '{body.key}'")
+    try:
+        entries = installer.install_subdir(curated.repo, curated.subdir, curated.key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

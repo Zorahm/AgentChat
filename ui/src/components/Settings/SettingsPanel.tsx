@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowClockwise, WarningCircle, User, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, List } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
-import { MainTab } from "./tabs/MainTab";
+import { ProfileTab } from "./tabs/ProfileTab";
+import { AppearanceTab } from "./tabs/AppearanceTab";
+import { TerminalTab } from "./tabs/TerminalTab";
+import { SandboxTab } from "./tabs/SandboxTab";
 import { ProvidersTab } from "./tabs/ProvidersTab";
 import { ModelsTab } from "./tabs/ModelsTab";
 import { PathsTab } from "./tabs/PathsTab";
@@ -48,6 +51,7 @@ export interface SettingsData {
   default_model: string; temperature: number; max_iterations: number;
   user_name: string;
   theme: string;
+  notify_sound?: boolean;
   language?: string;
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
@@ -58,7 +62,10 @@ export interface SettingsData {
   mcp_servers?: MCPServerConfig[];
 }
 
-export type NavTab = "providers" | "models" | "main" | "paths" | "shortcuts" | "about" | "skills" | "mcp";
+export type NavTab =
+  | "profile" | "appearance" | "shortcuts" | "about"
+  | "providers" | "models" | "skills"
+  | "terminal" | "sandbox" | "paths" | "mcp";
 
 interface SettingsPanelProps {
   onClose?: () => void;
@@ -78,6 +85,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
   const [tab, setTab] = useState<NavTab>(initialTab ?? "providers");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const fetchModels = useCallback(async (refresh = false) => {
     setModelsLoading(true);
@@ -109,6 +117,19 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
   }, [fetchModels]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMobileNavOpen(false); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [mobileNavOpen]);
+
+  const handleTabClick = (v: NavTab) => { setTab(v); setMobileNavOpen(false); };
 
   const updateProvider = async (id: string, p: Record<string, unknown>) => {
     setError(null);
@@ -159,25 +180,29 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
 
   return (
     <div className="st2">
-      <nav className="st2-nav">
+      {mobileNavOpen && <div className="st2-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
+      <nav className={`st2-nav${mobileNavOpen ? " mobile-open" : ""}`}>
         <h2 className="st2-nav-h"><img className="st2-nav-mark" src="/dots.svg" alt="" /> {t("settings.nav.title")}</h2>
 
         {onClose && (
           <button className="st2-back" onClick={onClose}>{t("settings.back")}</button>
         )}
         <div className="st2-group">{t("settings.nav.personal")}</div>
-        <NavItem t="main" cur={tab} label={t("settings.nav.general")} ic={<User size={16} />} onClick={setTab} />
-        <NavItem t="shortcuts" cur={tab} label={t("settings.nav.shortcuts")} ic={<Keyboard size={16} />} onClick={setTab} />
-        <NavItem t="about" cur={tab} label={t("settings.nav.about")} ic={<Info size={16} />} onClick={setTab} />
+        <NavItem t="profile" cur={tab} label={t("settings.nav.profile")} ic={<User size={16} />} onClick={handleTabClick} />
+        <NavItem t="appearance" cur={tab} label={t("settings.nav.appearance")} ic={<Palette size={16} />} onClick={handleTabClick} />
+        <NavItem t="shortcuts" cur={tab} label={t("settings.nav.shortcuts")} ic={<Keyboard size={16} />} onClick={handleTabClick} />
+        <NavItem t="about" cur={tab} label={t("settings.nav.about")} ic={<Info size={16} />} onClick={handleTabClick} />
 
         <div className="st2-group">{t("settings.nav.modelGroup")}</div>
-        <NavItem t="providers" cur={tab} label={t("settings.nav.providers")} ic={<Cube size={16} />} onClick={setTab} />
-        <NavItem t="models" cur={tab} label={t("settings.nav.models")} ic={<Cpu size={16} />} onClick={setTab} />
-        <NavItem t="skills" cur={tab} label={t("settings.nav.skills")} ic={<Books size={16} />} onClick={setTab} />
+        <NavItem t="providers" cur={tab} label={t("settings.nav.providers")} ic={<Cube size={16} />} onClick={handleTabClick} />
+        <NavItem t="models" cur={tab} label={t("settings.nav.models")} ic={<Cpu size={16} />} onClick={handleTabClick} />
+        <NavItem t="skills" cur={tab} label={t("settings.nav.skills")} ic={<Books size={16} />} onClick={handleTabClick} />
 
         <div className="st2-group">{t("settings.nav.systemGroup")}</div>
-        <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<DeviceMobile size={16} />} onClick={setTab} />
-        <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={setTab} />
+        <NavItem t="terminal" cur={tab} label={t("settings.nav.terminal")} ic={<TerminalWindow size={16} />} onClick={handleTabClick} />
+        <NavItem t="sandbox" cur={tab} label={t("settings.nav.sandbox")} ic={<ShieldWarning size={16} />} onClick={handleTabClick} />
+        <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<DeviceMobile size={16} />} onClick={handleTabClick} />
+        <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={handleTabClick} />
 
         <div className="st2-nav-pad" />
         <div className="st2-nav-foot">
@@ -186,8 +211,17 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
       </nav>
 
       <div className="st2-body">
+        <div className="st2-mob-bar">
+          <button className="st2-mob-btn" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+            <List size={22} />
+          </button>
+          <span className="st2-mob-title">{t(`settings.nav.${tab}`)}</span>
+        </div>
         {error && <div className="st2-error">{error}</div>}
-        {tab === "main" && <MainTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} />}
+        {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} />}
+        {tab === "appearance" && <AppearanceTab settings={settings} onUpdate={updateGlobal} />}
+        {tab === "terminal" && <TerminalTab settings={settings} onUpdate={updateGlobal} />}
+        {tab === "sandbox" && <SandboxTab settings={settings} onUpdate={updateGlobal} />}
         {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} onUpdateGlobal={updateGlobal} />}
         {tab === "models" && <ModelsTab settings={settings} loading={modelsLoading} onUpdate={updateGlobal} onRefresh={() => fetchModels(true)} />}
         {tab === "paths" && <PathsTab />}

@@ -124,7 +124,7 @@ export function MCPTab() {
             {t("settings.mcp.description")}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <div className="mcp-header-actions">
           <button
             className="st2-btn"
             title={t("settings.mcp.openConfigFolder")}

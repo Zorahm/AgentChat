@@ -1,0 +1,128 @@
+/* Settings — Terminal tab (shell selection) */
+
+.st2-shell-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.st2-shell-card {
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--paper-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.st2-shell-card.ok { border-color: var(--ok-line, #2a8a3e); }
+.st2-shell-card.bad { border-color: var(--err-line, #b54545); }
+.st2-shell-card.active {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.st2-shell-card-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 2px;
+}
+
+.st2-shell-card.ok .st2-shell-card-h svg { color: var(--ok-line, #2a8a3e); }
+.st2-shell-card.bad .st2-shell-card-h svg { color: var(--err-line, #b54545); }
+
+.st2-shell-card-title {
+  flex: 1;
+}
+
+.st2-shell-card-active {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.st2-shell-card-ln {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.st2-shell-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--paper-2);
+  border: 1px solid var(--ink-soft);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.st2-mh-refresh {
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  transition: color .12s, background .12s;
+}
+.st2-mh-refresh:hover:not(:disabled) { color: var(--ink); background: var(--paper-2); }
+.st2-mh-refresh:disabled { opacity: .55; cursor: default; }
+.st2-mh-refresh svg { width: 14px; height: 14px; }
+
+.st2-h-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.st2-h-row .st2-h { margin-bottom: 0; }
+
+.st2-paths-restart-row { margin-top: 10px; }
+
+.st2-shell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.st2-shell-allok {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ok-line, #2a8a3e);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.st2-shell-allok::before { content: "✓"; }
+
+.st2-shell-note {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .st2-shell-grid { grid-template-columns: 1fr; }
+}

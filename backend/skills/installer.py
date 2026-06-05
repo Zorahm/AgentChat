@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from skills.catalog import ANTHROPIC_ALLOWED_DIR_NAMES, ANTHROPIC_SOURCE
 from skills.reader import AgentSkillsReader, SkillEntry
 
 
@@ -156,6 +157,17 @@ class GitHubSkillInstaller:
             shutil.rmtree(dest, ignore_errors=True)
             raise ValueError(f"'{source}' contains no SKILL.md — not a valid Skills 2.0 package")
 
+        # The Anthropic repo carries ~17 skills; we only want the curated few.
+        # Prune the rest so a full-repo install matches the catalog cards.
+        if source.lower() == ANTHROPIC_SOURCE:
+            for md in skill_md_files:
+                if md.parent.name not in ANTHROPIC_ALLOWED_DIR_NAMES:
+                    shutil.rmtree(md.parent, ignore_errors=True)
+            skill_md_files = list(dest.rglob("SKILL.md"))
+            if not skill_md_files:
+                shutil.rmtree(dest, ignore_errors=True)
+                raise ValueError(f"'{source}' yielded no curated skills after filtering")
+
         self._write_marker(dest, source=source)
         self._reader.rebuild()
 
@@ -165,6 +177,63 @@ class GitHubSkillInstaller:
         ]
         if not installed:
             raise RuntimeError(f"Skills installed to {dest} but none found after rebuild")
+        return installed
+
+    def install_subdir(self, repo_source: str, subdir: str, install_as: str) -> list[SkillEntry]:
+        """Install a single skill folder (*subdir*) out of a GitHub repo.
+
+        Downloads the repo archive, extracts only the members under *subdir*
+        into ``skills_dir/install_as``. Used by the curated-catalog install so
+        each picked skill lands as its own top-level folder.
+        """
+        repo_source = repo_source.strip().strip("/")
+        parts = [p for p in repo_source.split("/") if p]
+        if len(parts) < 2:
+            raise ValueError(f"Expected 'owner/repo', got '{repo_source}'")
+        if not _SAFE_NAME_RE.match(install_as):
+            raise ValueError(f"Unsafe skill name: '{install_as}'")
+
+        owner, repo = parts[0], parts[1]
+        subdir = subdir.strip("/")
+        dest = self.skills_dir / install_as
+
+        if dest.exists() and not _has_marker_above(dest, self.skills_dir):
+            raise ValueError(
+                f"'{install_as}' already exists at {dest} and wasn't installed by "
+                f"AgentChat. Remove it manually if you really want to replace it."
+            )
+        if dest.exists():
+            shutil.rmtree(dest)
+
+        downloaded = False
+        for branch in ("main", "master"):
+            url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
+            try:
+                data = self._fetch(url)
+                self._extract(data, dest, prefix=f"{repo}-{branch}/{subdir}/")
+                downloaded = True
+                break
+            except HTTPError as exc:
+                if exc.code == 404 and branch == "main":
+                    continue
+                raise ValueError(f"Cannot download '{repo_source}': HTTP {exc.code}") from exc
+            except URLError as exc:
+                raise ValueError(f"Network error for '{repo_source}': {exc.reason}") from exc
+
+        if not downloaded:
+            raise ValueError(f"Repository '{repo_source}' not found on GitHub")
+
+        if not list(dest.rglob("SKILL.md")):
+            shutil.rmtree(dest, ignore_errors=True)
+            raise ValueError(f"'{subdir}' in '{repo_source}' has no SKILL.md")
+
+        self._write_marker(dest, source=f"{repo_source}/{subdir}")
+        self._reader.rebuild()
+        installed: list[SkillEntry] = [
+            e for e in self._reader.list_skills() if _is_subpath(e.path, dest)
+        ]
+        if not installed:
+            raise RuntimeError(f"Skill installed to {dest} but none found after rebuild")
         return installed
 
     def install_from_archive(self, archive_bytes: bytes, filename: str) -> list[SkillEntry]:

@@ -5,12 +5,23 @@ import { QRCodeSVG } from "qrcode.react";
 import { API_BASE, setBackendUrl } from "../../../utils/apiBase";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { RestartBackendButton } from "../RestartBackendButton";
+import { isTauri } from "../../../utils/tauri";
 
 interface RemoteAccessInfo {
   enabled: boolean;
   token: string;
   port: number;
   urls: string[];
+}
+
+/** True for a Tailscale address (100.64.0.0/10) — the one a paired phone on the
+ * same tailnet can actually reach. Backend lists it first; we tag it here. */
+function isTailscaleUrl(url: string): boolean {
+  const m = url.match(/^https?:\/\/(\d+)\.(\d+)\./);
+  const first = m?.[1];
+  const second = m?.[2];
+  if (!first || !second) return false;
+  return first === "100" && Number(second) >= 64 && Number(second) <= 127;
 }
 
 export function PathsTab() {
@@ -131,10 +142,11 @@ export function PathsTab() {
                             {info.urls.map((u) => (
                               <button
                                 key={u}
-                                className={`st2-remote-url-chip${u === selectedUrl ? " on" : ""}`}
+                                className={`st2-remote-url-chip${u === selectedUrl ? " on" : ""}${isTailscaleUrl(u) ? " ts" : ""}`}
                                 onClick={() => setSelectedUrl(u)}
                               >
                                 {u.replace(/^https?:\/\//, "")}
+                                {isTailscaleUrl(u) && <span className="st2-remote-url-tag">Tailscale</span>}
                               </button>
                             ))}
                           </div>
@@ -201,6 +213,21 @@ export function PathsTab() {
           </button>
         </div>
       </div>
+
+      {/* Backend restart — desktop shell only */}
+      {isTauri() && (
+        <div className="st2-remote-conn">
+          <div className="st2-remote-conn-head">
+            <div className="st2-remote-conn-titles">
+              <div className="st2-remote-conn-title">{t("settings.backend.restart")}</div>
+              <div className="st2-remote-conn-sub">{t("settings.backend.restartHint")}</div>
+            </div>
+          </div>
+          <div className="st2-paths-restart-row">
+            <RestartBackendButton className="st2-btn" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

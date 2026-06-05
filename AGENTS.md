@@ -29,38 +29,68 @@
 ```
 AgentChat/
 ├── backend/                    # Python — FastAPI + agent loop
-│   ├── main.py                 # App factory, settings store, startup
+│   ├── main.py                 # App factory — composition root
 │   ├── run.py                  # Uvicorn entry point
+│   ├── paths.py                # Path resolution (data dir, chat dirs)
+│   ├── shell.py                # Shell abstraction (WSL/PowerShell/posix)
+│   ├── extraction.py           # Content/text extraction utilities
 │   ├── api/                    # FastAPI route handlers
-│   │   ├── chat.py             # POST /api/chat — SSE streaming endpoint (core)
+│   │   ├── chat.py             # POST /api/chat — SSE streaming (core)
 │   │   ├── chats.py            # CRUD /api/chats — session persistence
-│   │   ├── settings.py         # GET/PUT /api/settings
+│   │   ├── config_routes.py    # GET/PUT /api/settings
 │   │   ├── files.py            # File upload/download
 │   │   ├── skills.py           # Skills install/list/delete
 │   │   ├── wsl.py              # WSL detection & management
 │   │   ├── health.py           # GET /api/system-status
 │   │   ├── models_routes.py    # GET /api/models
+│   │   ├── mcp.py              # MCP server management routes
+│   │   ├── projects.py         # Projects CRUD
+│   │   ├── remote.py           # Remote access (token, toggle, QR)
+│   │   ├── searxng.py          # SearXNG proxy
+│   │   ├── win_deps.py         # Windows dependency detection
+│   │   ├── router.py           # Route assembly
 │   │   └── schemas/            # Pydantic request/response models
-│   │       └── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
+│   │       ├── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
+│   │       ├── mcp.py          # MCP schemas
+│   │       ├── settings.py     # Settings schemas
+│   │       └── skills.py       # Skills schemas
 │   ├── agent/                  # Agent core logic
 │   │   ├── loop.py             # AgentLoop — run_stream() is the main path
 │   │   ├── config.py           # AgentConfig dataclass
-│   │   ├── file_tag_interceptor.py  # <file> and <edit> tag streaming parser
+│   │   ├── system_prompt.py    # System prompt builder
+│   │   ├── types.py            # Agent event/message types
 │   │   ├── sandbox.py          # SandboxPolicy — path access control
 │   │   ├── write_file_stream.py # write_file streaming chunk emitter
 │   │   └── wsl_exec.py         # WSL command execution helpers
 │   ├── tools/                  # Tool implementations (agent-callable)
 │   │   ├── base.py             # BaseTool ABC
 │   │   ├── registry.py         # ToolRegistry — register/execute tools
+│   │   ├── factory.py          # build_tool_registry() — per-request assembly
 │   │   ├── bash_tool.py        # BashTool — shell command execution
 │   │   ├── read_file.py        # ReadFileTool
 │   │   ├── write_file.py       # WriteFileTool — canonical file write path
-│   │   └── read_skill.py       # ReadSkillTool — reads SKILL.md
+│   │   ├── edit_file.py        # EditFileTool — in-place file edits
+│   │   ├── present_files.py    # PresentFilesTool — surfaces files as cards
+│   │   ├── read_skill.py       # ReadSkillTool — reads SKILL.md
+│   │   ├── read_photo.py       # ReadPhotoTool — image content extraction
+│   │   ├── web_search_tool.py  # WebSearchTool
+│   │   └── web_fetch_tool.py   # WebFetchTool
 │   ├── llm/                    # LLM client layer
 │   │   ├── client.py           # LLMClient — wraps LiteLLM
 │   │   └── models_fetcher.py   # Fetches available models from providers
+│   ├── mcp_integration/        # Model Context Protocol
+│   │   ├── client.py           # MCP client (stdio/HTTP)
+│   │   ├── config.py           # MCP server config
+│   │   ├── manager.py          # MCPManager — server lifecycle
+│   │   ├── registry_view.py    # Exposes MCP tools to agent
+│   │   └── tool_proxy.py       # Proxies MCP tool calls
 │   ├── store/                  # Persistence
-│   │   └── chat_store.py       # SQLite chat storage (upsert, get, touch)
+│   │   ├── chat_store.py       # SQLite chat storage (upsert, get, touch)
+│   │   ├── project_store.py    # SQLite project storage
+│   │   └── settings_store.py   # Settings read/write
+│   ├── web_search/             # Web search module
+│   │   ├── config.py           # Provider config (native/Tavily/SearXNG)
+│   │   └── service.py          # WebSearchService — routes to active provider
 │   └── skills/                 # Skills system
 │       ├── reader.py           # AgentSkillsReader — scans SKILL.md files
 │       └── installer.py        # GitHub/archive skill installer
@@ -70,42 +100,104 @@ AgentChat/
 │       ├── main.tsx            # React entry point
 │       ├── App.tsx             # Root component, settings context, layout
 │       ├── hooks/
-│       │   ├── useChats.ts     # Multi-session chat manager (THE main hook)
-│       │   ├── useSSE.ts       # SSE connection helper (sseConnect)
-│       │   └── useAvatar.ts    # Avatar URL management
+│       │   ├── useChats.ts         # Multi-session chat manager (THE main hook)
+│       │   ├── useSSE.ts           # SSE connection helper (sseConnect)
+│       │   ├── useAvatar.ts        # Avatar URL management
+│       │   ├── useProjects.ts      # Projects data hook
+│       │   ├── useShortcuts.ts     # Keyboard shortcut registration
+│       │   ├── useAppUpdate.ts     # Auto-update check
+│       │   ├── useFileDrop.ts      # File drop handling
+│       │   ├── useLongPress.ts     # Long-press gesture
+│       │   └── useWindowFileDrag.ts # Window-level drag detection
 │       ├── contexts/
 │       │   └── SettingsContext.tsx  # Shared settings state (model, theme, etc.)
+│       ├── shortcuts/
+│       │   └── registry.ts         # Shortcut definitions
 │       ├── components/
 │       │   ├── Chat/
-│       │   │   ├── ChatView.tsx     # Chat column — messages + composer
-│       │   │   ├── ChatInput.tsx    # Message composer with file upload
-│       │   │   ├── MessageBubble.tsx # Single message renderer
-│       │   │   ├── ModelSelector.tsx # Model dropdown
-│       │   │   └── CodeBlockView.tsx # Syntax-highlighted code blocks
-│       │   ├── Settings/              # Settings panel
-│       │   │   ├── SettingsPanel.tsx  # Shell — nav, tab routing, state
-│       │   │   └── tabs/              # Per-tab components
+│       │   │   ├── ChatView.tsx         # Chat column — messages + composer
+│       │   │   ├── ChatInput.tsx        # Message composer with file upload
+│       │   │   ├── MessageBubble.tsx    # Single message renderer
+│       │   │   ├── ModelSelector.tsx    # Model dropdown
+│       │   │   ├── CodeBlockView.tsx    # Syntax-highlighted code blocks
+│       │   │   ├── MCPChip.tsx          # MCP server indicator chip
+│       │   │   ├── MentionNodeView.tsx  # @mention node
+│       │   │   ├── MentionPopup.tsx     # @mention autocomplete
+│       │   │   ├── WebSearchControl.tsx # Web search toggle
+│       │   │   ├── WebSearchMenuSection.tsx
+│       │   │   └── SupportCard.tsx
+│       │   ├── Settings/
+│       │   │   ├── SettingsPanel.tsx    # Shell — nav, tab routing, state
+│       │   │   ├── RestartBackendButton.tsx
+│       │   │   └── tabs/
+│       │   │       ├── MainTab.tsx
+│       │   │       ├── ProvidersTab.tsx
+│       │   │       ├── ModelsTab.tsx
+│       │   │       ├── PathsTab.tsx
+│       │   │       ├── MCPTab.tsx
+│       │   │       ├── ShortcutsTab.tsx
+│       │   │       └── AboutTab.tsx
+│       │   ├── Projects/
+│       │   │   ├── ProjectsView.tsx     # Projects list
+│       │   │   └── ProjectDetail.tsx    # Project detail + chat list
+│       │   ├── Artifacts/
+│       │   │   ├── ArtifactCard.tsx
+│       │   │   ├── ArtifactsSidePanel.tsx
+│       │   │   ├── ArtifactViews.tsx
+│       │   │   ├── FilePreviewPanel.tsx
+│       │   │   └── FilesPanel.tsx
+│       │   ├── Skills/
+│       │   │   └── SkillsManager.tsx
+│       │   ├── ToolCalls/
+│       │   │   └── ToolCallBlock.tsx
+│       │   ├── Onboarding/
+│       │   │   └── OnboardingWizard.tsx
+│       │   ├── Markdown/
+│       │   │   └── Markdown.tsx
 │       │   ├── Sidebar.tsx          # Left nav — chat list + navigation
 │       │   ├── AllChatsPage.tsx     # All chats grid with search/sort
-│       │   ├── Skills/              # Skills manager UI
-│       │   ├── Onboarding/          # First-run wizard
-│       │   ├── Artifacts/           # File preview panels
+│       │   ├── FilesGalleryPage.tsx # Gallery of all uploaded files
+│       │   ├── GhostChat.tsx        # Empty/placeholder chat state
 │       │   ├── GlobalDropZone.tsx   # App-wide file drop handler
-│       │   └── Markdown/            # Markdown rendering
+│       │   └── ErrorBoundary.tsx
 │       ├── types/
 │       │   ├── chat.ts         # ChatSession, ChatNode, UserNode, AssistantNode
 │       │   ├── tool-call.ts    # ToolCall, ProcessStep
-│       │   └── artifact.ts     # LiveFile
+│       │   ├── artifact.ts     # LiveFile
+│       │   └── project.ts      # Project
+│       ├── i18n/
+│       │   ├── index.ts
+│       │   ├── languages.ts
+│       │   └── locales/en/ ru/
 │       └── utils/
-│           ├── apiBase.ts      # API_BASE detection (Tauri vs dev proxy)
-│           ├── tauri.ts        # isTauri() detection
-│           ├── formatTime.ts   # Locale-aware time formatting
-│           ├── parseArtifacts.ts # <file>/<edit> tag extraction from messages
-│           └── updater.ts      # Tauri auto-updater
+│           ├── apiBase.ts          # API_BASE detection (Tauri vs dev proxy)
+│           ├── tauri.ts            # isTauri() detection
+│           ├── formatTime.ts       # Locale-aware time formatting
+│           ├── parseArtifacts.ts   # Artifact extraction (support path)
+│           ├── presentedFiles.ts   # Files surfaced via present_files tool
+│           ├── collectAllFiles.ts  # Aggregate file cards from tool calls
+│           ├── toolIcons.tsx       # Icon map for tool calls
+│           ├── safeJson.ts         # Safe JSON parse/stringify
+│           ├── notify.ts           # Desktop notifications
+│           ├── openExternal.ts     # Open URLs in OS browser
+│           ├── mentions.ts         # @mention parsing
+│           ├── parseCodeBlocks.ts  # Code block extraction
+│           ├── parseMath.ts        # Math expression parsing
+│           ├── renderMath.ts       # Math rendering
+│           └── updater.ts          # Tauri auto-updater
 │
 ├── src-tauri/                  # Tauri shell — Rust
+│   └── src/main.rs             # Window, sidecar spawn, auto-update
 ├── skills/                     # Installed skills directory
 ├── tests/                      # All tests
+│   └── backend/
+│       ├── test_agent_loop.py
+│       ├── test_chat_history.py
+│       ├── test_chat_purge.py
+│       ├── test_remote_access.py
+│       ├── test_sandbox_policy.py
+│       ├── test_tool_call_streaming.py
+│       └── test_tools.py
 └── docs/                       # Analysis reports
 ```
 
@@ -119,13 +211,13 @@ ChatInput.handleSend()
   → App.handleSend()
     → useChats.sendMessage()
       → sseConnect(POST /api/chat)
-        → api/chat.py: chat() — builds AgentLoop, sets up tools
+        → api/chat.py: chat() — builds AgentLoop via build_tool_registry()
           → AgentLoop.run_stream() — yields SSE events
-            → FileTagInterceptor — parses <file>/<edit> tags
             → tool calls → ToolRegistry.execute()
+              → write_file / edit_file / present_files / bash / read_file / ...
           → finally: touch_chat(chat_id)
         → SSE events → useChats.makeEventHandler()
-          → updates sessions tree (variants, tool calls, live files)
+          → updates sessions tree (variants, tool calls, presented files)
 ```
 
 ### Chat persistence

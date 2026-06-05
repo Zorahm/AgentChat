@@ -19,6 +19,10 @@ class InstallRequest(BaseModel):
     source: str = Field(description="Skill name in the registry (e.g. 'docx')")
 
 
+class CatalogInstallRequest(BaseModel):
+    key: str = Field(description="Curated catalog key (e.g. 'docx', 'frontend-design')")
+
+
 class SkillContent(BaseModel):
     name: str
     content: str

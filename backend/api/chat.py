@@ -24,6 +24,7 @@ from tools.base import BaseTool
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
 from tools.read_file import ReadFileTool
+from tools.present_files import PresentFilesTool
 from tools.read_photo import ReadPhotoTool
 from tools.registry import ToolRegistry
 from tools.web_search_tool import WebSearchTool
@@ -423,7 +424,12 @@ async def chat(
     # which LLM it is when asked.
     system_prompt: str = app_state.system_prompt_factory(model)
 
-    base_registry: ToolRegistry = app_state.tool_registry
+    # Fresh tool set per request: each call stamps its sandbox policy onto the
+    # filesystem tools, and multiple chats can now stream at once — sharing one
+    # set would let their policies race. See tools.factory.build_tool_registry.
+    from tools.factory import build_tool_registry
+
+    base_registry: ToolRegistry = build_tool_registry(app_state.skill_reader)
     mcp_proxies = await _build_mcp_proxies(
         body.mcp_enabled_servers, store, app_state.mcp_manager
     )
@@ -432,7 +438,7 @@ async def chat(
     # Resolve the fallback chain (native → litellm/Tavily → searxng → none).
     # Native = a provider-side tool appended to the LiteLLM tools array; the
     # local backends = a `web_search` function-tool overlaid on the registry.
-    from main import build_web_search_config
+    from store.settings_store import build_web_search_config
 
     overlay_tools: list[BaseTool] = list(mcp_proxies)
     native_web_tools: list[dict[str, Any]] = []
@@ -457,14 +463,14 @@ async def chat(
     # touch the filesystem plus the agent loop (which handles <file>/<edit>
     # stream tags). In restricted mode bash_tool is wrapped with bwrap and
     # read/write tools refuse paths outside their allowed scope.
-    from main import (
+    from paths import (
         USER_HOME,
         USER_NAME,
         WSL_USER_HOME,
         get_allowed_read_prefixes,
         get_blocked_read_prefixes,
-        resolve_active_shell,
     )
+    from shell import resolve_active_shell
     active_shell = resolve_active_shell(store.shell_preference)
     home = USER_HOME if active_shell == "powershell" else WSL_USER_HOME
     chat_dir = _resolve_chat_cwd(body.chat_dir_slug, home, shell=active_shell)
@@ -519,6 +525,9 @@ async def chat(
     edit = registry.get(EditFileTool.name)
     if isinstance(edit, EditFileTool):
         edit.set_policy(policy)
+    present = registry.get(PresentFilesTool.name)
+    if isinstance(present, PresentFilesTool):
+        present.set_policy(policy)
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key, extra_headers=config.extra_headers)
     agent = AgentLoop(

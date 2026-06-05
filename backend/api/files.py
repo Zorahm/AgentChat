@@ -175,7 +175,8 @@ async def upload_files(
     # write into WSL; PowerShell fallback → write to the Windows filesystem.
     # (Previously WSL-only: in PowerShell mode the file was never written to
     # Windows and the model got a Unix path that resolved to nothing.)
-    from main import USER_HOME, resolve_active_shell
+    from paths import USER_HOME
+    from shell import resolve_active_shell
 
     preference = getattr(request.app.state.settings_store, "shell_preference", "auto")
     shell = resolve_active_shell(preference)
@@ -232,7 +233,8 @@ async def delete_upload(
     the client path is trusted for its filename only, never as an absolute
     target (no traversal, no escaping the sandbox). Missing files are a no-op.
     """
-    from main import USER_HOME, resolve_active_shell
+    from paths import USER_HOME
+    from shell import resolve_active_shell
 
     name = _safe_filename(Path(path).name)
     if name in ("", ".", "..") or "/" in name or "\\" in name:

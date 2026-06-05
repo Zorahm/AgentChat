@@ -12,8 +12,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 import main  # noqa: E402
+from api.remote import _is_tailscale_ip, _sort_ips  # noqa: E402
 from api.schemas.settings import SettingsUpdate  # noqa: E402
-from main import SettingsStore, _is_loopback_client  # noqa: E402
+from main import _is_loopback_client  # noqa: E402
+from store.settings_store import SettingsStore  # noqa: E402
 
 fastapi_testclient = pytest.importorskip("fastapi.testclient")
 TestClient = fastapi_testclient.TestClient
@@ -104,3 +106,39 @@ class TestRemoteAccessGuard:
         store.update(SettingsUpdate(remote_access_enabled=False))
         store.update(SettingsUpdate(remote_access_enabled=True))
         assert store.remote_token == first
+
+
+class TestIpOrdering:
+    @pytest.mark.parametrize(
+        "ip, expected",
+        [
+            ("100.64.0.7", True),
+            ("100.127.255.254", True),
+            ("100.100.1.1", True),
+            ("100.63.0.1", False),  # just below the 100.64.0.0/10 range
+            ("100.128.0.1", False),  # just above the range
+            ("192.168.1.5", False),
+            ("10.0.0.5", False),
+            ("not-an-ip", False),
+        ],
+    )
+    def test_is_tailscale_ip(self, ip: str, expected: bool) -> None:
+        assert _is_tailscale_ip(ip) is expected
+
+    def test_tailscale_sorts_first(self) -> None:
+        ordered = _sort_ips(["192.168.1.5", "100.115.92.3", "10.0.0.5"])
+        assert ordered[0] == "100.115.92.3"
+        # Remaining LAN addresses keep a stable lexicographic order.
+        assert ordered == ["100.115.92.3", "10.0.0.5", "192.168.1.5"]
+
+    def test_no_tailscale_is_plain_sort(self) -> None:
+        assert _sort_ips(["192.168.1.5", "10.0.0.5"]) == ["10.0.0.5", "192.168.1.5"]
+
+    def test_cli_primary_beats_other_cgnat(self) -> None:
+        # Two addresses both in 100.64.0.0/10 (a stale lease + the live one).
+        # The CLI-confirmed primary must win the default slot even though it
+        # sorts later lexicographically.
+        ordered = _sort_ips(
+            ["100.81.141.114", "100.88.130.48"], primary="100.88.130.48"
+        )
+        assert ordered[0] == "100.88.130.48"

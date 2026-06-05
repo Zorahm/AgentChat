@@ -39,6 +39,8 @@ export interface UseChatResult {
   branchNodes: ChatNode[];
   liveFiles: LiveFile[];
   isStreaming: boolean;
+  /** Every chat currently streaming — drives per-chat "working" indicators. */
+  streamingIds: ReadonlySet<string>;
   error: string | null;
   newChat: (projectId?: string) => void;
   startProjectChat: (
@@ -63,6 +65,9 @@ export interface UseChatResult {
   activeWebSearchEnabled: boolean;
   activeWebSearchMode: string;
   setWebSearch: (enabled: boolean, mode?: string) => void;
+  /** Mirror the persisted web-search default (from /api/settings) into the hook
+   *  so the composer toggle reflects it on load and survives app restarts. */
+  setWebSearchDefault: (pref: Partial<WebSearchPref>) => void;
 }
 
 // ── Persistence & migration ────────────────────────────────────────────────
@@ -88,20 +93,13 @@ interface WebSearchPref {
   mode: string;
 }
 
-// Sticky web-search default for new chats. Mirrored from backend settings
-// (web_search_enabled / web_search_mode) by App via setWebSearchDefault, so the
-// toggle survives app restarts and is shared across devices — no localStorage.
+// Sticky web-search default. Mirrors the backend setting (web_search_enabled /
+// web_search_mode) so the toggle survives restarts and is shared across devices
+// — no localStorage. The hook owns the *reactive* copy (so the composer
+// re-renders when settings load); this module-level mirror exists so makeSession
+// (module scope) and the send path can read the latest value synchronously
+// without threading it through. Kept in sync from hook state via an effect.
 let webSearchDefault: WebSearchPref = { enabled: false, mode: "auto" };
-
-/** Sync the sticky default from persisted settings. Called by App after it
- *  loads /api/settings, and re-applied on every toggle so new chats opened
- *  before the settings round-trip still inherit the latest choice. */
-export function setWebSearchDefault(pref: Partial<WebSearchPref>): void {
-  webSearchDefault = {
-    enabled: !!pref.enabled,
-    mode: typeof pref.mode === "string" ? pref.mode : "auto",
-  };
-}
 
 const STORAGE_KEY = "aic-sessions-v2";
 const OLD_STORAGE_KEY = "aic-sessions-v1";
@@ -986,10 +984,28 @@ export function useChats(): UseChatResult {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [liveFiles, setLiveFiles] = useState<LiveFile[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  // Reactive mirror of the sticky web-search default. Held as state so the
+  // composer toggle re-renders the moment App pushes the persisted setting in;
+  // synced to the module-level `webSearchDefault` (read by makeSession + the
+  // send path) via the effect below.
+  const [wsDefault, setWsDefault] = useState<WebSearchPref>(webSearchDefault);
+  useEffect(() => { webSearchDefault = wsDefault; }, [wsDefault]);
+  const setWebSearchDefault = useCallback((pref: Partial<WebSearchPref>) => {
+    setWsDefault({
+      enabled: !!pref.enabled,
+      mode: typeof pref.mode === "string" ? pref.mode : "auto",
+    });
+  }, []);
+  /** Ids of every chat currently streaming. Many can run at once — opening a new
+   *  chat or jumping to settings never interrupts a reply already in flight. */
+  const [streamingIds, setStreamingIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
-  const sseRef = useRef<SSEReader | null>(null);
-  const streamingTargetRef = useRef<{ nodeId: string; variantId: string } | null>(null);
+  /** Live SSE readers keyed by session id, with the assistant node each is
+   *  writing into (used by abort to mark the right variant). */
+  const streamsRef = useRef<Map<string, { reader: SSEReader; nodeId: string; variantId: string }>>(new Map());
+  /** Mirror of activeId, readable inside event-handler closures (which capture a
+   *  fixed sessionId) so they can tell whether their chat is the one on screen. */
+  const activeIdRef = useRef<string>("");
   const initializedRef = useRef(false);
   /** Per-session JSON snapshot of the last value pushed to the backend. The
    * effect that debounces saves compares against this to skip no-op writes. */
@@ -1004,6 +1020,39 @@ export function useChats(): UseChatResult {
     attachments?: AttachmentInfo[];
     html?: string;
   } | null>(null);
+
+  // Keep the activeId mirror current for event-handler closures.
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  /** Register a freshly-opened SSE stream for a session. */
+  const beginStream = useCallback(
+    (sid: string, reader: SSEReader, nodeId: string, variantId: string) => {
+      streamsRef.current.set(sid, { reader, nodeId, variantId });
+      setStreamingIds((prev) => {
+        if (prev.has(sid)) return prev;
+        const next = new Set(prev);
+        next.add(sid);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** Tear a stream down. close=true aborts the live connection (abort / delete);
+   *  a natural done/error passes close=false since the reader already finished. */
+  const dropStream = useCallback((sid: string, close: boolean) => {
+    const handle = streamsRef.current.get(sid);
+    if (handle && close) {
+      try { handle.reader.close(); } catch { /* already closed */ }
+    }
+    streamsRef.current.delete(sid);
+    setStreamingIds((prev) => {
+      if (!prev.has(sid)) return prev;
+      const next = new Set(prev);
+      next.delete(sid);
+      return next;
+    });
+  }, []);
 
   // ── Initial load + one-shot migration ─────────────────────────────────
   useEffect(() => {
@@ -1073,6 +1122,8 @@ export function useChats(): UseChatResult {
   }, [sessions]);
 
   const activeSession = sessions.find((s) => s.id === activeId) ?? sessions[0];
+  // The composer/stop-button only care about the chat on screen.
+  const isStreaming = streamingIds.has(activeId);
   const messages = activeSession ? currentBranch(activeSession) : [];
   const branchNodes: ChatNode[] = activeSession ? currentBranchNodes(activeSession) : [];
 
@@ -1169,7 +1220,7 @@ export function useChats(): UseChatResult {
                 });
               }),
             );
-            if (tc.name === "write_file" && typeof tc.input.path === "string") {
+            if (sessionId === activeIdRef.current && tc.name === "write_file" && typeof tc.input.path === "string") {
               const filePath = tc.input.path as string;
               setLiveFiles((prev) => {
                 const prior = [...prev].reverse().find((f) => f.path === filePath);
@@ -1179,10 +1230,35 @@ export function useChats(): UseChatResult {
             }
             break;
           }
+          case "tool_input": {
+            // Live refresh of a running tool's input — the model is still
+            // typing the arguments (e.g. the bash command appears char by char).
+            const callId = String(data.id ?? "");
+            const input = (data.input as Record<string, unknown>) ?? {};
+            const applyInput = (tc: ToolCall): ToolCall =>
+              tc.id === callId ? { ...tc, input: { ...tc.input, ...input } } : tc;
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  steps: (v.steps ?? []).map((st) =>
+                    st.type === "tool" && st.call.id === callId
+                      ? { type: "tool" as const, call: applyInput(st.call) }
+                      : st,
+                  ),
+                  toolCalls: (v.toolCalls ?? []).map(applyInput),
+                }));
+              }),
+            );
+            break;
+          }
           case "tool_chunk": {
             const callId = String(data.id ?? "");
             const chunk = String(data.content ?? "");
-            updateLiveFile(callId, (lf) => ({ ...lf, content: lf.content + chunk }));
+            if (sessionId === activeIdRef.current) {
+              updateLiveFile(callId, (lf) => ({ ...lf, content: lf.content + chunk }));
+            }
             break;
           }
           case "tool_end": {
@@ -1212,7 +1288,9 @@ export function useChats(): UseChatResult {
                 }));
               }),
             );
-            updateLiveFile(callId, (lf) => ({ ...lf, done: true }));
+            if (sessionId === activeIdRef.current) {
+              updateLiveFile(callId, (lf) => ({ ...lf, done: true }));
+            }
             break;
           }
           case "iterations_exhausted": {
@@ -1229,31 +1307,34 @@ export function useChats(): UseChatResult {
             break;
           }
           case "done":
-            setIsStreaming(false);
-            streamingTargetRef.current = null;
+            dropStream(sessionId, false);
             break;
           case "error":
-            setError(String(data.message ?? "Unknown error"));
-            setIsStreaming(false);
-            streamingTargetRef.current = null;
+            // Only surface the banner if this is the chat on screen; a
+            // background failure still tears its own stream down quietly.
+            if (sessionId === activeIdRef.current) {
+              setError(String(data.message ?? "Unknown error"));
+            }
+            dropStream(sessionId, false);
             break;
         }
       } catch {
         /* ignore malformed */
       }
     },
-    [updateLiveFile],
+    [updateLiveFile, dropStream],
   );
 
   // ── Public API ──────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
     (content: string, model?: string, attachments?: AttachmentInfo[], html?: string, thinkingEnabled?: boolean, effort?: string) => {
-      if ((!content.trim() && (!attachments || attachments.length === 0)) || isStreaming) return;
+      if (!content.trim() && (!attachments || attachments.length === 0)) return;
+      // Guard per-chat: the active chat can't double-send, but a different chat
+      // streaming in the background never blocks this one.
+      if (streamsRef.current.has(activeId)) return;
 
-      sseRef.current?.close();
       setError(null);
-      setIsStreaming(true);
 
       const sid = activeId;
       const currentSession = sessions.find((s) => s.id === sid);
@@ -1289,8 +1370,6 @@ export function useChats(): UseChatResult {
         variants: [variant],
         activeVariantIdx: 0,
       };
-
-      streamingTargetRef.current = { nodeId: assistantNodeId, variantId };
 
       setSessions((prev) =>
         prev.map((s) => {
@@ -1332,19 +1411,18 @@ export function useChats(): UseChatResult {
           project_id: currentSession.projectId ?? undefined,
           thinking_enabled: thinkingEnabled,
           effort: effort,
-          web_search_enabled: currentSession.webSearchEnabled ?? false,
-          web_search_mode: currentSession.webSearchMode ?? "auto",
+          web_search_enabled: currentSession.webSearchEnabled ?? webSearchDefault.enabled,
+          web_search_mode: currentSession.webSearchMode ?? webSearchDefault.mode,
         },
         handler,
         (err: Error) => {
-          setError(err.message);
-          setIsStreaming(false);
-          streamingTargetRef.current = null;
+          if (sid === activeIdRef.current) setError(err.message);
+          dropStream(sid, false);
         },
       );
-      sseRef.current = sse;
+      beginStream(sid, sse, assistantNodeId, variantId);
     },
-    [activeId, sessions, isStreaming, makeEventHandler],
+    [activeId, sessions, makeEventHandler, beginStream, dropStream],
   );
 
   // Fire a queued project-chat first message once its session is active and
@@ -1358,7 +1436,7 @@ export function useChats(): UseChatResult {
   }, [activeId, sessions, sendMessage]);
 
   const retry = useCallback(() => {
-    if (isStreaming || !activeSession) return;
+    if (streamsRef.current.has(activeId) || !activeSession) return;
 
     const last = findLastAssistantInBranch(activeSession);
     if (!last) return;
@@ -1381,13 +1459,10 @@ export function useChats(): UseChatResult {
 
     if (!userContent && (!userAttachments || userAttachments.length === 0)) return;
 
-    sseRef.current?.close();
     setError(null);
-    setIsStreaming(true);
 
     const sid = activeId;
     const { session: updated, variantId } = addVariant(activeSession, last.nodeId);
-    streamingTargetRef.current = { nodeId: last.nodeId, variantId };
 
     setSessions((prev) => prev.map((s) => (s.id === sid ? updated : s)));
 
@@ -1413,22 +1488,21 @@ export function useChats(): UseChatResult {
         chat_id: sid,
         mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
         project_id: activeSession.projectId ?? undefined,
-        web_search_enabled: activeSession.webSearchEnabled ?? false,
-        web_search_mode: activeSession.webSearchMode ?? "auto",
+        web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
+        web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
       },
       handler,
       (err: Error) => {
-        setError(err.message);
-        setIsStreaming(false);
-        streamingTargetRef.current = null;
+        if (sid === activeIdRef.current) setError(err.message);
+        dropStream(sid, false);
       },
     );
-    sseRef.current = sse;
-  }, [isStreaming, activeSession, activeId, sessions, makeEventHandler]);
+    beginStream(sid, sse, last.nodeId, variantId);
+  }, [activeSession, activeId, sessions, makeEventHandler, beginStream, dropStream]);
 
   const editMessage = useCallback(
     (userNodeId: string, content: string, displayHtml?: string) => {
-      if (isStreaming || !activeSession) return;
+      if (streamsRef.current.has(activeId) || !activeSession) return;
       if (!content.trim()) return;
 
       const added = addUserVariant(activeSession, userNodeId, content, displayHtml);
@@ -1459,10 +1533,7 @@ export function useChats(): UseChatResult {
         assistantNode,
       );
 
-      sseRef.current?.close();
       setError(null);
-      setIsStreaming(true);
-      streamingTargetRef.current = { nodeId: assistantNodeId, variantId };
 
       setSessions((prev) => prev.map((s) => (s.id === sid ? withChild : s)));
 
@@ -1495,19 +1566,18 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
           project_id: activeSession.projectId ?? undefined,
-          web_search_enabled: activeSession.webSearchEnabled ?? false,
-          web_search_mode: activeSession.webSearchMode ?? "auto",
+          web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
+          web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
         },
         handler,
         (err: Error) => {
-          setError(err.message);
-          setIsStreaming(false);
-          streamingTargetRef.current = null;
+          if (sid === activeIdRef.current) setError(err.message);
+          dropStream(sid, false);
         },
       );
-      sseRef.current = sse;
+      beginStream(sid, sse, assistantNodeId, variantId);
     },
-    [isStreaming, activeSession, activeId, makeEventHandler],
+    [activeSession, activeId, makeEventHandler, beginStream, dropStream],
   );
 
   const switchVariant = useCallback(
@@ -1521,12 +1591,13 @@ export function useChats(): UseChatResult {
   );
 
   const abort = useCallback(() => {
-    const target = streamingTargetRef.current;
+    const sid = activeId;
+    const target = streamsRef.current.get(sid);
     if (target && activeSession) {
       const { nodeId, variantId } = target;
       setSessions((prev) =>
         prev.map((s) => {
-          if (s.id !== activeId) return s;
+          if (s.id !== sid) return s;
           return mapVariant(s, nodeId, variantId, (v) => {
             const hasRunning = (v.toolCalls ?? []).some((tc) => tc.status === "running");
             const isEmpty = v.content.length === 0 && (v.steps?.length ?? 0) === 0;
@@ -1549,11 +1620,8 @@ export function useChats(): UseChatResult {
         }),
       );
     }
-    sseRef.current?.close();
-    sseRef.current = null;
-    streamingTargetRef.current = null;
-    setIsStreaming(false);
-  }, [activeId, activeSession]);
+    dropStream(sid, true);
+  }, [activeId, activeSession, dropStream]);
 
   const newChat = useCallback((projectIdArg?: string) => {
     // Ignore anything that isn't a real project id — e.g. a MouseEvent forwarded
@@ -1567,11 +1635,8 @@ export function useChats(): UseChatResult {
       );
       if (existingEmpty) {
         if (existingEmpty.id === activeId) {
-          // We are already on it, just clear streaming/errors
-          sseRef.current?.close();
-          sseRef.current = null;
-          streamingTargetRef.current = null;
-          setIsStreaming(false);
+          // Already on it — just clear the artifact panel and any error. An
+          // empty chat is never streaming, so there's nothing to interrupt.
           setLiveFiles([]);
           setError(null);
           return;
@@ -1581,10 +1646,7 @@ export function useChats(): UseChatResult {
         return;
       }
     }
-    sseRef.current?.close();
-    sseRef.current = null;
-    streamingTargetRef.current = null;
-    setIsStreaming(false);
+    // Note: any chat already streaming keeps running in the background.
     const session = makeSession(projectId);
     setSessions((prev) => [session, ...prev]);
     setActiveId(session.id);
@@ -1610,10 +1672,6 @@ export function useChats(): UseChatResult {
       html?: string,
       dirSlug?: string,
     ) => {
-      sseRef.current?.close();
-      sseRef.current = null;
-      streamingTargetRef.current = null;
-      setIsStreaming(false);
       // Reuse the slug the composer already uploaded into, so the first
       // message's attachments sit inside this chat's sandbox.
       const session = makeSession(projectId, dirSlug);
@@ -1632,10 +1690,7 @@ export function useChats(): UseChatResult {
   const switchChat = useCallback(
     (id: string) => {
       if (id === activeId) return;
-      sseRef.current?.close();
-      sseRef.current = null;
-      streamingTargetRef.current = null;
-      setIsStreaming(false);
+      // Leave any in-flight stream (this chat's or another's) running.
       setActiveId(id);
       setLiveFiles([]);
       setError(null);
@@ -1655,12 +1710,8 @@ export function useChats(): UseChatResult {
 
   const deleteChat = useCallback(
     (id: string) => {
-      if (id === activeId) {
-        sseRef.current?.close();
-        sseRef.current = null;
-        streamingTargetRef.current = null;
-        setIsStreaming(false);
-      }
+      // Kill the deleted chat's stream wherever it runs (active or background).
+      dropStream(id, true);
       void deleteChatRemote(id);
       lastSavedRef.current.delete(id);
       const pendingTimer = saveTimersRef.current.get(id);
@@ -1689,7 +1740,7 @@ export function useChats(): UseChatResult {
         return remaining;
       });
     },
-    [activeId],
+    [activeId, dropStream],
   );
 
   const renameChat = useCallback(
@@ -1713,18 +1764,17 @@ export function useChats(): UseChatResult {
 
   const setWebSearch = useCallback(
     (enabled: boolean, mode?: string) => {
+      const nextMode = mode ?? activeSession?.webSearchMode ?? webSearchDefault.mode;
       setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== activeId) return s;
-          const nextMode = mode ?? s.webSearchMode ?? "auto";
-          // Update the sticky default so further new chats inherit immediately;
-          // App persists it to backend settings via onWebSearchChange.
-          webSearchDefault = { enabled, mode: nextMode };
-          return { ...s, webSearchEnabled: enabled, webSearchMode: nextMode };
-        }),
+        prev.map((s) =>
+          s.id === activeId ? { ...s, webSearchEnabled: enabled, webSearchMode: nextMode } : s,
+        ),
       );
+      // Update the sticky default so other chats and new chats inherit the
+      // choice immediately; App persists it to settings via onWebSearchChange.
+      setWsDefault({ enabled, mode: nextMode });
     },
-    [activeId],
+    [activeId, activeSession],
   );
 
   const pinChat = useCallback((id: string) => {
@@ -1741,11 +1791,6 @@ export function useChats(): UseChatResult {
   }, []);
 
   const startGhostChat = useCallback(() => {
-    sseRef.current?.close();
-    sseRef.current = null;
-    streamingTargetRef.current = null;
-    setIsStreaming(false);
-    
     const session = makeSession();
     session.title = "👻 Чат с Призраком";
     
@@ -1763,12 +1808,13 @@ export function useChats(): UseChatResult {
     activeId,
     activeDirSlug: activeSession?.dirSlug ?? null,
     activeMcpEnabled: activeSession?.mcpEnabledServers ?? [],
-    activeWebSearchEnabled: activeSession?.webSearchEnabled ?? false,
-    activeWebSearchMode: activeSession?.webSearchMode ?? "auto",
+    activeWebSearchEnabled: activeSession?.webSearchEnabled ?? wsDefault.enabled,
+    activeWebSearchMode: activeSession?.webSearchMode ?? wsDefault.mode,
     messages,
     branchNodes,
     liveFiles,
     isStreaming,
+    streamingIds,
     error,
     newChat,
     startProjectChat,
@@ -1784,5 +1830,6 @@ export function useChats(): UseChatResult {
     startGhostChat,
     toggleMcpServer,
     setWebSearch,
+    setWebSearchDefault,
   };
 }

@@ -42,6 +42,9 @@ class SettingsData(BaseModel):
     max_iterations: int = 50
     user_name: str = ""
     theme: str = "system"
+    # Play a chime when a model reply or an install finishes (only while the
+    # window is unfocused/hidden). Opt-in — off by default.
+    notify_sound: bool = False
     # "" = not chosen yet; the UI then follows OS-locale detection.
     language: str = ""
     onboarding_completed: bool = False
@@ -76,6 +79,7 @@ class SettingsUpdate(BaseModel):
     max_iterations: int | None = None
     user_name: str | None = None
     theme: str | None = None
+    notify_sound: bool | None = None
     language: str | None = None
     onboarding_completed: bool | None = None
     unrestricted_mode: bool | None = None

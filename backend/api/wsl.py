@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -58,6 +60,9 @@ class WSLStatus(BaseModel):
     poppler: bool  # pdftotext (poppler-utils) is available
     docx: bool  # global npm `docx` package available
     dns_ok: bool  # hostname resolution works inside the distro
+    internet_ok: bool  # WSL can actually reach the internet (routing, not just DNS)
+    mirrored_supported: bool  # Windows build + WSL version support mirrored networking
+    mirrored_active: bool  # .wslconfig already has networkingMode=mirrored
     powershell_available: bool
     # Resolved shell the next chat will use: "wsl" or "powershell".
     active_shell: str
@@ -210,6 +215,174 @@ async def _apply_dns_fix() -> tuple[bool, str]:
     if shut_code != 0:
         return False, f"{log}\n[shutdown] {shut_log}".strip()
     return True, f"{log}\n[shutdown] {shut_log or 'OK'}".strip()
+
+
+# ── VPN / network fix (mirrored networking) ────────────────────────────────
+#
+# When a VPN is up on Windows, WSL2's default NAT network often loses internet
+# even when DNS resolves: the VPN owns the routing table and the WSL virtual
+# switch isn't part of it. The fix is "mirrored" networking — WSL shares the
+# host's interfaces directly, so the VPN's routes and DNS apply inside the
+# distro too. It needs Windows 11 22H2+ (build 22621) and WSL app 2.0+.
+
+# Keys written under [wsl2] in %USERPROFILE%\.wslconfig. dnsTunneling + autoProxy
+# round out the VPN/corporate-proxy story; harmless when no VPN is present.
+_MIRRORED_UPDATES = {
+    "networkingMode": "mirrored",
+    "dnsTunneling": "true",
+    "autoProxy": "true",
+}
+
+
+def _windows_build() -> int:
+    """Windows build number (e.g. 22631), or 0 if undetectable."""
+    try:
+        parts = platform.version().split(".")  # "10.0.22631"
+        return int(parts[2]) if len(parts) >= 3 else 0
+    except (ValueError, IndexError):
+        return 0
+
+
+async def _wsl_app_version() -> tuple[int, ...] | None:
+    """Parse `wsl --version` for the WSL app version, e.g. (2, 0, 9, 0)."""
+    code, out, _ = await _run(["wsl.exe", "--version"], timeout=10)
+    if code != 0:
+        return None
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?", out)
+    if not match:
+        return None
+    return tuple(int(g) for g in match.groups() if g is not None)
+
+
+def _mirrored_supported(build: int, wslver: tuple[int, ...] | None) -> bool:
+    """True iff this host can use mirrored networking (Win11 22H2+, WSL 2.0+)."""
+    return build >= 22621 and wslver is not None and wslver >= (2, 0, 0)
+
+
+def _wslconfig_path() -> Path:
+    """%USERPROFILE%\\.wslconfig — the Windows-side WSL2 config file."""
+    return Path(os.path.expanduser("~")) / ".wslconfig"
+
+
+def _read_wslconfig_mirrored() -> bool:
+    """True iff .wslconfig already sets networkingMode=mirrored under [wsl2]."""
+    try:
+        text = _wslconfig_path().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    in_wsl2 = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_wsl2 = line.lower() == "[wsl2]"
+            continue
+        if in_wsl2 and "=" in line and not line.startswith("#"):
+            key, _, val = line.partition("=")
+            if key.strip().lower() == "networkingmode" and val.strip().lower() == "mirrored":
+                return True
+    return False
+
+
+def _upsert_wslconfig(updates: dict[str, str]) -> Path:
+    """Idempotently set ``updates`` keys under [wsl2] in .wslconfig.
+
+    Existing keys are matched case-insensitively and overwritten; missing keys
+    are appended to the section. Comments and other sections are left intact.
+    Creates the file (and the section) when absent. Returns the path written.
+    """
+    path = _wslconfig_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+
+    canon = {k.lower(): (k, v) for k, v in updates.items()}  # lower -> (key, val)
+    pending = set(canon)
+
+    sect_start = next(
+        (i for i, raw in enumerate(lines) if raw.strip().lower() == "[wsl2]"), -1
+    )
+    if sect_start == -1:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("[wsl2]")
+        for low in canon:
+            key, val = canon[low]
+            lines.append(f"{key}={val}")
+    else:
+        sect_end = len(lines)
+        for j in range(sect_start + 1, len(lines)):
+            stripped = lines[j].strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                sect_end = j
+                break
+        for j in range(sect_start + 1, sect_end):
+            stripped = lines[j].strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            low = stripped.split("=", 1)[0].strip().lower()
+            if low in canon:
+                key, val = canon[low]
+                lines[j] = f"{key}={val}"
+                pending.discard(low)
+        insert_at = sect_end
+        for low in list(pending):
+            key, val = canon[low]
+            lines.insert(insert_at, f"{key}={val}")
+            insert_at += 1
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+async def _wsl_internet_works() -> bool:
+    """True only if WSL can actually reach the internet, not merely resolve DNS.
+
+    Tries an HTTPS fetch via curl/wget (covers DNS + routing + TLS), then falls
+    back to a raw TCP connect to 1.1.1.1:443 via bash's /dev/tcp — that last
+    probe bypasses DNS, so it isolates "routing is dead" (VPN) from "DNS is
+    dead" (resolv.conf)."""
+    script = (
+        "if command -v curl >/dev/null 2>&1; then "
+        "curl -sf --max-time 6 -o /dev/null https://pypi.org/simple/ && exit 0; fi; "
+        "if command -v wget >/dev/null 2>&1; then "
+        "wget -q --timeout=6 -O /dev/null https://pypi.org/simple/ && exit 0; fi; "
+        "timeout 6 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' && exit 0; "
+        "exit 1"
+    )
+    code, _, _ = await _run(["wsl.exe", "--", "bash", "-lc", script], timeout=15)
+    return code == 0
+
+
+async def _apply_network_fix() -> tuple[bool, str]:
+    """Switch WSL to mirrored networking so a host VPN's routes/DNS reach the
+    distro, then `wsl --shutdown` so the new .wslconfig applies. No admin needed.
+
+    Returns (success, log). Refuses (with guidance) when the host is too old to
+    support mirrored networking, since writing it would be silently ignored."""
+    build = _windows_build()
+    wslver = await _wsl_app_version()
+    if not _mirrored_supported(build, wslver):
+        ver_str = ".".join(map(str, wslver)) if wslver else "unknown"
+        return False, (
+            "Mirrored networking needs Windows 11 22H2+ (build 22621) and WSL 2.0+. "
+            f"Detected build {build or '?'}, WSL {ver_str}. "
+            "Run `wsl --update` in PowerShell and retry, or use Fix DNS instead."
+        )
+
+    try:
+        path = await asyncio.to_thread(_upsert_wslconfig, _MIRRORED_UPDATES)
+    except OSError as exc:
+        return False, f"Could not write {_wslconfig_path()}: {exc}"
+
+    code, out, err = await _run(["wsl.exe", "--shutdown"], timeout=20)
+    shut = "\n".join(s for s in [out.strip(), err.strip()] if s)
+    if code != 0:
+        return False, f"Wrote {path}, but `wsl --shutdown` failed: {shut}".strip()
+    return True, (
+        f"Enabled mirrored networking in {path} and restarted WSL. "
+        "The VPN's routes and DNS are now shared with the distro."
+    )
 
 
 # ── Distro install + user provisioning ─────────────────────────────────────
@@ -397,7 +570,7 @@ async def _run_install_distro(username: str, password: str) -> None:
 async def status(request: Request) -> WSLStatus:
     """Probe WSL and required tooling state, plus PowerShell availability and
     the resolved active shell for the next chat."""
-    from main import resolve_active_shell  # avoid circular import at module load
+    from shell import resolve_active_shell
 
     settings_store = request.app.state.settings_store
     preference = settings_store.shell_preference
@@ -417,6 +590,9 @@ async def status(request: Request) -> WSLStatus:
             poppler=False,
             docx=False,
             dns_ok=False,
+            internet_ok=False,
+            mirrored_supported=False,
+            mirrored_active=_read_wslconfig_mirrored(),
             powershell_available=ps_available,
             active_shell=resolve_active_shell(preference),
             shell_preference=preference,
@@ -428,6 +604,7 @@ async def status(request: Request) -> WSLStatus:
     poppler = False
     docx = False
     dns_ok = False
+    internet_ok = False
 
     if distro:
         # If `wsl bash` exits 0, the distro is reachable.
@@ -447,6 +624,9 @@ async def status(request: Request) -> WSLStatus:
             if npm:
                 docx = await _has_global_npm_pkg("docx")
             dns_ok = await _wsl_dns_works()
+            internet_ok = await _wsl_internet_works()
+
+    mirrored_supported = _mirrored_supported(_windows_build(), await _wsl_app_version())
 
     return WSLStatus(
         wsl_installed=wsl_installed,
@@ -460,6 +640,9 @@ async def status(request: Request) -> WSLStatus:
         poppler=poppler,
         docx=docx,
         dns_ok=dns_ok,
+        internet_ok=internet_ok,
+        mirrored_supported=mirrored_supported,
+        mirrored_active=_read_wslconfig_mirrored(),
         powershell_available=ps_available,
         active_shell=resolve_active_shell(preference),
         shell_preference=preference,
@@ -644,6 +827,19 @@ async def fix_dns() -> InstallResult:
     spin up a fresh VM with the new /etc/wsl.conf settings honored.
     """
     ok, log = await _apply_dns_fix()
+    return InstallResult(success=ok, output=log or ("OK" if ok else "fix failed"))
+
+
+@router.post("/fix-network", response_model=InstallResult)
+async def fix_network() -> InstallResult:
+    """Repair WSL connectivity for VPN users via mirrored networking.
+
+    Writes networkingMode=mirrored (+ dnsTunneling/autoProxy) to
+    %USERPROFILE%\\.wslconfig and runs `wsl --shutdown`. On the next launch the
+    distro shares the Windows network stack, so an active VPN's routes and DNS
+    apply inside WSL too. No admin rights required. Use this when DNS resolves
+    but there's still no internet (the classic VPN + WSL2 NAT failure)."""
+    ok, log = await _apply_network_fix()
     return InstallResult(success=ok, output=log or ("OK" if ok else "fix failed"))
 
 

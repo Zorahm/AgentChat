@@ -31,6 +31,20 @@ interface WSLStatus {
   poppler: boolean;
   docx: boolean;
   dns_ok: boolean;
+  internet_ok: boolean;
+  mirrored_supported: boolean;
+  mirrored_active: boolean;
+}
+
+interface WinDepsStatus {
+  is_windows: boolean;
+  winget: boolean;
+  node: string | null;
+  python: string | null;
+  pandoc: string | null;
+  libreoffice: string | null;
+  poppler: boolean;
+  docx: boolean;
 }
 
 interface OnboardingWizardProps {
@@ -56,6 +70,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [wslLog, setWslLog] = useState<string>("");
   const [wslUsername, setWslUsername] = useState("");
   const [wslPassword, setWslPassword] = useState("");
+  const [winDeps, setWinDeps] = useState<WinDepsStatus | null>(null);
+  const [winBusy, setWinBusy] = useState(false);
+  const [winLog, setWinLog] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skillsInstalling, setSkillsInstalling] = useState(false);
@@ -99,9 +116,22 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   }, []);
 
+  const refreshWin = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/win/status`);
+      if (r.ok) {
+        const d = (await r.json()) as WinDepsStatus;
+        setWinDeps(d);
+      }
+    } catch {
+      setWinDeps(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (step === 3 && shellChoice === "wsl") refreshWsl();
-  }, [step, shellChoice, refreshWsl]);
+    if (step === 3 && shellChoice === "powershell") refreshWin();
+  }, [step, shellChoice, refreshWsl, refreshWin]);
 
   /** Step 3: pick the shell. WSL reveals its setup screen; PowerShell needs none. */
   const chooseShell = useCallback(
@@ -191,6 +221,23 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   const appendLog = (line: string) => setWslLog((prev) => (prev ? prev + "\n" + line : line));
 
+  /** VPN fix: switch WSL to mirrored networking so the host VPN reaches the distro. */
+  const fixNetwork = async () => {
+    setWslBusy("network");
+    setWslLog("");
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/wsl/fix-network`, { method: "POST" });
+      const data = await r.json();
+      setWslLog(data.output ?? "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
+    } finally {
+      setWslBusy(null);
+      await refreshWsl();
+    }
+  };
+
   /** Single-click flow: ensure WSL+Ubuntu installed (+ Linux user), then libraries. */
   const installAll = async () => {
     const distroReady = !!wsl && wsl.wsl_installed && wsl.distro_running;
@@ -274,6 +321,46 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     } finally {
       setWslBusy(null);
       await refreshWsl();
+    }
+  };
+
+  /** PowerShell path: install the missing Windows-native libraries via winget. */
+  const installWinDeps = async () => {
+    setWinBusy(true);
+    setWinLog("");
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/win/install-deps`, { method: "POST" });
+      const d = await r.json();
+      if (d.output) setWinLog(d.output);
+      if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslInstallError"));
+
+      // Poll the background install task — backend tails winget's log file.
+      let lastLog = "";
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        try {
+          const s = await fetch(`${API_BASE}/win/install-deps/status`);
+          if (!s.ok) continue;
+          const p = (await s.json()) as { running: boolean; log: string; error: string | null };
+          if (p.log && p.log !== lastLog) {
+            lastLog = p.log;
+            setWinLog(p.log);
+          }
+          if (!p.running) {
+            if (p.error) throw new Error(p.error);
+            break;
+          }
+        } catch (err) {
+          if (err instanceof Error && err.message) throw err;
+          /* transient network error — keep polling */
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
+    } finally {
+      setWinBusy(false);
+      await refreshWin();
     }
   };
 
@@ -449,7 +536,46 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             </div>
 
             {shellChoice === "powershell" && (
-              <p className="ob-sub2">{t("onboarding.shellPowershellNote")}</p>
+              winDeps === null ? (
+                <p className="ob-sub2">{t("onboarding.winChecking")}</p>
+              ) : !winDeps.is_windows ? (
+                <p className="ob-sub2">{t("onboarding.shellPowershellNote")}</p>
+              ) : (
+                <>
+                  <p className="ob-sub2">{t("onboarding.winRestartHint")}</p>
+                  <div className="ob-wsl-grid">
+                    <WSLRow label={t("onboarding.wslNode")} ok={!!winDeps.node} value={winDeps.node ?? "—"} />
+                    <WSLRow label={t("onboarding.wslPython")} ok={!!winDeps.python} value={winDeps.python ?? "—"} />
+                    <WSLRow label={t("onboarding.wslPandoc")} ok={!!winDeps.pandoc} value={winDeps.pandoc ?? "—"} />
+                    <WSLRow label={t("onboarding.wslLibreOffice")} ok={!!winDeps.libreoffice} value={winDeps.libreoffice ?? "—"} />
+                    <WSLRow label={t("onboarding.wslPoppler")} ok={winDeps.poppler} value={winDeps.poppler ? t("onboarding.wslPoppler") : "—"} />
+                    <WSLRow label={t("onboarding.wslDocx")} ok={winDeps.docx} value={winDeps.docx ? t("onboarding.wslDocx") : "—"} />
+                  </div>
+
+                  {(() => {
+                    const allOk = !!winDeps.node && !!winDeps.python && !!winDeps.pandoc
+                      && !!winDeps.libreoffice && winDeps.poppler && winDeps.docx;
+                    return (
+                      <div className="ob-wsl-actions">
+                        {!allOk && !winDeps.winget && (
+                          <span className="ob-sub2">{t("onboarding.winNoWinget")}</span>
+                        )}
+                        {!allOk && winDeps.winget && (
+                          <button className="ob-btn" onClick={installWinDeps} disabled={winBusy}>
+                            {winBusy ? t("onboarding.installingWsl") : t("onboarding.winInstall")}
+                          </button>
+                        )}
+                        {allOk && <span className="ob-success">{t("onboarding.allSet")}</span>}
+                        <button className="ob-btn ob-btn--ghost" onClick={refreshWin} disabled={winBusy}>
+                          {t("onboarding.recheck")}
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {winLog && <pre className="ob-log">{winLog}</pre>}
+                </>
+              )
             )}
 
             {shellChoice === "wsl" && (
@@ -467,6 +593,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <WSLRow label={t("onboarding.wslPoppler")} ok={wsl.poppler} value={wsl.poppler ? t("onboarding.wslPoppler") : "—"} />
                 <WSLRow label={t("onboarding.wslDocx")} ok={wsl.docx} value={wsl.docx ? t("onboarding.wslDocx") : "—"} />
                 <WSLRow label={t("onboarding.wslDns")} ok={wsl.dns_ok} value={wsl.dns_ok ? t("onboarding.wslDnsWorking") : t("onboarding.wslDnsBroken")} />
+                <WSLRow label={t("onboarding.wslInternet")} ok={wsl.internet_ok} value={wsl.internet_ok ? t("onboarding.wslInternetWorking") : t("onboarding.wslInternetBroken")} />
               </div>
             )}
 
@@ -514,6 +641,11 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                     </button>
                   )}
                   {allOk && <span className="ob-success">{t("onboarding.allSet")}</span>}
+                  {wsl.distro_running && !wsl.internet_ok && (
+                    <button className="ob-btn" onClick={fixNetwork} disabled={wslBusy !== null}>
+                      {wslBusy === "network" ? t("onboarding.fixingNetwork") : t("onboarding.fixNetwork")}
+                    </button>
+                  )}
                   <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>
                     {t("onboarding.recheck")}
                   </button>
@@ -528,9 +660,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             )}
 
             <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>{t("onboarding.back")}</button>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(4)} disabled={wslBusy !== null}>{t("onboarding.skip")}</button>
-              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null}>{t("onboarding.next")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)} disabled={winBusy}>{t("onboarding.back")}</button>
+              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(4)} disabled={wslBusy !== null || winBusy}>{t("onboarding.skip")}</button>
+              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null || winBusy}>{t("onboarding.next")}</button>
             </div>
           </div>
         )}

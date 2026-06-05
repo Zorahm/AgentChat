@@ -192,7 +192,7 @@ async def _init_chat_dir_powershell(dir_slug: str) -> None:
     """Initialise the chat directory: npm init -y + python3 -m venv .venv."""
     if not dir_slug or not _SAFE_SLUG_RE.match(dir_slug):
         return
-    from main import USER_HOME
+    from paths import USER_HOME
     chat_dir = Path(USER_HOME) / "AgentChat" / "chats" / dir_slug
     try:
         chat_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +236,7 @@ async def _init_chat_dir_wsl(dir_slug: str) -> None:
     """Initialise the WSL chat directory: npm init -y + python3 -m venv .venv."""
     if not dir_slug or not _SAFE_SLUG_RE.match(dir_slug):
         return
-    from main import WSL_USER_HOME
+    from paths import WSL_USER_HOME
     chat_dir = f"{WSL_USER_HOME}/AgentChat/chats/{dir_slug}"
     cmd = f"mkdir -p {shlex.quote(chat_dir)} && cd {shlex.quote(chat_dir)} && npm init -y && python3 -m venv .venv"
     try:
@@ -273,7 +273,7 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
     )
 
     # Fire-and-forget: init the chat dir + npm init -y.
-    from main import resolve_active_shell
+    from shell import resolve_active_shell
     settings = request.app.state.settings_store
     active_shell = resolve_active_shell(settings.shell_preference)
     if active_shell == "powershell":

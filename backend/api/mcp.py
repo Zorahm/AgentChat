@@ -53,7 +53,7 @@ def _view(cfg: MCPServerConfig, request: Request) -> MCPServerView:
 @router.post("/config-dir/open")
 async def open_config_dir() -> dict[str, str]:
     """Open the AgentChat config folder in the OS file manager."""
-    from main import AGENTS_DIR
+    from paths import AGENTS_DIR
 
     path = str(AGENTS_DIR)
     try:

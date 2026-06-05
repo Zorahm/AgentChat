@@ -16,6 +16,7 @@ import { Markdown } from "../Markdown/Markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { parseArtifacts } from "../../utils/parseArtifacts";
+import { presentedArtifacts } from "../../utils/presentedFiles";
 import { getLang } from "../../utils/getLang";
 import { basename } from "../../utils/basename";
 import { formatTime } from "../../utils/formatTime";
@@ -68,6 +69,10 @@ export function MessageBubble({
   const useFallback = groups.length === 0 && message.content.length > 0;
   const fallback = useFallback ? parseArtifacts(message.content) : null;
 
+  // File cards come from present_files tool calls (one set per message,
+  // rendered after the text), not from inline text tags anymore.
+  const presented = presentedArtifacts(message.toolCalls);
+
   const hasContent = useFallback || groups.length > 0;
   const hasVariants = variantCount > 1;
 
@@ -90,7 +95,7 @@ export function MessageBubble({
           .map((s) => s.content)
           .join("");
         const isLast = i === groups.length - 1;
-        const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", artifacts: [], support: false };
+        const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", support: false };
 
         // Spinner while: any tool in this group is still running,
         // OR the global SSE stream is active but this group has no text yet
@@ -112,19 +117,17 @@ export function MessageBubble({
               />
             )}
             {parsed.cleanText.trim() && <MarkdownContent text={parsed.cleanText} />}
-            {parsed.artifacts.map((a, j) => (
-              <ArtifactCard key={`art-${i}-${j}`} artifact={a} />
-            ))}
             {parsed.support && <SupportCard />}
           </div>
         );
       })}
 
       {fallback && fallback.cleanText.trim() && <MarkdownContent text={fallback.cleanText} />}
-      {fallback && fallback.artifacts.map((a, i) => (
-        <ArtifactCard key={`art-fb-${i}`} artifact={a} />
-      ))}
       {fallback && fallback.support && <SupportCard />}
+
+      {presented.map((a, i) => (
+        <ArtifactCard key={`art-${i}`} artifact={a} />
+      ))}
 
       {/* Nothing streamed yet — reassure the user the model is still alive. */}
       {isGlobalStreaming && !hasContent && <ThinkingIndicator />}

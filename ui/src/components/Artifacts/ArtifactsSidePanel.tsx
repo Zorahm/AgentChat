@@ -5,7 +5,7 @@ import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code } from "@
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
-import { parseArtifacts } from "../../utils/parseArtifacts";
+import { presentedArtifacts } from "../../utils/presentedFiles";
 import { API_BASE } from "../../utils/apiBase";
 import { basename } from "../../utils/basename";
 import { RenderView, CodeView } from "./ArtifactViews";
@@ -59,7 +59,7 @@ function collectArtifacts(messages: ChatMessage[]): Artifact[] {
 
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
-    for (const a of parseArtifacts(msg.content).artifacts) push(a);
+    for (const a of presentedArtifacts(msg.toolCalls)) push(a);
   }
 
   return result;

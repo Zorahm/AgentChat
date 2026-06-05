@@ -20,7 +20,7 @@ class WebSearchConfigInfo(BaseModel):
 @router.get("/web-search", response_model=WebSearchConfigInfo)
 async def web_search_config(request: Request) -> WebSearchConfigInfo:
     """Report which web search modes are available and the configured default."""
-    from main import build_web_search_config
+    from store.settings_store import build_web_search_config
 
     store = request.app.state.settings_store
     service = request.app.state.web_search_service

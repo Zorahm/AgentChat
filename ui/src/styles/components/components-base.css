@@ -1,0 +1,74 @@
+/* Components — Shared base
+   App body grid, shared keyframes, icon reset, small utilities */
+
+/* ── App body grid ─────────────────────────────────────────────────────── */
+.app-body {
+  display: grid;
+  grid-template-columns: 240px 1fr 380px;
+  height: 100%;
+  transition: grid-template-columns .18s ease;
+}
+.app-body.sidebar-collapsed { grid-template-columns: 44px 1fr 380px; }
+body.resizing .app-body { transition: none; }
+body.resizing { cursor: ew-resize !important; user-select: none; }
+
+/* ── Stop button ───────────────────────────────────────────────────────── */
+.stop-btn { background: var(--err) !important; border-color: var(--err) !important; }
+
+/* ── Caret (streaming) ─────────────────────────────────────────────────── */
+.pv-caret {
+  display: inline-block; width: 7px; height: 13px; background: var(--ink);
+  vertical-align: -2px; animation: blink 1s steps(2, end) infinite;
+}
+
+/* ── Page overlay ──────────────────────────────────────────────────────── */
+.page-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg); overflow: auto;
+}
+
+/* ── Phosphor icon reset in buttons ──────────────────────────────────── */
+.send-btn svg,
+.icon-btn svg,
+.msg-act-btn svg,
+.cb-copy svg,
+.ms-pill-chev svg,
+.ms-item-ck svg,
+.st2-nav-ic svg,
+.st2-path svg { display: block; }
+
+/* ── Shared keyframes ──────────────────────────────────────────────────── */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes pulse { 50% { opacity: .35; } }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Settings easter egg animations (legacy, used by settings panel) ──── */
+@keyframes dropOff {
+  0% { transform: translateY(0) rotate(0); }
+  20% { transform: translateY(-10px) rotate(15deg); }
+  100% { transform: translateY(800px) rotate(360deg); }
+}
+.st2-ghost-fall {
+  animation: dropOff 1.5s cubic-bezier(0.5, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+.st2-ghost-btn {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-3); border: 1px solid var(--line);
+  color: var(--ink); border-radius: 7px; cursor: pointer;
+  font-size: 18px; font-weight: bold;
+  opacity: 0; transition: opacity 0.3s;
+}
+.st2-ghost-btn.revealed {
+  opacity: 1; z-index: 1;
+}

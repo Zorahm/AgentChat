@@ -1,11 +1,11 @@
 /** Collect every file across all chats — uploaded attachments and files the
- * model generated (via <artifact /> markers). Walks each session's full
+ * model surfaced (via present_files tool calls). Walks each session's full
  * variant tree (not just the active branch) so nothing is lost when a chat has
  * edited/regenerated turns. */
 
 import type { ChatNode } from "../types/chat";
 import type { ChatSession } from "../hooks/useChats";
-import { parseArtifacts } from "./parseArtifacts";
+import { presentedArtifacts } from "./presentedFiles";
 import { basename } from "./basename";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"]);
@@ -63,8 +63,7 @@ export function collectAllFiles(sessions: ChatSession[]): GalleryFile[] {
           }
         } else {
           for (const av of node.variants) {
-            const { artifacts } = parseArtifacts(av.content);
-            for (const art of artifacts) {
+            for (const art of presentedArtifacts(av.toolCalls)) {
               if (!art.path) continue;
               const name = basename(art.path);
               push({

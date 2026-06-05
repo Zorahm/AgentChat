@@ -13,7 +13,7 @@ import "./styles/chat.css";
 import "./styles/components.css";
 import "./styles/panels.css";
 import "./styles/tiptap.css";
-import "./styles/settings-v2.css";
+import "./styles/settings.css";
 import "./styles/onboarding.css";
 import "./styles/projects.css";
 import "./styles/responsive.css";

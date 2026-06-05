@@ -1,0 +1,18 @@
+/* Settings — Main index
+   Split into modular files for better maintainability */
+
+@import "./settings/settings-layout.css";
+@import "./settings/settings-base.css";
+@import "./settings/settings-providers.css";
+@import "./settings/settings-profile.css";
+@import "./settings/settings-skills.css";
+@import "./settings/settings-appearance.css";
+@import "./settings/settings-terminal.css";
+@import "./settings/settings-paths.css";
+@import "./settings/settings-models.css";
+@import "./settings/settings-about.css";
+@import "./settings/settings-mcp.css";
+@import "./settings/settings-shortcuts.css";
+@import "./settings/settings-sandbox.css";
+@import "./settings/settings-errors-loading.css";
+@import "./settings/settings-responsive.css";

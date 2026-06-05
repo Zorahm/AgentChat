@@ -1,0 +1,586 @@
+/* Settings — Responsive design for mobile devices */
+
+/* ── Mobile bar (hamburger + tab title) — hidden on desktop ──────────── */
+
+.st2-mob-bar {
+  display: none;
+}
+
+/* ── Small devices (< 768px) ──────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  /* Layout: stack grid into single column */
+  .st2 {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  /* Navigation: hide/shrink on mobile */
+  .st2-nav {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 100;
+    border-right: 1.5px solid var(--ink);
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+
+  .st2-nav.mobile-open {
+    display: flex;
+  }
+
+  /* Body takes full width */
+  .st2-body {
+    padding: 20px 16px;
+  }
+
+  /* Mobile bar */
+  .st2-mob-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .st2-mob-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 6px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .st2-mob-btn:hover { background: var(--hover); }
+
+  .st2-mob-title {
+    font-family: var(--font-body);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* Backdrop behind slide-in nav */
+  .st2-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 99;
+  }
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+
+  .st2-h {
+    font-size: 24px;
+    margin-bottom: 4px;
+  }
+
+  .st2-sub {
+    font-size: 13px;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+
+  /* ── Main-tab sections ────────────────────────────────────────────────── */
+
+  .st2-main section {
+    margin-bottom: 32px;
+  }
+
+  .st2-mh {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .st2-mn {
+    width: auto;
+    margin-bottom: 6px;
+  }
+
+  .st2-mh h2 {
+    font-size: 18px;
+  }
+
+  .st2-md,
+  .st2-mrows,
+  .st2-sk-install,
+  .st2-sk-hints,
+  .st2-sk-preset {
+    margin-left: 0;
+  }
+
+  .st2-mrow {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .st2-mlab {
+    min-width: 0;
+  }
+
+  .st2-mlab .t {
+    font-size: 13px;
+  }
+
+  /* ── Buttons & controls ───────────────────────────────────────────────── */
+
+  .st2-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .st2-models-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .st2-models-select {
+    max-width: 100%;
+  }
+
+  /* ── Provider cards ───────────────────────────────────────────────────── */
+
+  .st2-pv-head {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  /* Hide "без ключа" / "ключ задан" label — same info is in expanded body */
+  .st2-pv-key {
+    display: none;
+  }
+
+  .st2-pv-meta {
+    gap: 6px;
+  }
+
+  /* Truncate api_base URL shorter on mobile */
+  .st2-pv-name small {
+    max-width: 140px;
+  }
+
+  .st2-add-form {
+    padding: 14px 12px;
+  }
+
+  .st2-add-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* ── Avatar section ───────────────────────────────────────────────────── */
+
+  .st2-avatar-wrap {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .id-combo {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .id-combo .input-wrap {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  /* ── Theme cards ──────────────────────────────────────────────────────── */
+
+  .theme-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    max-width: 100%;
+  }
+
+  .tc-preview {
+    height: 60px;
+  }
+
+  .tc-preview-svg {
+    height: 60px;
+  }
+
+  /* ── Shell grid ───────────────────────────────────────────────────────── */
+
+  .st2-shell-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* ── Skills section ───────────────────────────────────────────────────── */
+
+  .st2-sk-install {
+    flex-direction: column;
+    max-width: 100%;
+    margin-left: 0;
+  }
+
+  .st2-sk-input {
+    height: auto;
+    padding: 10px 12px;
+  }
+
+  .st2-sk-hints {
+    flex-direction: column;
+    gap: 8px;
+    margin-left: 0;
+  }
+
+  .st2-sk-preset {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-left: 0;
+    max-width: 100%;
+    padding: 10px;
+  }
+
+  .st2-sk-body .grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* ── Web search ───────────────────────────────────────────────────────── */
+
+  .st2-ws-list {
+    max-width: 100%;
+  }
+
+  .st2-ws-item-head {
+    padding: 11px 12px;
+  }
+
+  .st2-ws-config {
+    padding: 12px;
+  }
+
+  /* ── Paths & URLs ─────────────────────────────────────────────────────── */
+
+  .st2-paths-url-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .st2-paths-url-input,
+  .st2-paths-url-btn {
+    width: 100%;
+  }
+
+  /* ── Remote section ───────────────────────────────────────────────────── */
+
+  .st2-remote-pair-grid {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .st2-remote-pair-info {
+    min-width: auto;
+  }
+
+  .st2-remote-qr {
+    max-width: 200px;
+  }
+
+  /* ── Shortcuts list ───────────────────────────────────────────────────── */
+
+  .st2-sc-list {
+    max-width: 100%;
+  }
+
+  .st2-sc-row {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .st2-sc-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .st2-sc-combo {
+    flex: 1;
+    min-width: auto;
+  }
+
+  .st2-sc-foot {
+    flex-direction: column;
+    max-width: 100%;
+  }
+
+  /* ── Temperature slider ───────────────────────────────────────────────── */
+
+  .st2-temp {
+    max-width: 100%;
+  }
+
+  .st2-iter {
+    flex-wrap: wrap;
+  }
+
+  /* ── About section ────────────────────────────────────────────────────── */
+
+  .st2-about-stack {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .st2-about-links {
+    flex-direction: column;
+  }
+
+  .st2-about-link {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── MCP cards ────────────────────────────────────────────────────────── */
+
+  .mcp-header-actions {
+    flex-wrap: wrap;
+    flex-shrink: unset;
+    width: 100%;
+  }
+
+  .mcp-card {
+    margin-bottom: 8px;
+  }
+
+  .mcp-head {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .mcp-add-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* ── Form inputs ──────────────────────────────────────────────────────── */
+
+  .st2-field,
+  .st2-select,
+  .st2-input,
+  .st2-num {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  /* Prevent zoom on input focus in iOS */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* ── Row helpers ──────────────────────────────────────────────────────── */
+
+  .st2-row-between {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .st2-row-between .st2-h {
+    margin-bottom: 0;
+  }
+
+  /* ── Grid helpers ─────────────────────────────────────────────────────── */
+
+  .st2-grid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .st2-about-stack-item {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  /* ── Spacing adjustments ──────────────────────────────────────────────── */
+
+  .st2-section {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+
+  .st2-h-row {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .st2-mh-refresh {
+    align-self: auto;
+    margin-left: 0;
+  }
+}
+
+/* ── Extra small devices (< 480px) ─────────────────────────────────────── */
+
+@media (max-width: 479px) {
+  .st2-body {
+    padding: 16px 12px;
+  }
+
+  .st2-h {
+    font-size: 20px;
+  }
+
+  .st2-sub {
+    font-size: 12px;
+  }
+
+  .st2-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .st2-mrow {
+    padding: 12px;
+  }
+
+  .theme-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .tc-preview {
+    height: 50px;
+  }
+
+  .st2-add-form {
+    padding: 10px;
+  }
+
+  .st2-about-stack-item {
+    flex-direction: column;
+    padding: 6px 8px;
+  }
+
+  .st2-about-stack-ic {
+    width: 28px;
+    height: 28px;
+  }
+
+  .st2-about-stack-name {
+    font-size: 12px;
+  }
+
+  .st2-about-stack-desc {
+    font-size: 10px;
+    margin-left: 0;
+  }
+
+  /* Стек элементов вместо грида */
+  .st2-danger-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  /* Меньше паддинга в картах */
+  .st2-card {
+    padding: 8px;
+  }
+
+  .mcp-head {
+    padding: 8px 10px;
+  }
+
+  .mcp-body {
+    padding: 10px 12px 12px;
+  }
+
+  .st2-mlab .t {
+    font-size: 12px;
+  }
+
+  .st2-mlab .d {
+    font-size: 12px;
+  }
+}
+
+/* ── Medium devices (768px - 1024px) ──────────────────────────────────── */
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .st2-body {
+    padding: 24px 24px;
+  }
+
+  .st2-models-select {
+    max-width: 100%;
+  }
+
+  .st2-mrow {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .st2-sk-body .grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .theme-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .st2-about-stack {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .st2-remote-pair-grid {
+    flex-direction: column;
+  }
+}
+
+/* ── Touch device enhancements ────────────────────────────────────────── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Increase touch targets */
+  .st2-btn,
+  .st2-nav-item,
+  .st2-sk-install-btn,
+  .st2-update-btn,
+  button {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 12px 16px;
+  }
+
+  /* Larger text for touch */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* Remove hover effects on touch */
+  .st2-btn:hover,
+  .st2-nav-item:hover,
+  .theme-card:hover {
+    transform: none;
+  }
+
+  /* Increase spacing for touch */
+  .st2-nav-item {
+    padding: 12px 14px;
+  }
+
+  .st2-pv-row {
+    padding: 10px;
+  }
+}

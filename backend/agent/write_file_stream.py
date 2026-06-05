@@ -60,14 +60,14 @@ def extract_string_value(args_str: str, key: str) -> str | None:
     return _unescape(m.group(1)) if m else None
 
 
-def extract_partial_content(args_str: str) -> str | None:
-    """Return however much of the 'content' value has been generated so far.
+def extract_partial_string(args_str: str, key: str) -> str | None:
+    """Return however much of *key*'s string value has been generated so far.
 
-    Returns None if the 'content' key has not appeared yet.
+    Returns None if the key has not appeared yet.
     Returns an empty string if the key is present but no characters yet.
     Stops safely at an incomplete escape sequence at a chunk boundary.
     """
-    m = re.search(r'"content"\s*:\s*"', args_str)
+    m = re.search(rf'"{re.escape(key)}"\s*:\s*"', args_str)
     if not m:
         return None
 
@@ -105,55 +105,91 @@ def extract_partial_content(args_str: str) -> str | None:
 # Streaming event emitter
 # ---------------------------------------------------------------------------
 
-def emit_write_file_chunks(
+# The one string argument worth streaming live into the tool block as the model
+# types it. write_file is special-cased (its ``content`` goes to the artifact
+# panel as ``tool_chunk``); every other tool streams its main arg via
+# ``tool_input`` so the user watches e.g. the bash command form character by
+# character. Tools absent here still get an instant (empty-input) ``tool_start``.
+_PRIMARY_ARG: dict[str, str] = {
+    "bash_tool": "command",
+    "read_file": "path",
+    "edit_file": "path",
+    "read_skill": "name",
+    "web_search": "query",
+    "web_fetch": "url",
+}
+
+
+def emit_tool_call_progress(
     tool_call_state: dict[int, dict[str, Any]],
-    wf_state: dict[str, dict[str, Any]],
+    progress_state: dict[str, dict[str, Any]],
 ) -> Generator[dict[str, Any], None, None]:
-    """Yield early ``tool_start`` and incremental ``tool_chunk`` SSE events.
+    """Yield early ``tool_start`` / live ``tool_input`` / ``tool_chunk`` events.
 
     Call this after every ``_accumulate_tool_call_chunks`` invocation.
-    *wf_state* is mutated to track what has already been emitted per call_id.
+    *progress_state* is mutated to track what has been emitted per call_id.
 
-    Emits:
-    - ``tool_start`` once, as soon as the ``path`` argument is complete.
-    - ``tool_chunk`` for each new slice of the ``content`` argument.
+    The point: the tool block appears in the UI the instant the model commits to
+    a call — not after it finishes typing the arguments — so a long command
+    reads as "working", not "hung".
+
+    Emits, per tool call, as soon as its ``id`` and ``name`` are known:
+    - ``tool_start`` once.
+    - write_file → ``tool_chunk`` for each new slice of ``content``.
+    - every other tool → ``tool_input`` for each new slice of its primary arg.
     """
     for entry in tool_call_state.values():
-        if entry["function"]["name"] != "write_file":
-            continue
-
+        name: str = entry["function"]["name"]
         call_id: str = entry["id"]
-        if not call_id:
+        # Need both the name (to label the block / pick the primary arg) and the
+        # id (to address it). Providers send these in the first chunk.
+        if not call_id or not name:
             continue
 
         args_str: str = entry["function"]["arguments"]
 
-        if call_id not in wf_state:
-            wf_state[call_id] = {"started": False, "emitted_len": 0}
+        if call_id not in progress_state:
+            progress_state[call_id] = {"started": False, "emitted_len": 0, "input_len": 0}
+        state = progress_state[call_id]
 
-        state = wf_state[call_id]
-
-        # ── Emit tool_start as soon as path is known ──────────────────────
-        if not state["started"]:
-            path = extract_string_value(args_str, "path")
-            if path:
-                yield {
-                    "type": "tool_start",
-                    "id": call_id,
-                    "name": "write_file",
-                    "input": {"path": path},
-                }
-                state["started"] = True
-
-        # ── Stream content chunks ─────────────────────────────────────────
-        if state["started"]:
-            content = extract_partial_content(args_str)
-            if content is not None:
-                prev: int = state["emitted_len"]
-                if len(content) > prev:
+        if name == "write_file":
+            # ── write_file: start once path is known, then stream content ──
+            if not state["started"]:
+                path = extract_string_value(args_str, "path")
+                if path:
                     yield {
-                        "type": "tool_chunk",
+                        "type": "tool_start",
                         "id": call_id,
-                        "content": content[prev:],
+                        "name": "write_file",
+                        "input": {"path": path},
                     }
-                    state["emitted_len"] = len(content)
+                    state["started"] = True
+            if state["started"]:
+                content = extract_partial_string(args_str, "content")
+                if content is not None:
+                    prev: int = state["emitted_len"]
+                    if len(content) > prev:
+                        yield {
+                            "type": "tool_chunk",
+                            "id": call_id,
+                            "content": content[prev:],
+                        }
+                        state["emitted_len"] = len(content)
+            continue
+
+        # ── every other tool: start immediately, stream the primary arg ──
+        primary = _PRIMARY_ARG.get(name)
+        if not state["started"]:
+            input0: dict[str, Any] = {}
+            if primary:
+                partial = extract_partial_string(args_str, primary)
+                if partial:
+                    input0[primary] = partial
+                    state["input_len"] = len(partial)
+            yield {"type": "tool_start", "id": call_id, "name": name, "input": input0}
+            state["started"] = True
+        elif primary:
+            partial = extract_partial_string(args_str, primary)
+            if partial is not None and len(partial) > state["input_len"]:
+                yield {"type": "tool_input", "id": call_id, "input": {primary: partial}}
+                state["input_len"] = len(partial)

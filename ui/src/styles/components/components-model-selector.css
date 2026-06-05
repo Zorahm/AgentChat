@@ -1,0 +1,250 @@
+/* Components — Model selector
+   Pill, dropdown, flyout menus, effort picker, switches */
+
+/* ── Duplicate overlay definition for model-selector context ───────────── */
+.ac-modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.3);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 60px 24px;
+  overflow: auto;
+}
+.ac-modal-content {
+  max-width: 720px; width: 100%;
+}
+
+/* ── Model selector (pill + dropdown) ────────────────────────────────── */
+.ms-wrap { position: relative; }
+
+.ms-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px 6px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  font-family: var(--font-body); font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; white-space: nowrap; max-width: 180px; overflow: hidden;
+}
+.ms-pill:hover { background: var(--hover); }
+.ms-pill-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0;
+}
+.ms-pill-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ms-pill-chev { color: var(--faint); font-size: 10px; margin-left: 2px; flex-shrink: 0; }
+
+.ms-dropdown {
+  position: absolute; bottom: 100%; right: 0; margin-bottom: 6px;
+  z-index: 30;
+}
+/* Opens below the pill (used when the composer sits near the top of the page). */
+.ms-dropdown--down {
+  bottom: auto; top: 100%; margin-bottom: 0; margin-top: 6px;
+}
+/* Main panel — overflow:hidden clips its own rounded corners; the dropdown
+ * wrapper stays overflow:visible so side flyouts aren't clipped. */
+.ms-panel {
+  width: 320px; max-height: 440px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20), 0 0 0 1px var(--line);
+  overflow: hidden; display: flex; flex-direction: column;
+}
+
+.ms-group { padding: 6px 0; overflow-y: auto; }
+.ms-group + .ms-group { border-top: 1px solid var(--line); }
+
+.ms-group-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--faint);
+  letter-spacing: 1px; text-transform: uppercase;
+  padding: 8px 14px 4px;
+}
+
+.ms-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 14px; cursor: pointer;
+}
+.ms-item:hover { background: var(--hover); }
+.ms-item--sel { background: var(--hover); }
+
+.ms-item-ck {
+  width: 14px; color: var(--accent); font-size: 13px; padding-top: 2px; flex-shrink: 0;
+}
+
+.ms-item-info { flex: 1; min-width: 0; line-height: 1.3; }
+.ms-item-name { font-weight: 500; font-size: 13px; color: var(--ink); }
+.ms-item-badge {
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--line);
+  padding: 1px 5px; border-radius: 4px;
+  margin-left: 6px; font-weight: 400;
+  vertical-align: 1px;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.ms-item-badge svg { width: 10px; height: 10px; }
+.ms-item-id {
+  display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px;
+}
+
+.ms-foot {
+  border-top: 1px solid var(--line); background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.ms-list { overflow-y: auto; flex: 1; min-height: 0; }
+
+.ms-pill-think { color: var(--accent); flex-shrink: 0; }
+
+.ms-thinking {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+}
+.ms-thinking--disabled { opacity: .5; }
+
+.ms-thinking-info {
+  flex: 1; display: flex; align-items: center; gap: 9px;
+  min-width: 0;
+}
+.ms-thinking-ic {
+  color: var(--accent); flex-shrink: 0;
+}
+.ms-thinking--disabled .ms-thinking-ic { color: var(--muted); }
+
+.ms-thinking-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ms-thinking-label {
+  font-size: 13px; font-weight: 500; color: var(--ink);
+  line-height: 1.2;
+}
+.ms-thinking-hint {
+  font-size: 11px; color: var(--muted);
+  line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ms-thinking-caps {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px;
+}
+.ms-cap-badge {
+  font-family: var(--font-mono); font-size: 9.5px;
+  color: var(--accent); background: var(--accent-soft);
+  padding: 2px 6px; border-radius: 4px;
+  font-weight: 500; letter-spacing: .3px;
+}
+.ms-cap-badge--effort {
+  color: var(--ok); background: var(--ok-soft);
+}
+
+.ms-effort {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+}
+.ms-effort-label {
+  font-size: 12px; color: var(--muted); font-weight: 500;
+  flex-shrink: 0;
+}
+.ms-effort-picker {
+  display: flex; gap: 2px;
+  background: var(--surface-2, var(--paper-2));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px;
+  margin-left: auto;
+}
+.ms-effort-btn {
+  appearance: none; border: none; background: transparent;
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 4px 8px; border-radius: 4px;
+  color: var(--muted); cursor: pointer;
+  font-weight: 500; letter-spacing: .2px;
+  transition: background .12s, color .12s;
+}
+.ms-effort-btn:hover { color: var(--ink); }
+.ms-effort-btn--active {
+  background: var(--surface, var(--paper));
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(var(--shadow-tone, 0,0,0), .1);
+}
+
+.ms-switch {
+  width: 30px; height: 18px; border-radius: 11px;
+  background: var(--switch-off); border: none; cursor: pointer;
+  position: relative; transition: background .15s; flex-shrink: 0; padding: 0;
+}
+.ms-switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: var(--switch-thumb);
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  transition: transform .15s;
+}
+.ms-switch--on { background: var(--accent); }
+.ms-switch--on::after { transform: translateX(12px); }
+.ms-switch--disabled {
+  cursor: default; opacity: .4;
+  pointer-events: none;
+}
+
+.ms-more {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--muted);
+  cursor: pointer;
+}
+.ms-more:hover { background: var(--hover); color: var(--ink); }
+
+/* ── Claude-style model menu (rows + side flyouts) ─────────────────────── */
+.ms-pill-effort { color: var(--faint); font-weight: 500; flex-shrink: 0; }
+
+.ms-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  appearance: none; border: none; background: transparent;
+  padding: 10px 14px; cursor: pointer; font: inherit; font-size: 12.5px;
+  color: var(--ink); text-align: left;
+}
+.ms-row + .ms-row { border-top: 1px solid var(--line); }
+.ms-row:hover, .ms-row--active { background: var(--hover); }
+.ms-row-label { flex: 1; }
+.ms-row-val { color: var(--faint); font-size: 12px; }
+.ms-row-arr { color: var(--faint); width: 13px; height: 13px; flex-shrink: 0; display: block; }
+
+.ms-flyout {
+  position: absolute; right: calc(100% + 8px); z-index: 31;
+  width: 252px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 36px -12px rgba(20,20,18,.22), 0 0 0 1px var(--line);
+  padding: 6px;
+}
+/* Default: open leftward. Flipped right when the left side would clip. */
+.ms-flyout--right { right: auto; left: calc(100% + 8px); }
+.ms-dropdown:not(.ms-dropdown--down) .ms-flyout { bottom: 0; }
+.ms-dropdown--down .ms-flyout { top: 0; }
+.ms-flyout--scroll { max-height: 420px; overflow-y: auto; }
+.ms-flyout-hint {
+  font-size: 11.5px; color: var(--muted); line-height: 1.4;
+  padding: 8px 9px 10px;
+}
+.ms-fly-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  appearance: none; border: none; background: transparent;
+  padding: 8px 9px; border-radius: 7px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--ink); text-align: left;
+}
+.ms-fly-item:hover { background: var(--hover); }
+.ms-fly-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-fly-ck { width: 14px; color: var(--accent); flex-shrink: 0; display: inline-flex; }
+.ms-fly-ck svg { display: block; }
+.ms-fly-divider { height: 1px; background: var(--line); margin: 5px 0; }
+.ms-fly-group + .ms-fly-group { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 2px; }
+
+.ms-adaptive {
+  display: flex; align-items: center; gap: 10px; padding: 8px 9px;
+}
+.ms-adaptive-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ms-adaptive-label { font-size: 13px; font-weight: 500; color: var(--ink); }
+.ms-adaptive-hint { font-size: 11px; color: var(--muted); line-height: 1.3; }

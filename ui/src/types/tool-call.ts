@@ -27,5 +27,6 @@ export const TOOL_ICONS: Record<string, string> = {
   read_photo: "🖼",
   write_file: "📄",
   edit_file: "📄",
+  present_files: "📎",
   read_skill: "📚",
 };

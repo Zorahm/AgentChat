@@ -25,22 +25,31 @@ interface MarkdownProps {
   className?: string;
 }
 
+// SKILL.md files routinely start with a BOM and/or a leading blank line before
+// the `---` fence (the backend parser strips these too). Normalize first so the
+// `startsWith("---")` check below doesn't miss the frontmatter.
+function normalizeFrontmatterText(text: string): string {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/^\n+/, "");
+}
+
 function stripFrontmatterBlock(text: string): string {
-  if (!text.startsWith("---")) return text;
-  const rest = text.slice(3).replace(/^\r?\n/, "");
-  const end = rest.search(/\r?\n---\r?\n?/);
+  const src = normalizeFrontmatterText(text);
+  if (!src.startsWith("---")) return text;
+  const rest = src.slice(3).replace(/^\n/, "");
+  const end = rest.search(/\n---\n?/);
   if (end === -1) return text;
-  return rest.slice(end).replace(/^\r?\n---\r?\n?/, "").replace(/^\r?\n+/, "");
+  return rest.slice(end).replace(/^\n---\n?/, "").replace(/^\n+/, "");
 }
 
 function extractYamlFrontmatter(text: string): { yaml: string | null; body: string } {
-  if (!text.startsWith("---")) return { yaml: null, body: text };
-  const rest = text.slice(3).replace(/^\r?\n/, "");
-  const end = rest.search(/\r?\n---\r?\n?/);
+  const src = normalizeFrontmatterText(text);
+  if (!src.startsWith("---")) return { yaml: null, body: text };
+  const rest = src.slice(3).replace(/^\n/, "");
+  const end = rest.search(/\n---\n?/);
   if (end === -1) return { yaml: null, body: text };
   return {
     yaml: rest.slice(0, end),
-    body: rest.slice(end).replace(/^\r?\n---\r?\n?/, "").replace(/^\r?\n+/, ""),
+    body: rest.slice(end).replace(/^\n---\n?/, "").replace(/^\n+/, ""),
   };
 }
 

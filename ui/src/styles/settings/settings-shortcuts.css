@@ -1,0 +1,52 @@
+/* Settings — Shortcuts tab */
+
+.st2-sc-list {
+  display: flex; flex-direction: column;
+  margin-top: 18px; max-width: 560px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+.st2-sc-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.st2-sc-row:last-child { border-bottom: none; }
+.st2-sc-label { font-size: 13.5px; color: var(--ink); }
+.st2-sc-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.st2-sc-conflict { font-size: 11.5px; color: var(--err); }
+.st2-sc-combo {
+  min-width: 86px; text-align: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 5px 12px; cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.st2-sc-combo:hover { border-color: var(--accent); }
+.st2-sc-combo.recording {
+  color: var(--accent); border-color: var(--accent);
+  border-style: dashed; background: var(--accent-soft);
+}
+.st2-sc-reset {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  color: var(--muted); background: transparent; border: 1px solid transparent;
+  cursor: pointer; transition: color .12s, background .12s;
+}
+.st2-sc-reset:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.st2-sc-reset:disabled { opacity: .3; cursor: default; }
+.st2-sc-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; max-width: 560px;
+}
+.st2-sc-hint {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.st2-sc-reset-all {
+  font-size: 12.5px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 6px 12px; cursor: pointer; transition: color .12s, border-color .12s;
+}
+.st2-sc-reset-all:hover { color: var(--ink); border-color: var(--accent); }

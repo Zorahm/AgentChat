@@ -232,7 +232,7 @@ class WebSearchService:
         # A SearXNG-friendly UA: the default ``python-httpx/x.y`` UA can trip
         # the bot-detection middleware on newer SearXNG builds.
         headers = {
-            "User-Agent": "AgentChat/1.0 (+https://github.com/anomalyco/AgentChat)",
+            "User-Agent": "AgentChat/1.0 (+https://github.com/zorahm/AgentChat)",
             "Accept": "application/json",
         }
         async with httpx.AsyncClient(timeout=20.0) as client:

@@ -1,7 +1,7 @@
 /** Root application — sidebar, chat, artifacts panel layout. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useChats, setWebSearchDefault, type AgentChatState } from "./hooks/useChats";
+import { useChats, type AgentChatState } from "./hooks/useChats";
 import { Sidebar } from "./components/Sidebar";
 import { useAvatar } from "./hooks/useAvatar";
 import { useAppUpdate } from "./hooks/useAppUpdate";
@@ -17,6 +17,7 @@ import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
+import { setNotifySoundEnabled, playNotificationSound } from "./utils/notify";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
 import { resolveBindings } from "./shortcuts/registry";
@@ -30,8 +31,11 @@ const PANEL_DEFAULT = 600;
 export function App() {
   const { t } = useTranslation();
   const chats = useChats();
+  // Stable identity (useCallback([]) in the hook) — safe to use inside
+  // fetchSettings without re-triggering the settings-fetch effect each render.
+  const { setWebSearchDefault } = chats;
   const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects" | "files">("chat");
-  const [settingsTab, setSettingsTab] = useState<NavTab>("main");
+  const [settingsTab, setSettingsTab] = useState<NavTab>("profile");
   const [model, setModel] = useState("openai/gpt-4o");
   const [models, setModels] = useState<ModelItem[]>([]);
   const [enabledProviders, setEnabledProviders] = useState<Set<string>>(new Set());
@@ -130,6 +134,7 @@ export function App() {
         if (data.default_model) setModel(data.default_model);
         if (typeof data.user_name === "string") setUserName(data.user_name);
         if (typeof data.theme === "string") setTheme(data.theme);
+        setNotifySoundEnabled(data.notify_sound === true);
         if (typeof data.language === "string") setLanguage(data.language);
         if (typeof data.onboarding_completed === "boolean") {
           setOnboardingDone(data.onboarding_completed);
@@ -163,7 +168,7 @@ export function App() {
         }
       }
     } catch { /* use defaults */ }
-  }, [model]);
+  }, [model, setWebSearchDefault]);
 
   const updateSettings = useCallback(async (partial: Record<string, unknown>) => {
     try {
@@ -189,6 +194,16 @@ export function App() {
   );
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  // Chime when ANY chat's reply finishes (the streaming set shrinks) — including
+  // one running in the background. Whether it actually sounds (enabled + window
+  // unfocused) is decided inside playNotificationSound.
+  const prevStreamingCountRef = useRef(0);
+  useEffect(() => {
+    const count = chats.streamingIds.size;
+    if (count < prevStreamingCountRef.current) playNotificationSound();
+    prevStreamingCountRef.current = count;
+  }, [chats.streamingIds]);
 
   useEffect(() => {
     if (localStorage.getItem("agentchat.wslWarnDismissed")) return;
@@ -404,6 +419,7 @@ export function App() {
         <Sidebar
           sessions={chats.sessions}
           activeId={chats.activeId}
+          streamingIds={chats.streamingIds}
           onNew={chats.newChat}
           onSwitch={chats.switchChat}
           onDelete={chats.deleteChat}

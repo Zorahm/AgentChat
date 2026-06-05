@@ -50,51 +50,42 @@ class _FakeLLM:
             yield _chunk(content=piece)
 
 
-class TestFileTagAbort:
-    """A failed <file>/<edit> mid-stream must cut the model off and re-prompt."""
+class TestPlainTextStreaming:
+    """With <file>/<edit> removed, assistant text streams straight through as
+    tokens — no tag parsing, no interception, no abort."""
 
     @pytest.mark.asyncio
-    async def test_failed_file_tag_aborts_stream_and_reprompts(self) -> None:
-        llm = _FakeLLM(
-            turns=[
-                # Turn 1: prose, then a relative-path <file> (rejected by the
-                # interceptor → failure with no _path marker), then prose that
-                # must never be consumed because we abort on the failure.
-                [
-                    "I'll write the file. ",
-                    '<file path="relative.txt">',
-                    "AFTER_ABORT_MARKER must never be consumed",
-                ],
-                # Turn 2 (re-prompt after the error): clean terminal reply.
-                ["Sorry, using an absolute path next time."],
-            ]
-        )
+    async def test_text_turn_streams_tokens_and_finishes(self) -> None:
+        llm = _FakeLLM(turns=[["Hello ", "world."]])
         loop = AgentLoop(
             config=AgentConfig(model="test", max_iterations=5),
             tools=ToolRegistry(),
             llm=llm,  # type: ignore[arg-type]
         )
 
-        events = [ev async for ev in loop.run_stream("write a file")]
+        events = [ev async for ev in loop.run_stream("hi")]
 
-        # Re-prompted exactly once after the abort.
-        assert llm.call_count == 2
-        # The chunk after the failed tag was never pulled from the stream.
-        assert "AFTER_ABORT_MARKER must never be consumed" not in llm.yielded_pieces
-        # A failed tool_end reached the UI, and the run still terminated cleanly.
-        assert any(e.get("type") == "tool_end" and e.get("success") is False for e in events)
+        tokens = [e["content"] for e in events if e.get("type") == "token"]
+        assert "".join(tokens) == "Hello world."
         assert events[-1] == {"type": "done"}
+        # The full reply is recorded in history verbatim.
+        assert loop.messages[-1] == {"role": "assistant", "content": "Hello world."}
 
-        # The error was fed back to the model, prefixed with the interruption note.
-        feedback = [
-            m
-            for m in loop.messages
-            if m["role"] == "user"
-            and isinstance(m["content"], str)
-            and m["content"].startswith("Your message was stopped early")
-        ]
-        assert len(feedback) == 1
-        assert "must be absolute" in feedback[0]["content"]
+    @pytest.mark.asyncio
+    async def test_file_like_text_is_not_intercepted(self) -> None:
+        # A literal "<file …>" in prose must pass through untouched now: no
+        # tool_start/tool_end, no abort, no stripping at the loop layer.
+        raw = 'Here is <file path="/x">raw</file> shown literally.'
+        llm = _FakeLLM(turns=[[raw]])
+        loop = AgentLoop(
+            config=AgentConfig(model="test", max_iterations=5),
+            tools=ToolRegistry(),
+            llm=llm,  # type: ignore[arg-type]
+        )
 
-        # The prose after the failed tag never leaked into conversation history.
-        assert all("AFTER_ABORT_MARKER" not in str(m.get("content", "")) for m in loop.messages)
+        events = [ev async for ev in loop.run_stream("x")]
+
+        assert not any(e.get("type") in ("tool_start", "tool_end") for e in events)
+        text = "".join(e["content"] for e in events if e.get("type") == "token")
+        assert text == raw
+        assert events[-1] == {"type": "done"}

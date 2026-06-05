@@ -11,7 +11,7 @@ The agent loop lives in **Python** because the LLM ecosystem is Python-native: L
 So the split follows each language's strength:
 
 - **Rust (`src-tauri/`)** — window, app lifecycle, spawning and reaping the Python sidecar, auto-update, path/permission boundaries.
-- **Python (`backend/`)** — the agent loop, tools, provider routing, persistence. Shipped as a single PyInstaller `agentchat-backend.exe` sidecar.
+- **Python (`backend/`)** — the agent loop, tools, provider routing, persistence. Shipped as a single PyInstaller `agentchat-backend.exe` sidecar. Fair warning: it weighs in at ~120–150 MB. PyInstaller bundles the entire Python interpreter plus every dependency (LiteLLM, httpx, PIL, pypdf, and a hundred more) into a single file. That's the price of not asking the user to install Python.
 - **React (`ui/`)** — the chat interface, talking to the backend over HTTP + SSE.
 
 The shipped binary is native and self-updating; the brain stays in the language its libraries are written in.
@@ -116,6 +116,29 @@ UI strings are localized with **react-i18next**. English is the canonical source
 
 To add a language, see `ui/src/i18n/README.md`: register it in `ui/src/i18n/languages.ts`, drop a `locales/<code>/translation.json`, and wire it into `ui/src/i18n/index.ts`.
 
+## Inspiration & acknowledgements
+
+AgentChat is inspired by [Claude](https://claude.ai) — Anthropic's AI assistant — and by the broader vision of agentic AI that [Anthropic](https://anthropic.com) is building toward. The idea of giving a language model a real shell, a real filesystem, and real tools rather than a sandboxed toy environment comes directly from watching Claude Desktop work.
+
+Built on the shoulders of:
+
+- **[LiteLLM](https://github.com/BerriAI/litellm)** — provider-agnostic LLM routing that makes multi-provider support trivial
+- **[Tauri](https://tauri.app)** — lightweight native shell without the Electron overhead
+- **[FastAPI](https://fastapi.tiangolo.com)** — async Python API layer
+- **[Model Context Protocol](https://modelcontextprotocol.io)** — open standard by Anthropic for connecting AI models to external tools and data sources
+- **[Agent Skills](https://agentskills.io)** — the shared skill ecosystem the agent hooks into
+
+---
+
+## Disk space
+
+| What | Size |
+|---|---|
+| Installed app (`%LOCALAPPDATA%\AgentChat`) | ~98 MB |
+| WSL 2 + Linux distro (optional) | ~2–4 GB |
+
+WSL is not required — the agent falls back to PowerShell on Windows. Install it only if you want a proper Linux shell environment.
+
 ## Data & privacy
 
 Everything is stored locally — there is no AgentChat account or cloud sync.
@@ -141,64 +164,90 @@ In Settings → Paths, set a custom **Backend URL** pointing to a hosted instanc
 ```
 AgentChat/
 ├── backend/
-│   ├── main.py              # App factory, settings store, startup
+│   ├── main.py              # App factory — composition root
 │   ├── run.py               # Uvicorn entry point
+│   ├── paths.py             # Path resolution (data dir, chat dirs)
+│   ├── shell.py             # Shell abstraction (WSL/PowerShell/posix)
+│   ├── extraction.py        # Content/text extraction utilities
 │   ├── api/
 │   │   ├── chat.py          # POST /api/chat — SSE streaming (core)
 │   │   ├── chats.py         # CRUD /api/chats — session persistence
-│   │   ├── settings.py      # GET/PUT /api/settings
+│   │   ├── config_routes.py # GET/PUT /api/settings
 │   │   ├── files.py         # File upload/download
 │   │   ├── skills.py        # Skills install/list/delete
 │   │   ├── wsl.py           # WSL detection & management
 │   │   ├── health.py        # GET /api/system-status
+│   │   ├── models_routes.py # GET /api/models
+│   │   ├── mcp.py           # MCP server management
+│   │   ├── projects.py      # Projects CRUD
+│   │   ├── remote.py        # Remote access (token, toggle, QR)
+│   │   ├── searxng.py       # SearXNG proxy
+│   │   ├── win_deps.py      # Windows dependency detection
+│   │   ├── router.py        # Route assembly
 │   │   └── schemas/         # Pydantic request/response models
 │   ├── agent/
 │   │   ├── loop.py          # AgentLoop — run_stream() is the main path
 │   │   ├── config.py        # AgentConfig dataclass
-│   │   ├── file_tag_interceptor.py  # <file>/<edit> streaming parser
+│   │   ├── system_prompt.py # System prompt builder
+│   │   ├── types.py         # Agent event/message types
 │   │   └── sandbox.py       # SandboxPolicy — path access control
 │   ├── tools/
+│   │   ├── factory.py       # build_tool_registry() — per-request assembly
 │   │   ├── registry.py      # ToolRegistry — register/execute tools
 │   │   ├── bash_tool.py     # Shell command execution
 │   │   ├── read_file.py     # File reader
-│   │   ├── write_file.py    # File writer (canonical path)
-│   │   └── read_skill.py    # Reads SKILL.md for agent
+│   │   ├── write_file.py    # File writer
+│   │   ├── edit_file.py     # In-place file edits
+│   │   ├── present_files.py # Surfaces files as UI cards
+│   │   ├── read_skill.py    # Reads SKILL.md for agent
+│   │   ├── read_photo.py    # Image content extraction
+│   │   ├── web_search_tool.py
+│   │   └── web_fetch_tool.py
+│   ├── mcp_integration/     # Model Context Protocol
+│   │   ├── client.py        # MCP client (stdio/HTTP)
+│   │   ├── manager.py       # Server lifecycle
+│   │   ├── registry_view.py # Exposes MCP tools to agent
+│   │   └── tool_proxy.py    # Proxies MCP tool calls
 │   ├── llm/
 │   │   ├── client.py        # LLMClient — wraps LiteLLM
 │   │   └── models_fetcher.py
 │   ├── store/
-│   │   └── chat_store.py    # SQLite chat storage
+│   │   ├── chat_store.py    # SQLite chat storage
+│   │   ├── project_store.py # SQLite project storage
+│   │   └── settings_store.py
+│   ├── web_search/          # Web search (native/Tavily/SearXNG)
+│   │   ├── config.py
+│   │   └── service.py
 │   └── skills/
-│       ├── reader.py        # Scans SKILL.md files (with timestamp cache)
+│       ├── reader.py        # Scans SKILL.md files
 │       └── installer.py     # GitHub/archive skill installer
 │
 ├── ui/src/
 │   ├── App.tsx              # Root — settings context, layout
-│   ├── hooks/
-│   │   ├── useChats.ts      # Multi-session chat manager (main hook)
-│   │   └── useSSE.ts        # SSE connection helper
+│   ├── hooks/               # useChats, useSSE, useProjects, useShortcuts, ...
 │   ├── contexts/
 │   │   └── SettingsContext.tsx
+│   ├── shortcuts/
+│   │   └── registry.ts      # Keyboard shortcut definitions
 │   ├── components/
-│   │   ├── Chat/            # ChatView, ChatInput, MessageBubble, ModelSelector
-│   │   ├── Settings/              # Settings panel
-│   │   │   ├── SettingsPanel.tsx  # Shell (nav, tab routing, state)
-│   │   │   ├── tabs/              # Per-tab components
-│   │   │   │   ├── MainTab.tsx
-│   │   │   │   ├── ProvidersTab.tsx
-│   │   │   │   ├── ModelsTab.tsx
-│   │   │   │   ├── PathsTab.tsx
-│   │   │   │   └── AboutTab.tsx
+│   │   ├── Chat/            # ChatView, ChatInput, MessageBubble, MentionPopup, ...
+│   │   ├── Settings/        # SettingsPanel + tabs (Main/Providers/Models/Paths/MCP/...)
+│   │   ├── Projects/        # ProjectsView, ProjectDetail
+│   │   ├── Artifacts/       # ArtifactCard, FilesPanel, FilePreviewPanel, ...
+│   │   ├── Skills/          # SkillsManager
+│   │   ├── ToolCalls/       # ToolCallBlock
+│   │   ├── Onboarding/      # OnboardingWizard
+│   │   ├── Markdown/        # Markdown renderer
 │   │   ├── Sidebar.tsx
 │   │   ├── AllChatsPage.tsx
-│   │   ├── Skills/          # Skills manager UI
-│   │   ├── Onboarding/      # First-run wizard
-│   │   └── Artifacts/       # File preview panels
-│   ├── types/               # ChatSession, ChatNode, ToolCall, LiveFile
-│   └── utils/               # apiBase, tauri, formatTime, parseArtifacts
+│   │   ├── FilesGalleryPage.tsx
+│   │   └── GlobalDropZone.tsx
+│   ├── types/               # chat.ts, tool-call.ts, artifact.ts, project.ts
+│   ├── i18n/                # react-i18next setup, en/ru catalogs
+│   └── utils/               # apiBase, tauri, parseArtifacts, presentedFiles, ...
 │
-├── src-tauri/               # Tauri shell — Rust
-└── tests/
+├── src-tauri/               # Tauri shell — Rust (window, sidecar, auto-update)
+└── tests/backend/           # pytest — agent loop, tools, streaming, sandbox
 ```
 
 </details>

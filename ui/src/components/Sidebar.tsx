@@ -9,6 +9,8 @@ import { useTranslation } from "react-i18next";
 interface SidebarProps {
   sessions: ChatSession[];
   activeId: string;
+  /** Chats with a stream in flight — shows a "working" dot on the row. */
+  streamingIds: ReadonlySet<string>;
   onNew: () => void;
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
@@ -29,7 +31,7 @@ interface SidebarProps {
 const RECENT_LIMIT = 15;
 
 export function Sidebar({
-  sessions, activeId, onNew, onSwitch, onDelete, onRename, onPin,
+  sessions, activeId, streamingIds, onNew, onSwitch, onDelete, onRename, onPin,
   activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
   mobileOpen = false, update,
 }: SidebarProps) {
@@ -216,6 +218,7 @@ export function Sidebar({
                   key={s.id}
                   session={s}
                   active={s.id === activeId}
+                  streaming={streamingIds.has(s.id)}
                   isDragOver={dragOverId === s.id}
                   onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
                   onDragStart={(e) => handleDragStart(e, s.id)}
@@ -236,6 +239,7 @@ export function Sidebar({
                   key={s.id}
                   session={s}
                   active={s.id === activeId}
+                  streaming={streamingIds.has(s.id)}
                   isDragOver={dragOverId === s.id}
                   onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
                   onDragStart={(e) => handleDragStart(e, s.id)}
@@ -373,6 +377,7 @@ export function Sidebar({
               key={s.id}
               session={s}
               active={s.id === activeId}
+              streaming={streamingIds.has(s.id)}
               isProject={!!s.projectId}
               isDragOver={s.id === dragOverId}
               onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
@@ -642,6 +647,7 @@ function ConfirmDialog({
 function ChatItem({
   session,
   active,
+  streaming,
   isProject,
   isDragOver,
   onSelect,
@@ -655,6 +661,7 @@ function ChatItem({
 }: {
   session: ChatSession;
   active: boolean;
+  streaming?: boolean;
   isProject?: boolean;
   isDragOver?: boolean;
   onSelect: () => void;
@@ -756,6 +763,7 @@ function ChatItem({
         ) : (
           <>
             <span className="sb-chat-titlewrap">
+              {streaming && <span className="sb-stream-dot" title={t("sidebar.working")} />}
               {isProject && (
                 <FolderOpen className="sb-chat-proj-icon" weight="duotone" />
               )}
@@ -801,11 +809,12 @@ function getChipColor(title: string): string {
 }
 
 function ChatChip({
-  session, active, isDragOver, onSelect,
+  session, active, streaming, isDragOver, onSelect,
   onDragStart, onDragOver, onDrop, onDragEnd
 }: {
   session: ChatSession;
   active: boolean;
+  streaming?: boolean;
   isDragOver?: boolean;
   onSelect: () => void;
   onDragStart?: (e: React.DragEvent) => void;
@@ -820,6 +829,7 @@ function ChatChip({
   if (active) className += " sb-chip--active";
   if (session.pinned) className += " sb-chip--pinned";
   if (isDragOver) className += " sb-chip--drag-over";
+  if (streaming) className += " sb-chip--streaming";
 
   return (
     <button
@@ -833,6 +843,7 @@ function ChatChip({
       onDragEnd={onDragEnd}
     >
       {initial}
+      {streaming && <span className="sb-chip-stream-dot" />}
     </button>
   );
 }
