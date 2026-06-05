@@ -74,10 +74,11 @@ interface SettingsPanelProps {
   setAvatarFromFile: (file: File) => Promise<void>;
   clearAvatar: () => void;
   onSignOut: (deleteChats: boolean) => void;
+  onOpenOnboarding: () => void;
   onStartGhostChat?: () => void;
 }
 
-export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onStartGhostChat }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onOpenOnboarding, onStartGhostChat }: SettingsPanelProps) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<Array<{ id: string; status: string; count: number; error: string | null }>>([]);
@@ -218,7 +219,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
           <span className="st2-mob-title">{t(`settings.nav.${tab}`)}</span>
         </div>
         {error && <div className="st2-error">{error}</div>}
-        {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} />}
+        {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} onOpenOnboarding={onOpenOnboarding} />}
         {tab === "appearance" && <AppearanceTab settings={settings} onUpdate={updateGlobal} />}
         {tab === "terminal" && <TerminalTab settings={settings} onUpdate={updateGlobal} />}
         {tab === "sandbox" && <SandboxTab settings={settings} onUpdate={updateGlobal} />}

@@ -1,11 +1,16 @@
-/** Artifacts side panel — Render / Code tabs, per-artifact navigation. */
+/** Artifacts side panel — Render / Code tabs for the file the user opened.
+ *
+ * Single source of truth: `openFilePath`. The panel shows exactly that path and
+ * keeps no internal selection state, so it can't drift away from what the user
+ * opened (the old `selectedIdx` + "jump to newest" effects competed with the
+ * user's clicks — that's gone). Following an actively-writing file is handled
+ * upstream in App, which updates `openFilePath`; here we stay a pure view. */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code } from "@phosphor-icons/react";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
-import { presentedArtifacts } from "../../utils/presentedFiles";
 import { API_BASE } from "../../utils/apiBase";
 import { basename } from "../../utils/basename";
 import { RenderView, CodeView } from "./ArtifactViews";
@@ -41,28 +46,9 @@ function pickDefaultTab(ext: string): ViewTab {
 interface Props {
   messages: ChatMessage[];
   liveFiles: LiveFile[];
-  openFilePath?: string | null;
+  openFilePath: string;
   onClose: () => void;
   onResizeStart: (e: React.MouseEvent) => void;
-}
-
-function collectArtifacts(messages: ChatMessage[]): Artifact[] {
-  const seen = new Set<string>();
-  const result: Artifact[] = [];
-
-  const push = (art: Artifact) => {
-    const key = art.path ?? art.label ?? JSON.stringify(art);
-    if (seen.has(key)) return;
-    seen.add(key);
-    result.push(art);
-  };
-
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    for (const a of presentedArtifacts(msg.toolCalls)) push(a);
-  }
-
-  return result;
 }
 
 /** Paths that were edited via edit_file after their liveFile was created. */
@@ -81,78 +67,47 @@ function editedPaths(messages: ChatMessage[]): Set<string> {
 
 export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose, onResizeStart }: Props) {
   const { t } = useTranslation();
-  const collected = collectArtifacts(messages);
-  // openFilePath may point at a file the model never wrote via <file>/<edit>
-  // (e.g. a SKILL.md opened from a "read skill" step). Such paths aren't in the
-  // parsed-artifact list, so synthesize an entry for it — its content is then
-  // fetched on demand from /files/content like any other artifact.
-  const artifacts =
-    openFilePath && !collected.some((a) => a.path === openFilePath)
-      ? [...collected, { type: "file" as const, path: openFilePath, label: basename(openFilePath) }]
-      : collected;
-  const artifactsRef = useRef<Artifact[]>([]);
-  artifactsRef.current = artifacts;
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const [tab, setTab] = useState<ViewTab>("render");
+
+  // The panel is a pure view of openFilePath — RenderView/CodeView only need
+  // the path + a display label, so we synthesize the artifact directly instead
+  // of hunting for it in a list (which is what let the selection drift before).
+  const selected: Artifact = useMemo(
+    () => ({ type: "file", path: openFilePath, label: basename(openFilePath) }),
+    [openFilePath],
+  );
+
+  const [tab, setTab] = useState<ViewTab>(() =>
+    pickDefaultTab(openFilePath.split(".").pop()?.toLowerCase() ?? ""),
+  );
   const [cache, setCache] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState<Set<string>>(new Set());
 
-  // Navigate to the file indicated by openFilePath whenever it changes.
+  // Default tab follows the opened file's type whenever the path changes.
   useEffect(() => {
-    if (!openFilePath || artifacts.length === 0) return;
-    const idx = artifactsRef.current.findIndex((a) => a.path === openFilePath);
-    if (idx >= 0) {
-      setSelectedIdx(idx);
-      setTab(pickDefaultTab(openFilePath.split(".").pop()?.toLowerCase() ?? ""));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTab(pickDefaultTab(openFilePath.split(".").pop()?.toLowerCase() ?? ""));
   }, [openFilePath]);
 
-  // Auto-navigate to the newest artifact when the list grows (e.g. a new file
-  // is written or edited). Skip on the initial mount — at that point we rely
-  // on the openFilePath effect above to position correctly.
-  const prevArtifactCountRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (prevArtifactCountRef.current === null) {
-      prevArtifactCountRef.current = artifacts.length;
-      return;
-    }
-    if (artifacts.length > prevArtifactCountRef.current) {
-      const idx = artifacts.length - 1;
-      setSelectedIdx(idx);
-      const ext = artifactsRef.current[idx]?.path?.split(".").pop()?.toLowerCase() ?? "";
-      setTab(pickDefaultTab(ext));
-    }
-    prevArtifactCountRef.current = artifacts.length;
-  }, [artifacts.length]);
-
-  const selected = artifacts[selectedIdx] ?? null;
-  const activeLive = selected?.path
-    ? liveFiles.find((f) => f.path === selected.path && !f.done)
-    : undefined;
+  const activeLive = liveFiles.find((f) => f.path === openFilePath && !f.done);
   const isWritingSelected = !!activeLive;
 
   // Paths touched by a completed edit_file — their liveFile content is stale.
   const edited = useMemo(() => editedPaths(messages), [messages]);
 
   const getContent = useCallback(
-    (art: Artifact | null): string | null => {
-      if (!art) return null;
-      if (!art.path) return (art as Record<string, string>)["content"] ?? null;
-      const lf = liveFiles.find((f) => f.path === art.path);
+    (path: string): string | null => {
+      const lf = liveFiles.find((f) => f.path === path);
       // Still streaming — no content yet.
       if (lf && !lf.done) return null;
-      // Done liveFile, but if the file was edited since writing, skip stale liveFile
-      // content and fall through to the cache (which holds the post-edit bytes).
-      if (lf && lf.done && !edited.has(art.path)) return lf.content;
-      return cache[art.path] ?? null;
+      // Done liveFile, but if the file was edited since writing, skip stale
+      // liveFile content and fall through to the cache (post-edit bytes).
+      if (lf && lf.done && !edited.has(path)) return lf.content;
+      return cache[path] ?? null;
     },
     [liveFiles, cache, edited],
   );
 
   useEffect(() => {
-    if (!selected?.path) return;
-    const path = selected.path;
+    const path = openFilePath;
     if (liveFiles.some((f) => f.path === path && !f.done)) return;
     if (cache[path] !== undefined) return;
     if (loading.has(path)) return;
@@ -169,7 +124,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
           return next;
         }),
       );
-  }, [selected, liveFiles, cache, loading]);
+  }, [openFilePath, liveFiles, cache, loading]);
 
   // When a live file finishes writing, drop its cached entry so the next
   // render re-fetches the freshly-written bytes from disk.
@@ -213,24 +168,36 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   }, [dropOpen]);
 
   const refresh = useCallback(() => {
-    if (!selected?.path) return;
-    const path = selected.path;
     setCache((c) => {
       const next = { ...c };
-      delete next[path];
+      delete next[openFilePath];
       return next;
     });
-  }, [selected]);
+  }, [openFilePath]);
 
-  const content = getContent(selected);
-  const isLoading = !!(selected?.path && loading.has(selected.path));
+  const filePath = openFilePath;
+  const fileName = basename(filePath);
+  const ext = filePath.split(".").pop()?.toUpperCase() ?? "";
+  const extLower = ext.toLowerCase();
+
+  const canRender = isRenderable(extLower);
+  const canCode = isCodeViewable(extLower);
+
+  const content = getContent(openFilePath);
+  const isLoading = loading.has(openFilePath);
+
   const copy = () => {
     if (content !== null) navigator.clipboard.writeText(content).catch(() => {});
     setDropOpen(false);
   };
 
+  // Download pulls raw bytes from /files/serve — independent of `content` (the
+  // *text* used by the Render/Code tabs). Gating download on `content` was the
+  // "opens but can't download" bug: binaries, text-fetch failures, and the
+  // brief cache-eviction window all leave `content` null while the file is
+  // perfectly downloadable. Only block mid-write (partial bytes on disk).
   const download = async () => {
-    if (!filePath || !fileName) return;
+    if (!filePath) return;
     const picker = (window as unknown as { showSaveFilePicker?: ShowSaveFilePicker }).showSaveFilePicker;
 
     // Native "Save As" dialog when supported — call before any await to keep
@@ -271,15 +238,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
     }
   };
 
-  const filePath = selected?.path ?? "";
-  const fileName = filePath ? basename(filePath) : (selected?.label ?? "artifact");
-  const ext = filePath.split(".").pop()?.toUpperCase() ?? "";
-  const extLower = ext.toLowerCase();
-
-  const canRender = isRenderable(extLower);
-  const canCode = isCodeViewable(extLower);
-
-  if (artifacts.length === 0) return null;
+  if (!openFilePath) return null;
 
   return (
     <aside className="art-panel">
@@ -317,7 +276,7 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
               <button
                 className="ap-split-btn__main"
                 onClick={download}
-                disabled={content === null}
+                disabled={isWritingSelected}
                 title={t("artifacts.download")}
               >
                 <DownloadSimple size={14} />
@@ -357,10 +316,10 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
             {t("artifacts.writing")}
           </div>
         )}
-        {!isWritingSelected && selected && tab === "render" && (
+        {!isWritingSelected && tab === "render" && (
           <RenderView artifact={selected} content={content} loading={isLoading} />
         )}
-        {!isWritingSelected && selected && tab === "code" && (
+        {!isWritingSelected && tab === "code" && (
           <CodeView artifact={selected} content={content} loading={isLoading} />
         )}
       </div>

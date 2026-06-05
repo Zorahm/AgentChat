@@ -1,18 +1,19 @@
 /** Settings → Profile: avatar, display name, sign out. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, SignOut, Warning, Trash, X as XIcon, UserCircle } from "@phosphor-icons/react";
+import { Camera, SignOut, Warning, Trash, X as XIcon, UserCircle, MagicWand } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { AvatarCircle } from "../../Sidebar";
 import type { SettingsData } from "../SettingsPanel";
 
-export function ProfileTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut }: {
+export function ProfileTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onOpenOnboarding }: {
   settings: SettingsData;
   onUpdate: (patch: Partial<SettingsData>) => void;
   avatarUrl: string | null;
   setAvatarFromFile: (file: File) => Promise<void>;
   clearAvatar: () => void;
   onSignOut: (deleteChats: boolean) => void;
+  onOpenOnboarding: () => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(settings.user_name ?? "");
@@ -73,6 +74,19 @@ export function ProfileTab({ settings, onUpdate, avatarUrl, setAvatarFromFile, c
               )}
             </div>
             <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarFile} />
+          </div>
+        </div>
+
+        {/* Setup wizard row — re-open onboarding (non-destructive) */}
+        <div className="st2-mrow">
+          <div className="st2-mlab">
+            <p className="t"><MagicWand size={16} /> {t("settings.general.setupWizard")}</p>
+            <p className="d">{t("settings.general.setupWizardDescription")}</p>
+          </div>
+          <div className="st2-mctl">
+            <button className="st2-avatar-btn" onClick={onOpenOnboarding}>
+              <MagicWand size={14} /> {t("settings.general.setupWizardButton")}
+            </button>
           </div>
         </div>
 

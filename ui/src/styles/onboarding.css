@@ -1,4 +1,4 @@
-/* Onboarding wizard — first-run modal */
+/* Onboarding wizard — first-run modal (side-rail layout) */
 
 .ob-overlay {
   position: fixed;
@@ -17,53 +17,95 @@
   color: var(--ink);
   border: 1px solid var(--line-2);
   border-radius: 16px;
-  width: min(580px, 92vw);
+  width: min(820px, 94vw);
   max-height: 92vh;
   overflow-y: auto;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-  padding: 36px 40px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 32px 36px;
 }
 
-.ob-header { margin-bottom: 26px; }
+.ob-header { margin-bottom: 22px; }
 
 .ob-header h2 {
   font-family: var(--font-hand);
-  margin: 0 0 16px;
-  font-size: 34px;
+  margin: 0;
+  font-size: 30px;
   font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
 
-.ob-steps {
+/* ── Layout: step rail + content ── */
+
+.ob-shell-layout {
+  display: grid;
+  grid-template-columns: 184px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.ob-rail {
   display: flex;
-  gap: 8px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  font-weight: 600;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--line);
+  padding-right: 16px;
+}
+
+.ob-rail-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
   color: var(--muted);
+  font-size: 13.5px;
+  font-family: var(--font-body);
+  transition: background 0.15s, color 0.15s;
 }
 
-.ob-steps span {
-  padding: 5px 12px;
-  border-radius: 999px;
+.ob-rail-step:disabled { cursor: default; }
+.ob-rail-step.done { color: var(--ink-soft); }
+.ob-rail-step.done:hover:not(:disabled) { background: var(--surface-2); }
+.ob-rail-step.active {
+  color: var(--ink);
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  font-weight: 600;
 }
 
-.ob-steps span.active {
+.ob-rail-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.ob-rail-step.active .ob-rail-badge {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--on-ink);
 }
 
-.ob-steps span.done {
-  background: transparent;
-  border: 1px solid var(--line-2);
-  color: var(--ink-soft);
+.ob-rail-step.done .ob-rail-badge {
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+  color: var(--ok);
 }
+
+.ob-content { min-width: 0; }
 
 .ob-error {
   background: var(--err-soft);
@@ -83,7 +125,7 @@
 }
 
 .ob-sub {
-  margin: 0 0 22px;
+  margin: 0 0 20px;
   font-size: 14px;
   color: var(--ink-soft);
   line-height: 1.55;
@@ -132,6 +174,7 @@
   color: var(--ok);
   font-size: 13.5px;
 }
+.ob-success--inline { margin: 0; padding: 8px 14px; }
 
 .ob-label {
   display: block;
@@ -155,9 +198,7 @@
   transition: border-color 0.15s;
 }
 
-.ob-input::placeholder {
-  color: var(--faint);
-}
+.ob-input::placeholder { color: var(--faint); }
 
 .ob-input:focus,
 .ob-select:focus {
@@ -169,7 +210,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 36px;
+  margin-top: 28px;
 }
 
 .ob-btn {
@@ -211,11 +252,13 @@
   font-size: 12px;
 }
 
+/* ── Shell choice ── */
+
 .ob-shell-choice {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin: 16px 0 8px;
+  margin: 8px 0 8px;
 }
 
 .ob-shell-card {
@@ -228,74 +271,123 @@
   border: 1px solid var(--line-2);
   border-radius: 10px;
   cursor: pointer;
+  color: var(--ink);
   transition: border-color 0.15s, background 0.15s;
 }
 
-.ob-shell-card:hover {
-  border-color: var(--ink-soft);
-}
+.ob-shell-card:hover { border-color: var(--ink-soft); }
 
 .ob-shell-card.selected {
   border-color: var(--ink);
   background: color-mix(in srgb, var(--ink) 8%, var(--surface-2));
 }
 
-.ob-shell-name {
-  font-weight: 600;
-  font-size: 14px;
-}
+.ob-shell-name { font-weight: 600; font-size: 14px; }
+.ob-shell-desc { font-size: 12.5px; color: var(--ink-soft); }
 
-.ob-shell-desc {
-  font-size: 12.5px;
-  color: var(--ink-soft);
-}
+/* ── Dependency card (shared by WSL + PowerShell) ── */
 
-.ob-wsl-grid {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 10px 20px;
-  margin: 16px 0 20px;
-  font-size: 13.5px;
-  background: var(--surface-2);
-  padding: 18px 22px;
-  border-radius: 10px;
+.ob-dep-card {
+  margin: 18px 0 4px;
   border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding: 16px 18px;
 }
 
-.ob-wsl-label {
+.ob-dep-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ob-dep-title { font-weight: 600; font-size: 14px; color: var(--ink); }
+
+.ob-dep-summary {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+}
+.ob-dep-summary.ok {
+  color: var(--ok);
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+}
+
+.ob-dep-recheck {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: var(--surface);
   color: var(--ink-soft);
-  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ob-dep-recheck:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.ob-dep-recheck:disabled { opacity: 0.5; cursor: default; }
+
+.ob-dep-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 18px;
 }
 
-.ob-wsl-value {
+.ob-dep-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-mono);
   font-size: 12.5px;
+  min-width: 0;
+}
+.ob-dep-row.ok { color: var(--ok); }
+.ob-dep-row.missing { color: var(--err); }
+
+.ob-dep-name { color: var(--ink-soft); font-weight: 500; flex-shrink: 0; }
+.ob-dep-val {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.ob-wsl-value.ok { color: var(--ok); }
-.ob-wsl-value.missing { color: var(--err); }
+.ob-dep-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-.ob-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  display: inline-block;
-}
-
-.ob-wsl-actions {
+.ob-dep-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
-  margin: 10px 0;
+  margin-top: 14px;
 }
 
-.ob-wsl-creds {
-  margin: 4px 0 14px;
+.ob-log-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-body);
+  text-decoration: underline;
+  padding: 4px;
 }
+.ob-log-toggle:hover { color: var(--ink-soft); }
+
+/* ── WSL credentials (slot inside the dependency card) ── */
+
+.ob-wsl-creds { margin: 14px 0 4px; }
 
 .ob-wsl-creds-row {
   display: grid;
@@ -319,9 +411,30 @@
   line-height: 1.5;
   max-height: 220px;
   overflow: auto;
-  margin: 16px 0 0;
+  margin: 12px 0 0;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
   border: 1px solid var(--line);
+}
+
+@keyframes ob-spin { to { transform: rotate(360deg); } }
+.ob-spin { animation: ob-spin 0.9s linear infinite; }
+
+/* ── Narrow screens: rail becomes a top strip ── */
+
+@media (max-width: 640px) {
+  .ob-card { padding: 24px 20px; }
+  .ob-shell-layout { grid-template-columns: 1fr; gap: 16px; }
+  .ob-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+  .ob-dep-list { grid-template-columns: 1fr; }
+  .ob-shell-choice { grid-template-columns: 1fr; }
+  .ob-wsl-creds-row { grid-template-columns: 1fr; }
 }

@@ -99,6 +99,26 @@ export function App() {
     return () => window.removeEventListener("open-artifact", handler);
   }, []);
 
+  // While the artifacts panel is open, follow a file the model *starts*
+  // writing (a newly-appeared streaming liveFile). Only on first appearance —
+  // once it finishes or the user opens something else, their selection stands.
+  // Never auto-opens a closed panel; this is the panel's only autonomous move.
+  const seenLiveIds = useRef<Set<string>>(new Set());
+  const followChatRef = useRef<string | null>(null);
+  useEffect(() => {
+    // On chat switch, re-baseline against the new chat's live files without
+    // snapping — its stream (concurrent chats can stream too) isn't something
+    // the user just triggered here, and openFilePath is being cleared anyway.
+    if (followChatRef.current !== chats.activeId) {
+      followChatRef.current = chats.activeId;
+      seenLiveIds.current = new Set(chats.liveFiles.map((f) => f.id));
+      return;
+    }
+    const fresh = chats.liveFiles.find((f) => !f.done && !seenLiveIds.current.has(f.id));
+    seenLiveIds.current = new Set(chats.liveFiles.map((f) => f.id));
+    if (fresh && openFilePath !== null) setOpenFilePath(fresh.path);
+  }, [chats.liveFiles, openFilePath, chats.activeId]);
+
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     document.body.classList.add("resizing");
@@ -539,6 +559,7 @@ export function App() {
             setAvatarFromFile={setAvatarFromFile}
             clearAvatar={clearAvatar}
             onSignOut={handleSignOut}
+            onOpenOnboarding={() => { setView("chat"); setOnboardingDone(false); }}
             onStartGhostChat={() => {
               handleNavigate("chat");
               chats.startGhostChat();

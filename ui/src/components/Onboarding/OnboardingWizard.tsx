@@ -1,8 +1,13 @@
-/** Onboarding wizard — first-run setup: name → provider/model → WSL. */
+/** Onboarding wizard — first-run setup: name → provider/model → environment → skills.
+ *
+ * Side-rail layout: a clickable step rail on the left, the active step on the
+ * right. Step 3 (shell + dependencies) lives in {@link EnvironmentStep}. */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { Check } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useTranslation } from "react-i18next";
+import { EnvironmentStep } from "./EnvironmentStep";
 
 interface ProviderConfig {
   id: string;
@@ -19,34 +24,6 @@ interface ModelConfig {
   name?: string | null;
 }
 
-interface WSLStatus {
-  wsl_installed: boolean;
-  default_distro: string | null;
-  distro_running: boolean;
-  node: string | null;
-  python: string | null;
-  npm: string | null;
-  pandoc: string | null;
-  libreoffice: string | null;
-  poppler: boolean;
-  docx: boolean;
-  dns_ok: boolean;
-  internet_ok: boolean;
-  mirrored_supported: boolean;
-  mirrored_active: boolean;
-}
-
-interface WinDepsStatus {
-  is_windows: boolean;
-  winget: boolean;
-  node: string | null;
-  python: string | null;
-  pandoc: string | null;
-  libreoffice: string | null;
-  poppler: boolean;
-  docx: boolean;
-}
-
 interface OnboardingWizardProps {
   onComplete: () => void;
 }
@@ -58,25 +35,23 @@ const ANTHROPIC_SKILLS_SOURCE = "anthropics/skills";
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
+  const [maxStep, setMaxStep] = useState<Step>(1);
   const [userName, setUserName] = useState("");
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [apiKey, setApiKey] = useState("");
   const [defaultModel, setDefaultModel] = useState<string>("");
-  const [shellChoice, setShellChoice] = useState<"wsl" | "powershell" | null>(null);
-  const [wsl, setWsl] = useState<WSLStatus | null>(null);
-  const [wslBusy, setWslBusy] = useState<string | null>(null);
-  const [wslLog, setWslLog] = useState<string>("");
-  const [wslUsername, setWslUsername] = useState("");
-  const [wslPassword, setWslPassword] = useState("");
-  const [winDeps, setWinDeps] = useState<WinDepsStatus | null>(null);
-  const [winBusy, setWinBusy] = useState(false);
-  const [winLog, setWinLog] = useState<string>("");
+  const [envBusy, setEnvBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skillsInstalling, setSkillsInstalling] = useState(false);
   const [skillsInstalled, setSkillsInstalled] = useState<number | null>(null);
+
+  const go = (n: Step) => {
+    setStep(n);
+    setMaxStep((m) => (n > m ? n : m));
+  };
 
   // Initial load: fetch providers list
   useEffect(() => {
@@ -92,7 +67,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       .catch(() => setError(t("onboarding.connectionError")));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const refreshModels = useCallback(async () => {
+  const refreshModels = async () => {
     try {
       const r = await fetch(`${API_BASE}/models?refresh=true`);
       if (r.ok) {
@@ -102,55 +77,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     } catch {
       /* no-op */
     }
-  }, []);
-
-  const refreshWsl = useCallback(async () => {
-    try {
-      const r = await fetch(`${API_BASE}/wsl/status`);
-      if (r.ok) {
-        const d = (await r.json()) as WSLStatus;
-        setWsl(d);
-      }
-    } catch {
-      setWsl(null);
-    }
-  }, []);
-
-  const refreshWin = useCallback(async () => {
-    try {
-      const r = await fetch(`${API_BASE}/win/status`);
-      if (r.ok) {
-        const d = (await r.json()) as WinDepsStatus;
-        setWinDeps(d);
-      }
-    } catch {
-      setWinDeps(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (step === 3 && shellChoice === "wsl") refreshWsl();
-    if (step === 3 && shellChoice === "powershell") refreshWin();
-  }, [step, shellChoice, refreshWsl, refreshWin]);
-
-  /** Step 3: pick the shell. WSL reveals its setup screen; PowerShell needs none. */
-  const chooseShell = useCallback(
-    async (choice: "wsl" | "powershell") => {
-      setShellChoice(choice);
-      setError(null);
-      try {
-        await fetch(`${API_BASE}/settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ shell_preference: choice }),
-        });
-      } catch {
-        /* non-critical — the selection still drives the UI */
-      }
-      if (choice === "wsl") refreshWsl();
-    },
-    [refreshWsl],
-  );
+  };
 
   // ── Step 1: name ──
   const handleNextFromName = async () => {
@@ -163,7 +90,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         body: JSON.stringify({ user_name: userName.trim() }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setStep(2);
+      go(2);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("onboarding.saveError"));
     } finally {
@@ -209,158 +136,11 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         body: JSON.stringify({ default_model: defaultModel }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setStep(3);
+      go(3);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("onboarding.modelSaveError"));
     } finally {
       setSaving(false);
-    }
-  };
-
-  // ── Step 3: WSL — single button installs distro + libraries ──
-
-  const appendLog = (line: string) => setWslLog((prev) => (prev ? prev + "\n" + line : line));
-
-  /** VPN fix: switch WSL to mirrored networking so the host VPN reaches the distro. */
-  const fixNetwork = async () => {
-    setWslBusy("network");
-    setWslLog("");
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/wsl/fix-network`, { method: "POST" });
-      const data = await r.json();
-      setWslLog(data.output ?? "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
-    } finally {
-      setWslBusy(null);
-      await refreshWsl();
-    }
-  };
-
-  /** Single-click flow: ensure WSL+Ubuntu installed (+ Linux user), then libraries. */
-  const installAll = async () => {
-    const distroReady = !!wsl && wsl.wsl_installed && wsl.distro_running;
-    // A fresh distro install needs Linux credentials so we can provision the
-    // user ourselves (no interactive first-boot prompt).
-    if (!distroReady && (!wslUsername.trim() || !wslPassword)) {
-      setError(t("onboarding.wslCredsRequired"));
-      return;
-    }
-    setWslBusy("all");
-    setWslLog("");
-    setError(null);
-    try {
-      if (!distroReady) {
-        const r = await fetch(`${API_BASE}/wsl/install-distro`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: wslUsername.trim().toLowerCase(),
-            password: wslPassword,
-          }),
-        });
-        const d = await r.json();
-        if (d.output) appendLog(d.output);
-        if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslStartError"));
-
-        // Poll the background install/provision task. The backend enables the
-        // Windows features via DISM on failure and reports a restart request.
-        let lastLog = "";
-        while (true) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          try {
-            const s = await fetch(`${API_BASE}/wsl/install-distro/status`);
-            if (!s.ok) continue;
-            const p = (await s.json()) as { running: boolean; log: string; error: string | null; done: boolean };
-            if (p.log && p.log !== lastLog) {
-              lastLog = p.log;
-              setWslLog(p.log);
-            }
-            if (!p.running) {
-              if (p.error) throw new Error(p.error);
-              break;
-            }
-          } catch (err) {
-            if (err instanceof Error && err.message) throw err;
-            /* transient network error — keep polling */
-          }
-        }
-        await refreshWsl();
-      }
-
-      appendLog(t("onboarding.wslInstallingDeps"));
-      const r = await fetch(`${API_BASE}/wsl/install-deps`, { method: "POST" });
-      const d = await r.json();
-      if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslInstallError"));
-
-      // Poll the background install task — backend updates _install_log as apt progresses.
-      let lastLog = "";
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        try {
-          const s = await fetch(`${API_BASE}/wsl/install-deps/status`);
-          if (!s.ok) continue;
-          const p = await s.json() as { running: boolean; log: string; error: string | null };
-          if (p.log && p.log !== lastLog) {
-            lastLog = p.log;
-            setWslLog(p.log);
-          }
-          if (!p.running) {
-            if (p.error) throw new Error(p.error);
-            break;
-          }
-        } catch (err) {
-          if (err instanceof Error && err.message) throw err;
-          /* transient network error — keep polling */
-        }
-      }
-      appendLog(t("onboarding.wslDone"));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
-    } finally {
-      setWslBusy(null);
-      await refreshWsl();
-    }
-  };
-
-  /** PowerShell path: install the missing Windows-native libraries via winget. */
-  const installWinDeps = async () => {
-    setWinBusy(true);
-    setWinLog("");
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/win/install-deps`, { method: "POST" });
-      const d = await r.json();
-      if (d.output) setWinLog(d.output);
-      if (!r.ok || !d.success) throw new Error(d.output ?? t("onboarding.wslInstallError"));
-
-      // Poll the background install task — backend tails winget's log file.
-      let lastLog = "";
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        try {
-          const s = await fetch(`${API_BASE}/win/install-deps/status`);
-          if (!s.ok) continue;
-          const p = (await s.json()) as { running: boolean; log: string; error: string | null };
-          if (p.log && p.log !== lastLog) {
-            lastLog = p.log;
-            setWinLog(p.log);
-          }
-          if (!p.running) {
-            if (p.error) throw new Error(p.error);
-            break;
-          }
-        } catch (err) {
-          if (err instanceof Error && err.message) throw err;
-          /* transient network error — keep polling */
-        }
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.networkError"));
-    } finally {
-      setWinBusy(false);
-      await refreshWin();
     }
   };
 
@@ -403,325 +183,188 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const selectedProviderObj = providers.find((p) => p.id === selectedProvider);
   const providerModels = models.filter((m) => m.id.startsWith(selectedProvider + "/"));
 
+  const rail: { n: Step; label: string }[] = [
+    { n: 1, label: t("onboarding.navName") },
+    { n: 2, label: t("onboarding.navProvider") },
+    { n: 3, label: t("onboarding.navEnvironment") },
+    { n: 4, label: t("onboarding.navSkills") },
+  ];
+
   return (
     <div className="ob-overlay">
       <div className="ob-card">
         <div className="ob-header">
           <h2>{t("onboarding.welcome")}</h2>
-          <div className="ob-steps">
-            <span className={step === 1 ? "active" : step > 1 ? "done" : ""}>{t("onboarding.stepName")}</span>
-            <span className={step === 2 ? "active" : step > 2 ? "done" : ""}>{t("onboarding.stepProvider")}</span>
-            <span className={step === 3 ? "active" : step > 3 ? "done" : ""}>{t("onboarding.stepWsl")}</span>
-            <span className={step === 4 ? "active" : ""}>{t("onboarding.stepSkills")}</span>
-          </div>
         </div>
 
-        {error && <div className="ob-error">{error}</div>}
-
-        {step === 1 && (
-          <div className="ob-body">
-            <h3>{t("onboarding.step1Title")}</h3>
-            <p className="ob-sub">{t("onboarding.step1Description")}</p>
-            <input
-              autoFocus
-              className="ob-input"
-              type="text"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              placeholder={t("onboarding.step1Placeholder")}
-              onKeyDown={(e) => e.key === "Enter" && handleNextFromName()}
-            />
-            <div className="ob-actions">
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)}>{t("onboarding.skip")}</button>
-              <button className="ob-btn" onClick={handleNextFromName} disabled={saving}>
-                {saving ? t("onboarding.saving") : t("onboarding.next")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="ob-body">
-            <h3>{t("onboarding.step2Title")}</h3>
-            <p className="ob-sub">{t("onboarding.step2Description")}</p>
-
-            <label className="ob-label">{t("onboarding.step2Provider")}</label>
-            <select
-              className="ob-select"
-              value={selectedProvider}
-              onChange={(e) => { setSelectedProvider(e.target.value); setDefaultModel(""); }}
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{p.api_key_set ? " ✓" : ""}
-                </option>
-              ))}
-            </select>
-
-            <label className="ob-label" style={{ marginTop: 12 }}>
-              {t("onboarding.step2ApiKey")} {selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}
-            </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                className="ob-input"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
-                style={{ flex: 1 }}
-              />
-              <button className="ob-btn" onClick={handleSaveKey} disabled={saving || !apiKey.trim()}>
-                {t("onboarding.step2SaveKey")}
-              </button>
-            </div>
-
-            <label className="ob-label" style={{ marginTop: 16 }}>
-              {t("onboarding.step2DefaultModel")}
-              <button
-                className="ob-btn ob-btn--ghost ob-btn--small"
-                onClick={refreshModels}
-                style={{ marginLeft: 8 }}
-              >
-                {t("onboarding.step2Refresh")}
-              </button>
-            </label>
-            <select
-              className="ob-select"
-              value={defaultModel}
-              onChange={(e) => setDefaultModel(e.target.value)}
-            >
-              <option value="">{t("onboarding.step2SelectModel")}</option>
-              {providerModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name ?? m.id}</option>
-              ))}
-            </select>
-            {providerModels.length === 0 && (
-              <p className="ob-sub2">{t("onboarding.step2NoModels")}</p>
-            )}
-
-            <div className="ob-actions">
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(1)}>{t("onboarding.back")}</button>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.skip")}</button>
-              <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
-                {saving ? "…" : t("onboarding.next")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="ob-body">
-            <h3>{t("onboarding.step3Title")}</h3>
-            <p className="ob-sub">
-              {t("onboarding.step3Description")}
-            </p>
-
-            <div className="ob-shell-choice">
-              <button
-                type="button"
-                className={`ob-shell-card${shellChoice === "powershell" ? " selected" : ""}`}
-                onClick={() => chooseShell("powershell")}
-              >
-                <span className="ob-shell-name">{t("onboarding.shellPowershell")}</span>
-                <span className="ob-shell-desc">{t("onboarding.shellPowershellDesc")}</span>
-              </button>
-              <button
-                type="button"
-                className={`ob-shell-card${shellChoice === "wsl" ? " selected" : ""}`}
-                onClick={() => chooseShell("wsl")}
-              >
-                <span className="ob-shell-name">{t("onboarding.shellWsl")}</span>
-                <span className="ob-shell-desc">{t("onboarding.shellWslDesc")}</span>
-              </button>
-            </div>
-
-            {shellChoice === "powershell" && (
-              winDeps === null ? (
-                <p className="ob-sub2">{t("onboarding.winChecking")}</p>
-              ) : !winDeps.is_windows ? (
-                <p className="ob-sub2">{t("onboarding.shellPowershellNote")}</p>
-              ) : (
-                <>
-                  <p className="ob-sub2">{t("onboarding.winRestartHint")}</p>
-                  <div className="ob-wsl-grid">
-                    <WSLRow label={t("onboarding.wslNode")} ok={!!winDeps.node} value={winDeps.node ?? "—"} />
-                    <WSLRow label={t("onboarding.wslPython")} ok={!!winDeps.python} value={winDeps.python ?? "—"} />
-                    <WSLRow label={t("onboarding.wslPandoc")} ok={!!winDeps.pandoc} value={winDeps.pandoc ?? "—"} />
-                    <WSLRow label={t("onboarding.wslLibreOffice")} ok={!!winDeps.libreoffice} value={winDeps.libreoffice ?? "—"} />
-                    <WSLRow label={t("onboarding.wslPoppler")} ok={winDeps.poppler} value={winDeps.poppler ? t("onboarding.wslPoppler") : "—"} />
-                    <WSLRow label={t("onboarding.wslDocx")} ok={winDeps.docx} value={winDeps.docx ? t("onboarding.wslDocx") : "—"} />
-                  </div>
-
-                  {(() => {
-                    const allOk = !!winDeps.node && !!winDeps.python && !!winDeps.pandoc
-                      && !!winDeps.libreoffice && winDeps.poppler && winDeps.docx;
-                    return (
-                      <div className="ob-wsl-actions">
-                        {!allOk && !winDeps.winget && (
-                          <span className="ob-sub2">{t("onboarding.winNoWinget")}</span>
-                        )}
-                        {!allOk && winDeps.winget && (
-                          <button className="ob-btn" onClick={installWinDeps} disabled={winBusy}>
-                            {winBusy ? t("onboarding.installingWsl") : t("onboarding.winInstall")}
-                          </button>
-                        )}
-                        {allOk && <span className="ob-success">{t("onboarding.allSet")}</span>}
-                        <button className="ob-btn ob-btn--ghost" onClick={refreshWin} disabled={winBusy}>
-                          {t("onboarding.recheck")}
-                        </button>
-                      </div>
-                    );
-                  })()}
-
-                  {winLog && <pre className="ob-log">{winLog}</pre>}
-                </>
-              )
-            )}
-
-            {shellChoice === "wsl" && (
-            <>
-            {wsl === null ? (
-              <p className="ob-sub2">{t("onboarding.checkingWsl")}</p>
-            ) : (
-              <div className="ob-wsl-grid">
-                <WSLRow label={t("onboarding.wslDistro")} ok={wsl.wsl_installed && wsl.distro_running}
-                  value={wsl.distro_running ? (wsl.default_distro ?? t("onboarding.wslRunning")) : wsl.wsl_installed ? t("onboarding.wslNotRunning") : t("onboarding.wslNotInstalled")} />
-                <WSLRow label={t("onboarding.wslNode")} ok={!!wsl.node} value={wsl.node ?? "—"} />
-                <WSLRow label={t("onboarding.wslPython")} ok={!!wsl.python} value={wsl.python ?? "—"} />
-                <WSLRow label={t("onboarding.wslPandoc")} ok={!!wsl.pandoc} value={wsl.pandoc ?? "—"} />
-                <WSLRow label={t("onboarding.wslLibreOffice")} ok={!!wsl.libreoffice} value={wsl.libreoffice ?? "—"} />
-                <WSLRow label={t("onboarding.wslPoppler")} ok={wsl.poppler} value={wsl.poppler ? t("onboarding.wslPoppler") : "—"} />
-                <WSLRow label={t("onboarding.wslDocx")} ok={wsl.docx} value={wsl.docx ? t("onboarding.wslDocx") : "—"} />
-                <WSLRow label={t("onboarding.wslDns")} ok={wsl.dns_ok} value={wsl.dns_ok ? t("onboarding.wslDnsWorking") : t("onboarding.wslDnsBroken")} />
-                <WSLRow label={t("onboarding.wslInternet")} ok={wsl.internet_ok} value={wsl.internet_ok ? t("onboarding.wslInternetWorking") : t("onboarding.wslInternetBroken")} />
-              </div>
-            )}
-
-            {wsl && !wsl.distro_running && (
-              <div className="ob-wsl-creds">
-                <p className="ob-sub2">{t("onboarding.wslCredsDescription")}</p>
-                <div className="ob-wsl-creds-row">
-                  <label className="ob-label">
-                    {t("onboarding.wslUsername")}
-                    <input
-                      className="ob-input"
-                      type="text"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      value={wslUsername}
-                      onChange={(e) => setWslUsername(e.target.value)}
-                      placeholder={t("onboarding.wslUsernamePlaceholder")}
-                      disabled={wslBusy !== null}
-                    />
-                  </label>
-                  <label className="ob-label">
-                    {t("onboarding.wslPassword")}
-                    <input
-                      className="ob-input"
-                      type="password"
-                      value={wslPassword}
-                      onChange={(e) => setWslPassword(e.target.value)}
-                      placeholder={t("onboarding.wslPasswordPlaceholder")}
-                      disabled={wslBusy !== null}
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {(() => {
-              if (!wsl) return null;
-              const allOk = wsl.wsl_installed && wsl.distro_running && !!wsl.node && !!wsl.python
-                && !!wsl.npm && !!wsl.pandoc && !!wsl.libreoffice && wsl.poppler && wsl.docx;
+        <div className="ob-shell-layout">
+          <nav className="ob-rail">
+            {rail.map(({ n, label }) => {
+              const state = step === n ? "active" : maxStep >= n ? "done" : "todo";
+              const reachable = maxStep >= n && !envBusy;
               return (
-                <div className="ob-wsl-actions">
-                  {!allOk && (
-                    <button className="ob-btn" onClick={installAll} disabled={wslBusy !== null}>
-                      {wslBusy === "all" ? t("onboarding.installingWsl") : t("onboarding.installWsl")}
-                    </button>
-                  )}
-                  {allOk && <span className="ob-success">{t("onboarding.allSet")}</span>}
-                  {wsl.distro_running && !wsl.internet_ok && (
-                    <button className="ob-btn" onClick={fixNetwork} disabled={wslBusy !== null}>
-                      {wslBusy === "network" ? t("onboarding.fixingNetwork") : t("onboarding.fixNetwork")}
-                    </button>
-                  )}
-                  <button className="ob-btn ob-btn--ghost" onClick={refreshWsl} disabled={wslBusy !== null}>
-                    {t("onboarding.recheck")}
+                <button
+                  key={n}
+                  type="button"
+                  className={`ob-rail-step ${state}`}
+                  onClick={() => reachable && go(n)}
+                  disabled={!reachable}
+                >
+                  <span className="ob-rail-badge">
+                    {maxStep > n && step !== n ? <Check size={13} weight="bold" /> : n}
+                  </span>
+                  <span className="ob-rail-label">{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="ob-content">
+            {error && <div className="ob-error">{error}</div>}
+
+            {step === 1 && (
+              <div className="ob-body">
+                <h3>{t("onboarding.step1Title")}</h3>
+                <p className="ob-sub">{t("onboarding.step1Description")}</p>
+                <input
+                  autoFocus
+                  className="ob-input"
+                  type="text"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder={t("onboarding.step1Placeholder")}
+                  onKeyDown={(e) => e.key === "Enter" && handleNextFromName()}
+                />
+                <div className="ob-actions">
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(2)}>{t("onboarding.skip")}</button>
+                  <button className="ob-btn" onClick={handleNextFromName} disabled={saving}>
+                    {saving ? t("onboarding.saving") : t("onboarding.next")}
                   </button>
                 </div>
-              );
-            })()}
-
-            {wslLog && (
-              <pre className="ob-log">{wslLog}</pre>
-            )}
-            </>
-            )}
-
-            <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(2)} disabled={winBusy}>{t("onboarding.back")}</button>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(4)} disabled={wslBusy !== null || winBusy}>{t("onboarding.skip")}</button>
-              <button className="ob-btn" onClick={() => setStep(4)} disabled={wslBusy !== null || winBusy}>{t("onboarding.next")}</button>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="ob-body">
-            <h3>{t("onboarding.step4Title")}</h3>
-            <p className="ob-sub">
-              {t("onboarding.step4Description")}
-            </p>
-            <ul className="ob-bullets">
-              <li>{t("onboarding.skillDocx")}</li>
-              <li>{t("onboarding.skillXlsx")}</li>
-              <li>{t("onboarding.skillPptx")}</li>
-              <li>{t("onboarding.skillPdf")}</li>
-              <li>{t("onboarding.skillCreate")}</li>
-            </ul>
-            <p className="ob-sub2">
-              {t("onboarding.skillsSource")}
-            </p>
-
-            {skillsInstalled !== null && (
-              <div className="ob-success">
-                {t("onboarding.skillsInstalled", { count: skillsInstalled })}
               </div>
             )}
 
-            <div className="ob-actions" style={{ marginTop: 24 }}>
-              <button className="ob-btn ob-btn--ghost" onClick={() => setStep(3)}>{t("onboarding.back")}</button>
-              {skillsInstalled === null ? (
-                <>
-                  <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>
-                    {t("onboarding.skipSkills")}
+            {step === 2 && (
+              <div className="ob-body">
+                <h3>{t("onboarding.step2Title")}</h3>
+                <p className="ob-sub">{t("onboarding.step2Description")}</p>
+
+                <label className="ob-label">{t("onboarding.step2Provider")}</label>
+                <select
+                  className="ob-select"
+                  value={selectedProvider}
+                  onChange={(e) => { setSelectedProvider(e.target.value); setDefaultModel(""); }}
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.api_key_set ? " ✓" : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <label className="ob-label" style={{ marginTop: 12 }}>
+                  {t("onboarding.step2ApiKey")} {selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    className="ob-input"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
+                    style={{ flex: 1 }}
+                  />
+                  <button className="ob-btn" onClick={handleSaveKey} disabled={saving || !apiKey.trim()}>
+                    {t("onboarding.step2SaveKey")}
                   </button>
-                  <button className="ob-btn" onClick={installAnthropicSkills} disabled={skillsInstalling || saving}>
-                    {skillsInstalling ? t("onboarding.installingSkills") : t("onboarding.installSkills")}
+                </div>
+
+                <label className="ob-label" style={{ marginTop: 16 }}>
+                  {t("onboarding.step2DefaultModel")}
+                  <button
+                    className="ob-btn ob-btn--ghost ob-btn--small"
+                    onClick={refreshModels}
+                    style={{ marginLeft: 8 }}
+                  >
+                    {t("onboarding.step2Refresh")}
                   </button>
-                </>
-              ) : (
-                <button className="ob-btn" onClick={finish} disabled={saving}>
-                  {saving ? t("onboarding.finishing") : t("onboarding.finish")}
-                </button>
-              )}
-            </div>
+                </label>
+                <select
+                  className="ob-select"
+                  value={defaultModel}
+                  onChange={(e) => setDefaultModel(e.target.value)}
+                >
+                  <option value="">{t("onboarding.step2SelectModel")}</option>
+                  {providerModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name ?? m.id}</option>
+                  ))}
+                </select>
+                {providerModels.length === 0 && (
+                  <p className="ob-sub2">{t("onboarding.step2NoModels")}</p>
+                )}
+
+                <div className="ob-actions">
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(1)}>{t("onboarding.back")}</button>
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(3)}>{t("onboarding.skip")}</button>
+                  <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
+                    {saving ? "…" : t("onboarding.next")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
+              <>
+                <EnvironmentStep onBusyChange={setEnvBusy} onError={setError} />
+                <div className="ob-actions">
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(2)} disabled={envBusy}>{t("onboarding.back")}</button>
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(4)} disabled={envBusy}>{t("onboarding.skip")}</button>
+                  <button className="ob-btn" onClick={() => go(4)} disabled={envBusy}>{t("onboarding.next")}</button>
+                </div>
+              </>
+            )}
+
+            {step === 4 && (
+              <div className="ob-body">
+                <h3>{t("onboarding.step4Title")}</h3>
+                <p className="ob-sub">{t("onboarding.step4Description")}</p>
+                <ul className="ob-bullets">
+                  <li>{t("onboarding.skillDocx")}</li>
+                  <li>{t("onboarding.skillXlsx")}</li>
+                  <li>{t("onboarding.skillPptx")}</li>
+                  <li>{t("onboarding.skillPdf")}</li>
+                  <li>{t("onboarding.skillCreate")}</li>
+                </ul>
+                <p className="ob-sub2">{t("onboarding.skillsSource")}</p>
+
+                {skillsInstalled !== null && (
+                  <div className="ob-success">
+                    {t("onboarding.skillsInstalled", { count: skillsInstalled })}
+                  </div>
+                )}
+
+                <div className="ob-actions">
+                  <button className="ob-btn ob-btn--ghost" onClick={() => go(3)}>{t("onboarding.back")}</button>
+                  {skillsInstalled === null ? (
+                    <>
+                      <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>
+                        {t("onboarding.skipSkills")}
+                      </button>
+                      <button className="ob-btn" onClick={installAnthropicSkills} disabled={skillsInstalling || saving}>
+                        {skillsInstalling ? t("onboarding.installingSkills") : t("onboarding.installSkills")}
+                      </button>
+                    </>
+                  ) : (
+                    <button className="ob-btn" onClick={finish} disabled={saving}>
+                      {saving ? t("onboarding.finishing") : t("onboarding.finish")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
-  );
-}
-
-function WSLRow({ label, ok, value }: { label: string; ok: boolean; value: string }) {
-  return (
-    <>
-      <span className="ob-wsl-label">{label}</span>
-      <span className={`ob-wsl-value ${ok ? "ok" : "missing"}`}>
-        <span className="ob-dot" />
-        {value}
-      </span>
-    </>
   );
 }
