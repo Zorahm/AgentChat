@@ -74,10 +74,7 @@ class SkillEntry:
 class AgentSkillsReader:
     """Scans .agents/skills/ directory for Skills 2.0 SKILL.md files."""
 
-    _PROMPT_TEMPLATE = (
-        "## Available Skills\n\n{descriptions}\n\n"
-        "To read a skill's full instructions, use the read_skill tool with the skill name."
-    )
+    _PROMPT_TEMPLATE = "### Installed skills\n\n{descriptions}"
 
     def __init__(self, skills_dir: Path | Iterable[Path]) -> None:
         if isinstance(skills_dir, Path):
