@@ -78,6 +78,29 @@ def resolve_ui_dist() -> Path | None:
     return None
 
 
+def resolve_bundled_skills() -> Path | None:
+    """Locate the bundled skills directory (repo ``skills/``).
+
+    These ship with the app so the curated skills (the office four +
+    ``agentchat``) install offline from a local copy instead of GitHub. The
+    installed app carries them under ``_MEIPASS/bundled_skills`` (see
+    build-backend.ps1: ``--add-data "skills;bundled_skills"``); in dev they live
+    in the repo's ``skills/``. Returns ``None`` when no bundle is present.
+    """
+    candidates: list[Path] = []
+    env = os.environ.get("AGENTCHAT_BUNDLED_SKILLS")
+    if env:
+        candidates.append(Path(env))
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "bundled_skills")
+    candidates.append(BASE_DIR.parent / "skills")
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _wsl_form(win_path: Path) -> str:
     """Translate ``C:\\foo\\bar`` to ``/mnt/c/foo/bar`` for WSL-side comparisons."""
     s = str(win_path)

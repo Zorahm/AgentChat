@@ -1,0 +1,113 @@
+/* Research — in-chat card + side-panel timeline (Claude-style) */
+
+/* ── Research card (in the chat flow) ─────────────────────────────────── */
+.research-card {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: background .12s, border-color .12s;
+}
+.research-card:hover { background: var(--hover); border-color: var(--accent); }
+
+.research-card-ic {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--accent); font-size: 17px;
+}
+.research-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.research-card-title {
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.research-card-meta {
+  font-size: 12px; color: var(--muted);
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.research-card-chev { color: var(--muted); flex-shrink: 0; }
+
+.research-card--cancelled .research-card-ic { color: var(--muted); }
+
+.research-spin { animation: research-spin 1s linear infinite; }
+@keyframes research-spin { to { transform: rotate(360deg); } }
+
+/* ── Research side panel ──────────────────────────────────────────────── */
+.research-panel .rp-head {
+  height: 46px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 0 10px 0 14px; flex-shrink: 0; background: var(--surface);
+}
+.rp-head-title {
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+.rp-body { flex: 1; overflow-y: auto; padding: 16px 16px 40px; }
+
+.rp-timeline { list-style: none; margin: 0; padding: 0; }
+.rp-node { position: relative; display: flex; gap: 12px; padding: 0 0 18px 4px; }
+/* vertical connector through the dots */
+.rp-node::before {
+  content: ""; position: absolute; left: 8px; top: 14px; bottom: -4px;
+  width: 1.5px; background: var(--line-2);
+}
+.rp-node:last-child::before { display: none; }
+
+.rp-dot {
+  width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex-shrink: 0;
+  background: var(--line-2); border: 2px solid var(--surface); box-sizing: content-box;
+  position: relative; z-index: 1;
+}
+.rp-dot--done { background: var(--accent); }
+.rp-dot--active { background: var(--accent); animation: rp-pulse 1.2s ease-in-out infinite; }
+.rp-dot--cancelled { background: var(--muted); }
+@keyframes rp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.rp-node-content { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.rp-node-label {
+  font-size: 13px; color: var(--ink); font-weight: 500;
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.rp-node-label--query span, .rp-node-label--read span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rp-node-label--read { color: var(--ink-2); font-weight: 400; }
+.rp-node-label--ready { color: var(--accent); font-weight: 600; }
+.rp-node-label--cancelled { color: var(--muted); font-weight: 600; }
+.rp-step-count { font-size: 11.5px; color: var(--muted); }
+.rp-plan-text { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
+
+/* gathered-sources box */
+.rp-sources {
+  border: 1px solid var(--line-2); border-radius: 10px;
+  background: var(--surface-2); overflow: hidden;
+}
+.rp-source-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border: none; background: transparent; cursor: pointer;
+  font-family: var(--font-body); text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.rp-source-row:last-child { border-bottom: none; }
+.rp-source-row:hover { background: var(--hover); }
+.rp-source-ic {
+  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+  color: var(--muted); object-fit: contain;
+}
+.rp-source-domain {
+  font-size: 12.5px; color: var(--ink-2); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rp-source-count { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+.rp-source-more {
+  padding: 7px 10px; font-size: 12px; color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+/* Sources box reused inside the web_search tool block */
+.ws-sources-wrap { padding: 8px 10px 4px; }

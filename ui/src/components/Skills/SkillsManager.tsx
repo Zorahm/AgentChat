@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, MagnifyingGlass, DotsThree, Trash, CaretRight,
-  Folder, LinkSimple, CheckCircle, FileDoc, FileXls, FilePpt, FilePdf, PaintBrush,
+  Folder, LinkSimple, CheckCircle, FileDoc, FileXls, FilePpt, FilePdf, PaintBrush, Sparkle,
 } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { playNotificationSound } from "../../utils/notify";
@@ -34,13 +34,17 @@ type Tx = (key: string, opts?: Record<string, unknown>) => string;
 interface CatalogItem {
   key: string;
   icon: ReactNode;
+  // Tools the skill's scripts need at runtime. Shown as a "requires" line so the
+  // user knows to install them (Settings → Terminal) before running the skill.
+  requires?: string;
 }
 
 const CATALOG: CatalogItem[] = [
-  { key: "docx", icon: <FileDoc size={20} weight="duotone" /> },
-  { key: "xlsx", icon: <FileXls size={20} weight="duotone" /> },
-  { key: "pptx", icon: <FilePpt size={20} weight="duotone" /> },
-  { key: "pdf", icon: <FilePdf size={20} weight="duotone" /> },
+  { key: "agentchat", icon: <Sparkle size={20} weight="duotone" /> },
+  { key: "docx", icon: <FileDoc size={20} weight="duotone" />, requires: "Python (python-docx); optional pandoc, LibreOffice" },
+  { key: "xlsx", icon: <FileXls size={20} weight="duotone" />, requires: "Python (openpyxl, pandas); optional LibreOffice" },
+  { key: "pptx", icon: <FilePpt size={20} weight="duotone" />, requires: "Python (python-pptx); optional LibreOffice, poppler" },
+  { key: "pdf", icon: <FilePdf size={20} weight="duotone" />, requires: "Python (pypdf, pdfplumber, reportlab), poppler" },
   { key: "frontend-design", icon: <PaintBrush size={20} weight="duotone" /> },
 ];
 
@@ -204,6 +208,18 @@ function AddSkillPane({
               <div className="sk2-cat-body">
                 <div className="sk2-cat-label">{t(`skills.catalog.${c.key}.label`)}</div>
                 <div className="sk2-cat-desc">{t(`skills.catalog.${c.key}.desc`)}</div>
+                {c.requires && (
+                  <div className="sk2-cat-req">
+                    <span className="sk2-cat-req-lbl">{t("skills.requires")}:</span> {c.requires}
+                    {" · "}
+                    <button
+                      className="sk2-cat-req-link"
+                      onClick={() => window.dispatchEvent(new CustomEvent("navigate", { detail: "settings:terminal" }))}
+                    >
+                      {t("skills.requiresInstall")}
+                    </button>
+                  </div>
+                )}
               </div>
               <button
                 className={`sk2-cat-btn${installed ? " done" : ""}`}

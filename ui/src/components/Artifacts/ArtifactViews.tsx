@@ -1,26 +1,52 @@
 /** Artifact view sub-components — RenderView, CodeView, CsvTable. */
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { marked } from "marked";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Artifact } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { API_BASE } from "../../utils/apiBase";
+import { useDarkMode } from "../../hooks/useDarkMode";
 import { useTranslation } from "react-i18next";
 
-function useDarkMode(): boolean {
-  const [isDark, setIsDark] = useState(
-    () => document.documentElement.getAttribute("data-theme") === "dark",
-  );
+/** Office preview: convert the file to PDF on the backend (LibreOffice) and show
+ * it in an iframe. Falls back to a download hint when LibreOffice is missing or
+ * the conversion fails (HTTP 503/5xx). */
+function OfficePreview({ path, ext }: { path: string; ext: string }) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  const src = `${API_BASE}/files/preview?path=${encodeURIComponent(path)}`;
+
+  // Probe the conversion first (so we can show a helpful fallback on failure),
+  // then render the resulting PDF from the same URL — the backend caches it by
+  // source mtime, so the iframe load is an instant cache hit.
   useEffect(() => {
-    const obs = new MutationObserver(() => {
-      setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => obs.disconnect();
-  }, []);
-  return isDark;
+    let alive = true;
+    setState("loading");
+    fetch(src, { method: "GET" })
+      .then((r) => {
+        if (!alive) return;
+        setState(r.ok ? "ok" : "error");
+      })
+      .catch(() => alive && setState("error"));
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+
+  if (state === "loading") {
+    return <div className="art-state">{t("artifacts.convertingPreview")}</div>;
+  }
+  if (state === "error") {
+    return (
+      <div className="art-state">
+        {t("artifacts.previewUnavailable")} {ext.toUpperCase()}
+        <small>{t("artifacts.officePreviewHint")}</small>
+      </div>
+    );
+  }
+  return <iframe className="art-render-iframe" src={src} title="Office preview" />;
 }
 
 export function RenderView({
@@ -51,13 +77,8 @@ export function RenderView({
     return <iframe className="art-render-iframe" src={src} title="PDF preview" />;
   }
 
-  if (["docx", "doc", "pptx", "ppt", "xlsx", "xls"].includes(ext)) {
-    return (
-      <div className="art-state">
-        {t("artifacts.previewUnavailable")} {ext.toUpperCase()}
-        <small>{t("artifacts.downloadHint")}</small>
-      </div>
-    );
+  if (["docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf"].includes(ext)) {
+    return <OfficePreview path={artifact.path ?? ""} ext={ext} />;
   }
 
   if (content === null) {

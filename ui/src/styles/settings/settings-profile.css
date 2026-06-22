@@ -121,6 +121,55 @@
 }
 .st2-mctl { min-width: 0; }
 
+/* Completion-sound control column: toggle on top, custom-sound panel below. */
+.st2-notify-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+/* Inset panel shown only when the sound is enabled — current sound + actions. */
+.st2-notify-sound {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.st2-notify-sound-cur {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.st2-notify-sound-cur svg { color: var(--accent); flex-shrink: 0; }
+.st2-notify-sound-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Action buttons (preview / choose / reset). */
+.st2-sound-ctl {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.st2-err { color: var(--danger, #e5484d); }
+.st2-notify-err { flex-basis: 100%; margin: 0; }
+
 /* ── Danger row (unrestricted mode) ───────────────────────────────────── */
 
 .st2-danger-row {

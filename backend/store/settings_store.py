@@ -102,6 +102,8 @@ class SettingsStore:
         self._user_name = ""
         self._theme = "system"
         self._notify_sound = False
+        self._notify_sound_data: str | None = None
+        self._notify_sound_name: str | None = None
         self._language = ""
         self._onboarding_completed = False
         self._unrestricted_mode = False
@@ -113,6 +115,10 @@ class SettingsStore:
         self._searxng_url: str | None = None
         # None → fall back to the TAVILY_API_KEY env var at request time.
         self._tavily_api_key: str | None = None
+        # Sticky research toggle + the model the inner research loop runs on
+        # ("" → fall back to default_model).
+        self._research_enabled = False
+        self._research_model = ""
         # Long-lived shared secret for remote (phone) access. Generated lazily
         # the first time remote access is enabled; persisted in settings.json.
         self._remote_token = ""
@@ -173,6 +179,12 @@ class SettingsStore:
             ns = global_block.get("notify_sound")
             if isinstance(ns, bool):
                 self._notify_sound = ns
+            nsd = global_block.get("notify_sound_data")
+            if isinstance(nsd, str):
+                self._notify_sound_data = nsd or None
+            nsn = global_block.get("notify_sound_name")
+            if isinstance(nsn, str):
+                self._notify_sound_name = nsn or None
             lang = global_block.get("language")
             if isinstance(lang, str):
                 self._language = lang
@@ -203,6 +215,12 @@ class SettingsStore:
             tav = global_block.get("tavily_api_key")
             if isinstance(tav, str):
                 self._tavily_api_key = tav or None
+            re_ = global_block.get("research_enabled")
+            if isinstance(re_, bool):
+                self._research_enabled = re_
+            rm = global_block.get("research_model")
+            if isinstance(rm, str):
+                self._research_model = rm
             sc = global_block.get("shortcuts")
             if isinstance(sc, dict):
                 self._shortcuts = {
@@ -263,6 +281,8 @@ class SettingsStore:
                 "user_name": self._user_name,
                 "theme": self._theme,
                 "notify_sound": self._notify_sound,
+                "notify_sound_data": self._notify_sound_data,
+                "notify_sound_name": self._notify_sound_name,
                 "language": self._language,
                 "onboarding_completed": self._onboarding_completed,
                 "unrestricted_mode": self._unrestricted_mode,
@@ -273,6 +293,8 @@ class SettingsStore:
                 "web_search_enabled": self._web_search_enabled,
                 "searxng_url": self._searxng_url,
                 "tavily_api_key": self._tavily_api_key,
+                "research_enabled": self._research_enabled,
+                "research_model": self._research_model,
                 "shortcuts": self._shortcuts,
             },
             "providers": [
@@ -318,6 +340,8 @@ class SettingsStore:
             user_name=self._user_name,
             theme=self._theme,
             notify_sound=self._notify_sound,
+            notify_sound_data=self._notify_sound_data,
+            notify_sound_name=self._notify_sound_name,
             language=self._language,
             onboarding_completed=self._onboarding_completed,
             unrestricted_mode=self._unrestricted_mode,
@@ -327,6 +351,8 @@ class SettingsStore:
             web_search_enabled=self._web_search_enabled,
             searxng_url=self._searxng_url,
             tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
+            research_enabled=self._research_enabled,
+            research_model=self._research_model,
             shortcuts=dict(self._shortcuts),
             mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
         )
@@ -344,6 +370,11 @@ class SettingsStore:
             self._theme = patch.theme
         if patch.notify_sound is not None:
             self._notify_sound = patch.notify_sound
+        if patch.notify_sound_data is not None:
+            # Empty string clears the custom sound (revert to the chime).
+            self._notify_sound_data = patch.notify_sound_data or None
+        if patch.notify_sound_name is not None:
+            self._notify_sound_name = patch.notify_sound_name or None
         if patch.language is not None:
             self._language = patch.language
         if patch.onboarding_completed is not None:
@@ -375,6 +406,10 @@ class SettingsStore:
             self._searxng_url = patch.searxng_url.strip() or None
         if patch.tavily_api_key is not None:
             self._tavily_api_key = patch.tavily_api_key.strip() or None
+        if patch.research_enabled is not None:
+            self._research_enabled = patch.research_enabled
+        if patch.research_model is not None:
+            self._research_model = patch.research_model.strip()
         if patch.shortcuts is not None:
             # Full replacement; drop blank combos so they fall back to defaults.
             self._shortcuts = {
@@ -529,6 +564,14 @@ class SettingsStore:
     @property
     def searxng_url(self) -> str | None:
         return self._searxng_url
+
+    @property
+    def research_enabled(self) -> bool:
+        return self._research_enabled
+
+    @property
+    def research_model(self) -> str:
+        return self._research_model
 
     @property
     def tavily_api_key(self) -> str | None:

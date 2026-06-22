@@ -9,6 +9,7 @@ import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
+import { ResearchPanel } from "./components/Chat/ResearchPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { AllChatsPage } from "./components/AllChatsPage";
 import { FilesGalleryPage } from "./components/FilesGalleryPage";
@@ -17,7 +18,7 @@ import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE } from "./utils/apiBase";
-import { setNotifySoundEnabled, playNotificationSound } from "./utils/notify";
+import { setNotifySoundEnabled, setNotifySound, playNotificationSound } from "./utils/notify";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
 import { resolveBindings } from "./shortcuts/registry";
@@ -33,7 +34,7 @@ export function App() {
   const chats = useChats();
   // Stable identity (useCallback([]) in the hook) — safe to use inside
   // fetchSettings without re-triggering the settings-fetch effect each render.
-  const { setWebSearchDefault } = chats;
+  const { setWebSearchDefault, setResearchDefault, setThinkingDefault, setEffortDefault } = chats;
   const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects" | "files">("chat");
   const [settingsTab, setSettingsTab] = useState<NavTab>("profile");
   const [model, setModel] = useState("openai/gpt-4o");
@@ -47,6 +48,7 @@ export function App() {
   const [generalPanelOpen, setGeneralPanelOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT);
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
+  const [openResearchId, setOpenResearchId] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
   const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
   const appUpdate = useAppUpdate();
@@ -57,13 +59,31 @@ export function App() {
   const [shortcuts, setShortcuts] = useState<Record<string, string>>({});
   const panelWidthRef = useRef(panelWidth);
 
-  const panelOpen = generalPanelOpen || openFilePath !== null;
+  const panelOpen = generalPanelOpen || openFilePath !== null || openResearchId !== null;
 
-  // Close artifact panel when switching chats
+  // Close artifact / research panels when switching chats
   useEffect(() => {
     setOpenFilePath(null);
+    setOpenResearchId(null);
     setGeneralPanelOpen(false);
   }, [chats.activeId]);
+
+  // Live research call for the open panel — found in the active chat's messages
+  // so the panel timeline updates as tool_progress events arrive.
+  const openResearchCall = useMemo(() => {
+    if (!openResearchId) return null;
+    for (const m of chats.messages) {
+      for (const tc of m.toolCalls ?? []) {
+        if (tc.id === openResearchId && tc.research) return tc;
+      }
+    }
+    return null;
+  }, [openResearchId, chats.messages]);
+
+  // Don't reserve the panel column for a research call that no longer exists.
+  useEffect(() => {
+    if (openResearchId && !openResearchCall) setOpenResearchId(null);
+  }, [openResearchId, openResearchCall]);
 
   // Track the mobile breakpoint (mirrors styles/responsive.css). On phones the
   // sidebar becomes an off-canvas drawer, so the desktop collapse state is
@@ -92,11 +112,26 @@ export function App() {
       const path = (e as CustomEvent<string>).detail;
       if (path) {
         setOpenFilePath(path);
+        setOpenResearchId(null);
         setGeneralPanelOpen(false);
       }
     };
     window.addEventListener("open-artifact", handler);
     return () => window.removeEventListener("open-artifact", handler);
+  }, []);
+
+  // Listen for clicks on research cards — open the research timeline panel.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) {
+        setOpenResearchId(id);
+        setOpenFilePath(null);
+        setGeneralPanelOpen(false);
+      }
+    };
+    window.addEventListener("open-research", handler);
+    return () => window.removeEventListener("open-research", handler);
   }, []);
 
   // While the artifacts panel is open, follow a file the model *starts*
@@ -155,6 +190,7 @@ export function App() {
         if (typeof data.user_name === "string") setUserName(data.user_name);
         if (typeof data.theme === "string") setTheme(data.theme);
         setNotifySoundEnabled(data.notify_sound === true);
+        setNotifySound(typeof data.notify_sound_data === "string" ? data.notify_sound_data : null);
         if (typeof data.language === "string") setLanguage(data.language);
         if (typeof data.onboarding_completed === "boolean") {
           setOnboardingDone(data.onboarding_completed);
@@ -170,6 +206,7 @@ export function App() {
           enabled: data.web_search_enabled === true,
           mode: typeof data.web_search_mode === "string" ? data.web_search_mode : "auto",
         });
+        setResearchDefault(data.research_enabled === true);
         if (data.providers?.length) {
           const enabled = new Set<string>();
           for (const p of data.providers as Array<{ id: string; enabled: boolean }>) {
@@ -188,7 +225,7 @@ export function App() {
         }
       }
     } catch { /* use defaults */ }
-  }, [model, setWebSearchDefault]);
+  }, [model, setWebSearchDefault, setResearchDefault]);
 
   const updateSettings = useCallback(async (partial: Record<string, unknown>) => {
     try {
@@ -209,6 +246,15 @@ export function App() {
       const patch: Record<string, unknown> = { web_search_enabled: enabled };
       if (mode) patch.web_search_mode = mode;
       void updateSettings(patch);
+    },
+    [chats, updateSettings],
+  );
+
+  // Toggle research on the active chat AND persist the sticky default.
+  const handleResearchChange = useCallback(
+    (enabled: boolean) => {
+      chats.setResearch(enabled);
+      void updateSettings({ research_enabled: enabled });
     },
     [chats, updateSettings],
   );
@@ -273,12 +319,24 @@ export function App() {
     }
   };
 
+  // Keep the hook's sticky thinking/effort mirror in step with the composer
+  // toggles, so retry / edit / project-chat sends reuse the user's choice
+  // instead of falling back to the model's defaults (see useChats).
+  useEffect(() => { setThinkingDefault(thinkingEnabled); }, [thinkingEnabled, setThinkingDefault]);
+  useEffect(() => { setEffortDefault(effortLevel); }, [effortLevel, setEffortDefault]);
+
   // Listen for navigation from child components (e.g. model selector "settings" link)
   useEffect(() => {
     const handler = (e: Event) => {
       const v = (e as CustomEvent<string>).detail;
       if (v === "settings:models") {
         setSettingsTab("models");
+        setView("settings");
+        setTimeout(fetchSettings, 300);
+        return;
+      }
+      if (v === "settings:terminal") {
+        setSettingsTab("terminal");
         setView("settings");
         setTimeout(fetchSettings, 300);
         return;
@@ -357,6 +415,7 @@ export function App() {
 
   const handleToggleFiles = () => {
     if (openFilePath) setOpenFilePath(null);
+    setOpenResearchId(null);
     setGeneralPanelOpen((v) => !v);
   };
 
@@ -499,9 +558,11 @@ export function App() {
             webSearchEnabled={chats.activeWebSearchEnabled}
             webSearchMode={chats.activeWebSearchMode}
             onWebSearchChange={handleWebSearchChange}
+            researchEnabled={chats.activeResearchEnabled}
+            onResearchChange={handleResearchChange}
           />
         )}
-        {view === "chat" && panelOpen && !openFilePath && (
+        {view === "chat" && generalPanelOpen && !openFilePath && !openResearchId && (
           <FilesPanel
             messages={chats.messages}
             onOpenFile={(path) => {
@@ -509,6 +570,14 @@ export function App() {
               setOpenFilePath(path);
             }}
             onClose={() => setGeneralPanelOpen(false)}
+          />
+        )}
+        {view === "chat" && openResearchId && openResearchCall && (
+          <ResearchPanel
+            key={openResearchId}
+            call={openResearchCall}
+            onClose={() => setOpenResearchId(null)}
+            onResizeStart={handleResizeStart}
           />
         )}
         {view === "chat" && openFilePath && (

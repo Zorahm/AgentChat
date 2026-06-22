@@ -185,6 +185,13 @@
 .sk2-cat-body { flex: 1; min-width: 0; }
 .sk2-cat-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .sk2-cat-desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; margin-top: 1px; }
+.sk2-cat-req { font-size: 10.5px; color: var(--faint); line-height: 1.4; margin-top: 4px; }
+.sk2-cat-req-lbl { font-weight: 600; color: var(--muted); }
+.sk2-cat-req-link {
+  border: 0; background: none; padding: 0; font: inherit; font-size: 10.5px;
+  color: var(--accent); cursor: pointer; text-decoration: underline;
+}
+.sk2-cat-req-link:hover { color: var(--accent-strong, var(--accent)); }
 .sk2-cat-btn {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 0 12px; height: 32px; border-radius: 8px;

@@ -16,6 +16,7 @@ from tools.read_file import ReadFileTool
 from tools.read_photo import ReadPhotoTool
 from tools.read_skill import ReadSkillTool
 from tools.registry import ToolRegistry
+from tools.show_widget import ShowWidgetTool
 from tools.web_fetch_tool import WebFetchTool
 from tools.write_file import WriteFileTool
 
@@ -37,6 +38,7 @@ def build_tool_registry(reader: AgentSkillsReader) -> ToolRegistry:
     registry.register(WriteFileTool())
     registry.register(EditFileTool())
     registry.register(PresentFilesTool())
+    registry.register(ShowWidgetTool())
     registry.register(ReadSkillTool(reader))
     registry.register(WebFetchTool())
     return registry

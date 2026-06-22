@@ -172,6 +172,35 @@
         "litellm": "Tavily",
         "searxng": "SearXNG"
       }
+    },
+    "research": {
+      "toggle": "Исследование",
+      "hint": "Глубокое многошаговое веб-исследование — пишет отчёт report.md со ссылками",
+      "card": {
+        "complete": "Исследование готово",
+        "running": "Исследую…",
+        "cancelled": "Исследование отменено",
+        "untitled": "Исследование",
+        "sources_one": "{{count}} источник",
+        "sources_few": "{{count}} источника",
+        "sources_many": "{{count}} источников",
+        "sources_other": "{{count}} источников"
+      },
+      "panel": {
+        "planCreated": "План исследования создан",
+        "gathered_one": "Собран {{count}} источник",
+        "gathered_few": "Собрано {{count}} источника",
+        "gathered_many": "Собрано {{count}} источников",
+        "gathered_other": "Собрано {{count}} источников",
+        "otherSources_one": "ещё {{count}} источник",
+        "otherSources_few": "ещё {{count}} источника",
+        "otherSources_many": "ещё {{count}} источников",
+        "otherSources_other": "ещё {{count}} источников",
+        "searching": "Поиск…",
+        "working": "Исследую…",
+        "reportReady": "Отчёт готов",
+        "cancelled": "Отменён"
+      }
     }
   },
   "common": {
@@ -426,6 +455,14 @@
       "themeSystem": "Системная",
       "notifySound": "Звук завершения",
       "notifySoundHint": "Сигнал при завершении ответа или установки — только когда окно свёрнуто или не в фокусе.",
+      "notifySoundDefault": "Стандартный сигнал",
+      "notifySoundCustom": "Свой звук",
+      "notifySoundChoose": "Выбрать файл",
+      "notifySoundReplace": "Заменить",
+      "notifySoundPreview": "Прослушать",
+      "notifySoundReset": "Вернуть стандартный сигнал",
+      "notifySoundTooLarge": "Файл слишком большой — нужен меньше 1 МБ.",
+      "notifySoundReadError": "Не удалось прочитать файл.",
       "language": "Язык интерфейса",
       "languageHint": "Язык всего интерфейса. Перевод применяется сразу.",
       "sandbox": "Песочница",
@@ -576,6 +613,9 @@
       "refreshing": "Обновляю…",
       "defaultModel": "Модель по умолчанию",
       "defaultModelHint": "Какую модель использовать для новых чатов. Модели сгруппированы по провайдерам. Переключить можно в шапке чата.",
+      "researchModel": "Модель для исследований",
+      "researchModelHint": "Модель, на которой работает внутренний цикл инструмента исследования. Оставьте «Как модель по умолчанию», чтобы совпадала с моделью чата, или выберите дешевле/быстрее для множества шагов поиска.",
+      "researchUseDefault": "Как модель по умолчанию",
       "noModels": "— нет загруженных моделей. Добавьте ключ провайдера и обновите. —",
       "searchPlaceholder": "Поиск моделей…",
       "temperature": "Температура",
@@ -784,8 +824,11 @@
     "anthropicSubtitle": "Официальные скиллы Anthropic для документов и дизайна.",
     "fromGithub": "С GitHub",
     "installed": "Установлено",
+    "requires": "Требует",
+    "requiresInstall": "установить в Терминале",
     "metaAuthor": "Автор",
     "catalog": {
+      "agentchat": { "label": "Об AgentChat", "desc": "Позволяет модели отвечать на вопросы об этом приложении и его возможностях" },
       "docx": { "label": "Word (.docx)", "desc": "Создание и редактирование документов Word" },
       "xlsx": { "label": "Excel (.xlsx)", "desc": "Создание и редактирование таблиц Excel" },
       "pptx": { "label": "PowerPoint (.pptx)", "desc": "Создание и редактирование презентаций" },
@@ -912,6 +955,8 @@
     "loading": "Загрузка…",
     "previewUnavailable": "Превью недоступно для",
     "downloadHint": "нажмите «Скачать», чтобы открыть в нативном приложении",
+    "convertingPreview": "Готовлю превью…",
+    "officePreviewHint": "Установите LibreOffice (Настройки → Терминал) для превью Office-файлов, или нажмите «Скачать».",
     "fileNotAvailable": "Файл недоступен",
     "refreshHint": "нажмите ↺ для обновления",
     "emptyFile": "Пустой файл",

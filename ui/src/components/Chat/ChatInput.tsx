@@ -10,6 +10,7 @@ import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
 import { McpMenuSection } from "./MCPChip";
 import { WebSearchMenuSection } from "./WebSearchMenuSection";
+import { ResearchMenuSection } from "./ResearchMenuSection";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import type { AttachmentInfo } from "../../types/chat";
 import { buildMentionSuggestion, extractText, mentionDisplay } from "../../utils/mentions";
@@ -38,6 +39,8 @@ interface ChatInputProps {
   webSearchEnabled?: boolean;
   webSearchMode?: string;
   onWebSearchChange?: (enabled: boolean, mode?: string) => void;
+  researchEnabled?: boolean;
+  onResearchChange?: (enabled: boolean) => void;
   /** When true (e.g. a file is dragged anywhere over a project), show the drop
    *  overlay even before the cursor reaches the composer. */
   externalDragActive?: boolean;
@@ -70,7 +73,8 @@ export function ChatInput({
   fillText, onFillTextConsumed,
   dirSlug,
   mcpEnabled, onToggleMcpServer,
-  webSearchEnabled, webSearchMode, onWebSearchChange, externalDragActive,
+  webSearchEnabled, webSearchMode, onWebSearchChange,
+  researchEnabled, onResearchChange, externalDragActive,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const [textLen, setTextLen] = useState(0);
@@ -600,6 +604,12 @@ export function ChatInput({
                       enabled={webSearchEnabled ?? false}
                       mode={webSearchMode ?? "auto"}
                       onChange={onWebSearchChange}
+                    />
+                  )}
+                  {onResearchChange && (
+                    <ResearchMenuSection
+                      enabled={researchEnabled ?? false}
+                      onChange={onResearchChange}
                     />
                   )}
                 </div>

@@ -12,6 +12,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.sandbox import SandboxPolicy
 from tools.present_files import PresentFilesTool
+from tools.show_widget import ShowWidgetTool
 from tools.write_file import WriteFileTool, _resolve_write_path
 
 
@@ -164,3 +165,45 @@ class TestPresentFilesTool:
     async def test_empty_paths_errors(self, tmp_path: Path) -> None:
         out = await _present_tool(tmp_path).execute(paths=[])
         assert out.startswith("Error")
+
+
+class TestShowWidgetTool:
+    @pytest.mark.asyncio
+    async def test_renders_with_title(self) -> None:
+        out = await ShowWidgetTool().execute(html="<canvas></canvas>", title="MAU chart")
+        assert out == 'Rendered the "MAU chart" widget for the user.'
+
+    @pytest.mark.asyncio
+    async def test_renders_without_title(self) -> None:
+        out = await ShowWidgetTool().execute(html="<svg></svg>")
+        assert out == 'Rendered the "visualization" widget for the user.'
+
+    @pytest.mark.asyncio
+    async def test_empty_html_errors(self) -> None:
+        out = await ShowWidgetTool().execute(html="   ")
+        assert out.startswith("Error")
+
+    @pytest.mark.asyncio
+    async def test_oversized_html_warns_but_renders(self) -> None:
+        out = await ShowWidgetTool().execute(html="<div>" + "x" * (5 * 1024 * 1024) + "</div>")
+        assert out.startswith("Rendered")
+        assert "large" in out
+
+    @pytest.mark.asyncio
+    async def test_large_but_ok_html_no_warning(self) -> None:
+        out = await ShowWidgetTool().execute(html="<div>" + "x" * (512 * 1024) + "</div>")
+        assert out == 'Rendered the "visualization" widget for the user.'
+
+    def test_definition_requires_html(self) -> None:
+        schema = ShowWidgetTool().get_definition().function
+        assert schema.name == "show_widget"
+        assert schema.parameters["required"] == ["html"]
+        assert set(schema.parameters["properties"]) == {"html", "title"}
+
+
+def test_show_widget_registered_in_factory(tmp_path: Path) -> None:
+    from skills.reader import AgentSkillsReader
+    from tools.factory import build_tool_registry
+
+    registry = build_tool_registry(AgentSkillsReader(tmp_path))
+    assert registry.get("show_widget") is not None

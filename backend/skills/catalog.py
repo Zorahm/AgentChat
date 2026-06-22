@@ -20,15 +20,24 @@ class CuratedSkill:
     key: str  # install folder name + UI catalog key
     repo: str  # GitHub 'owner/repo'
     subdir: str  # path to the skill folder inside the repo
+    # When set, the skill is bundled with the app and installs offline from a
+    # local copy: this is its folder name inside the bundled skills root (see
+    # ``paths.resolve_bundled_skills``). GitHub remains the fallback.
+    local_subdir: str | None = None
 
 
 ANTHROPIC_SOURCE = "anthropics/skills"
 
+# The office four + ``agentchat`` are our own bundled skills (repo ``skills/``),
+# so they install from the local copy. frontend-design is installed straight from
+# GitHub, unmodified. ``agentchat`` is local-only (it describes this app) — the
+# GitHub repo/subdir below is a never-used fallback placeholder.
 CURATED_SKILLS: tuple[CuratedSkill, ...] = (
-    CuratedSkill("docx", ANTHROPIC_SOURCE, "skills/docx"),
-    CuratedSkill("xlsx", ANTHROPIC_SOURCE, "skills/xlsx"),
-    CuratedSkill("pptx", ANTHROPIC_SOURCE, "skills/pptx"),
-    CuratedSkill("pdf", ANTHROPIC_SOURCE, "skills/pdf"),
+    CuratedSkill("agentchat", ANTHROPIC_SOURCE, "skills/agentchat", local_subdir="agentchat"),
+    CuratedSkill("docx", ANTHROPIC_SOURCE, "skills/docx", local_subdir="docx"),
+    CuratedSkill("xlsx", ANTHROPIC_SOURCE, "skills/xlsx", local_subdir="xlsx"),
+    CuratedSkill("pptx", ANTHROPIC_SOURCE, "skills/pptx", local_subdir="pptx"),
+    CuratedSkill("pdf", ANTHROPIC_SOURCE, "skills/pdf", local_subdir="pdf"),
     CuratedSkill("frontend-design", ANTHROPIC_SOURCE, "skills/frontend-design"),
 )
 

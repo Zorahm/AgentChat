@@ -91,6 +91,8 @@ export interface ChatSession {
   webSearchEnabled?: boolean;
   /** Requested web search mode: auto|native|litellm|searxng. Default "auto". */
   webSearchMode?: string;
+  /** Per-chat research toggle (deep multi-step web research → report.md). */
+  researchEnabled?: boolean;
   /** Project this chat belongs to. Empty/undefined = standalone chat. */
   projectId?: string;
 }

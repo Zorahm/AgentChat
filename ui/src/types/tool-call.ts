@@ -9,6 +9,26 @@ export type ProcessStep =
   | { type: "break" }
   | { type: "iterations_exhausted"; count: number };
 
+export interface ResearchSource {
+  url: string;
+  domain: string;
+}
+
+/** One node in the research timeline, built live from tool_progress events. */
+export type ResearchStep =
+  | { kind: "plan"; text?: string }
+  | { kind: "search"; query: string; sources: ResearchSource[]; callId?: string }
+  | { kind: "read"; url: string };
+
+/** Live state of a `research` tool call — drives the card + the side panel. */
+export interface ResearchData {
+  title?: string;
+  status: "running" | "complete" | "cancelled";
+  steps: ResearchStep[];
+  startedAt: number;
+  durationMs?: number;
+}
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -17,6 +37,8 @@ export interface ToolCall {
   status: ToolCallStatus;
   durationMs?: number;
   filePath?: string;
+  /** Present only on `research` tool calls — the timeline of the research run. */
+  research?: ResearchData;
 }
 
 export const TOOL_ICONS: Record<string, string> = {

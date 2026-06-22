@@ -25,15 +25,14 @@ export interface LiveFile {
 
 export const RENDERABLE_EXTS: ReadonlySet<string> = new Set([
   "md", "html", "svg", "png", "jpg", "jpeg", "gif", "webp", "pdf", "json", "csv",
-  // Office binaries — no inline preview, but Render tab shows a download hint
-  // (otherwise both tabs would be hidden and the user would see an empty pane).
-  "docx", "doc", "pptx", "ppt", "xlsx", "xls",
+  // Office formats — previewed by converting to PDF on the backend (LibreOffice).
+  "docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf",
 ]);
 
 /** Binary / office formats whose raw bytes are useless as source code.
  * Code tab is hidden for these — only Render (where supported) + Download. */
 export const BINARY_EXTS: ReadonlySet<string> = new Set([
-  "pdf", "docx", "doc", "pptx", "ppt", "xlsx", "xls",
+  "pdf", "docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf",
   "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico",
   "zip", "tar", "gz", "7z", "rar",
   "mp3", "mp4", "wav", "avi", "mov", "webm",

@@ -202,6 +202,42 @@
 .thinking-step--tool { align-items: stretch; }
 .thinking-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
+/* ── Reasoning / thought step ─────────────────────────────────────── */
+/* smooth appearance as the thinking process shows up */
+.thinking-step--thought { animation: thought-in .24s ease both; }
+@keyframes thought-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+.thinking-gic--pulse svg { animation: thought-pulse 1.5s ease-in-out infinite; }
+@keyframes thought-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+/* live, streaming reasoning — fixed window pinned to the newest text, top fades
+   in. overflow is hidden (we scroll programmatically) so no control drifts. */
+.thought-live {
+  flex: 1; min-width: 0;
+  max-height: 116px; overflow: hidden;
+  font-style: italic; color: var(--muted);
+  font-size: 13.5px; line-height: 1.6; padding-top: 1px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 30px);
+}
+.thought-live-text { white-space: pre-wrap; word-break: break-word; }
+
+/* completed reasoning — clamp with a stable toggle on its own line below */
+.thought-body { white-space: pre-wrap; word-break: break-word; }
+.thought-body--clamped {
+  max-height: 82px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+.thought-expand-btn { display: inline-block; margin-top: 5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-step--thought { animation: none; }
+  .thinking-gic--pulse svg { animation: none; }
+}
+
 /* ── Skill-read step (inside ProcessBlock) ────────────────────────── */
 .skill-read-icon {
   display: inline-flex; align-items: center; justify-content: center;

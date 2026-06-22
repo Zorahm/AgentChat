@@ -17,6 +17,7 @@ from agent.sandbox import SandboxPolicy
 from agent.wsl_exec import wsl_write_bytes
 from api.schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
+from llm.model_tag import retag_model_for_litellm
 from mcp_integration.manager import MCPManager
 from mcp_integration.registry_view import MCPAwareRegistry
 from mcp_integration.tool_proxy import MCPToolProxy
@@ -27,10 +28,25 @@ from tools.read_file import ReadFileTool
 from tools.present_files import PresentFilesTool
 from tools.read_photo import ReadPhotoTool
 from tools.registry import ToolRegistry
+from tools.research_tool import ResearchTool
 from tools.web_search_tool import WebSearchTool
 from tools.write_file import WriteFileTool
 
 INLINE_CONTENT_LIMIT = 50_000
+
+# Appended to the system prompt when the research toggle is on, so the agent
+# knows the `research` tool exists and to surface its report.md afterwards.
+_RESEARCH_NUDGE = (
+    "## Research tool\n\n"
+    "The `research` tool is available this turn. For questions that need thorough, "
+    "source-backed investigation across multiple web sources (current events, "
+    "comparisons, market/literature scans), call `research(topic=...)` (optional "
+    "depth 1-3, language). ALWAYS pass `language` = the user's language so the report "
+    "is written in it. It runs a multi-step search → read → synthesize loop and saves a "
+    "cited report. When it returns, call present_files with the EXACT absolute report "
+    "path it gives you back (not a relative name) to show the report, then give the "
+    "user a brief summary. Don't use it for simple lookups a single web_search would answer."
+)
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
@@ -384,26 +400,10 @@ async def chat(
     api_base = provider.api_base if provider else None
     extra_headers = provider.extra_headers if provider else None
 
-    # LiteLLM only routes by a fixed set of native provider prefixes. OpenAI-
-    # compatible endpoints — user-added custom providers (LM Studio, vLLM, …),
-    # the opencode built-in, and gemini when pointed at the OpenAI-compatible
-    # Google endpoint — carry OUR provider id as the prefix, which LiteLLM can't
-    # resolve ("LLM Provider NOT provided. You passed model=<id>/<model>").
-    # Strip our prefix and re-tag as `openai/<model>` so LiteLLM uses its OpenAI-
-    # compatible client together with api_base. split('/', 1)[1] preserves the
-    # raw model id even when it itself contains slashes (e.g. HF-style org/name).
-    lite_model = model
-    needs_openai_prefix = provider is not None and (
-        provider.custom
-        or provider.id in {"opencode", "yandex"}
-        or (provider.id == "gemini" and bool(provider.api_base))
-    )
-    if needs_openai_prefix and "/" in model:
-        lite_model = f"openai/{model.split('/', 1)[1]}"
-        # Local OpenAI-compatible servers usually accept any key, but LiteLLM's
-        # openai client requires one to be present — supply a harmless placeholder.
-        if not api_key:
-            api_key = "sk-noop"
+    # OpenAI-compatible endpoints carry OUR provider id as the prefix, which
+    # LiteLLM can't route — re-tag them as `openai/<model>`. Shared with the
+    # research model path (see llm.model_tag) so the two never drift apart.
+    lite_model, api_key = retag_model_for_litellm(provider, model, api_key)
 
     # Resolve thinking control
     model_cfg = store.get_model_config(model)
@@ -454,6 +454,34 @@ async def chat(
             native_web_tools = [resolved.native_tool]
         elif resolved.effective in ("litellm", "searxng"):
             overlay_tools.append(WebSearchTool(ws_service, ws_config, resolved.effective))
+
+    # ── research wiring ─────────────────────────────────────────────────
+    # Deep multi-step research is a separate `research` tool, gated by its own
+    # sticky toggle and run on its own model. It resolves a web backend itself
+    # (independently of the chat model + web-search toggle above).
+    research_on = (
+        body.research_enabled if body.research_enabled is not None else store.research_enabled
+    )
+    if research_on:
+        research_model = store.research_model or store.default_model
+        r_provider = store.get_provider(research_model)
+        r_api_key = r_provider.api_key if r_provider else None
+        r_api_base = r_provider.api_base if r_provider else None
+        r_extra_headers = r_provider.extra_headers if r_provider else None
+        r_lite_model, r_api_key = retag_model_for_litellm(r_provider, research_model, r_api_key)
+        overlay_tools.append(
+            ResearchTool(
+                store=store,
+                web_search_service=app_state.web_search_service,
+                provider_id=r_provider.id if r_provider else "",
+                model=research_model,
+                lite_model=r_lite_model,
+                api_key=r_api_key,
+                api_base=r_api_base,
+                extra_headers=r_extra_headers,
+            )
+        )
+        system_prompt = f"{system_prompt}\n\n{_RESEARCH_NUDGE}"
 
     registry: ToolRegistry = (
         MCPAwareRegistry(base_registry, overlay_tools) if overlay_tools else base_registry
@@ -528,6 +556,9 @@ async def chat(
     present = registry.get(PresentFilesTool.name)
     if isinstance(present, PresentFilesTool):
         present.set_policy(policy)
+    research = registry.get(ResearchTool.name)
+    if isinstance(research, ResearchTool):
+        research.set_policy(policy)
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key, extra_headers=config.extra_headers)
     agent = AgentLoop(

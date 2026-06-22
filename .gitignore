@@ -43,6 +43,11 @@ custom-ai-chat-plan.md
 # OS
 .DS_Store
 Thumbs.db
+nul
+
+# Stray tool output (wget mirror logs, etc.)
+wget-log
+wget-log.*
 
 # IDE
 .idea/

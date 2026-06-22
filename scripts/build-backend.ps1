@@ -29,6 +29,12 @@ if (-not (Test-Path (Join-Path $uiDist "index.html"))) {
     throw "ui/dist/index.html not found after build — cannot bundle UI into backend."
 }
 
+Write-Host "==> Locating bundled skills (skills/)..."
+$skillsBundle = Join-Path $root "skills"
+if (-not (Test-Path $skillsBundle)) {
+    throw "skills/ not found — cannot bundle skills into backend."
+}
+
 Write-Host "==> Stamping build version (single source: tauri.conf.json)..."
 # The Tauri shell compares this against /api/health to detect a stale sidecar
 # left running on 8787 after an update. main.py imports _buildstamp, so
@@ -66,7 +72,8 @@ pyinstaller run.py `
     --hidden-import anyio._backends._asyncio `
     --hidden-import python_multipart `
     --add-data "${tiktokenCache};tiktoken_cache" `
-    --add-data "${uiDist};ui_dist"
+    --add-data "${uiDist};ui_dist" `
+    --add-data "${skillsBundle};bundled_skills"
 
 Set-Location $root
 

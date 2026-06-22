@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from agent.config import AgentConfig
+from agent.reasoning_split import REASONING, ThinkTagSplitter
 from agent.sandbox import SandboxPolicy
 from agent.types import ToolCall, ToolResult
 from agent.write_file_stream import emit_tool_call_progress
 from llm.client import LLMClient
 from tools.registry import ToolRegistry
+from tools.write_file import _resolve_write_path
 
 
 # Provider error fragments that mean "this model can't accept image input".
@@ -124,6 +127,31 @@ class AgentLoop:
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
 
+    def _absolutize_tool_paths(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Rewrite a file tool's path arg(s) from chat-relative to absolute.
+
+        Models routinely pass paths relative to the chat folder (e.g.
+        ``report.docx``). The artifact panel and the ``/files`` endpoints resolve
+        paths independently and can't find a relative one — that's the "file not
+        found / download does nothing" desync. Resolving here means the emitted
+        and persisted tool input always carries an absolute path the UI can use.
+        """
+        def fix(p: Any) -> Any:
+            if isinstance(p, str) and p.strip():
+                return _resolve_write_path(p, self._policy) or p
+            return p
+
+        if name == "present_files":
+            raw = args.get("paths", args.get("path"))
+            items = raw if isinstance(raw, list) else [raw] if isinstance(raw, str) else []
+            resolved = [fix(p) for p in items if isinstance(p, str) and p.strip()]
+            if resolved:
+                rest = {k: v for k, v in args.items() if k != "path"}
+                return {**rest, "paths": resolved}
+        elif name in ("write_file", "edit_file", "read_file") and isinstance(args.get("path"), str):
+            return {**args, "path": fix(args["path"])}
+        return args
+
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
@@ -146,6 +174,11 @@ class AgentLoop:
             retrying_vision = False
             accumulated_content = ""
             accumulated_reasoning = ""
+            # Some providers (MiniMax M2/M3, other open reasoning models) stream
+            # their thoughts as literal <think>…</think> inside delta.content
+            # rather than in delta.reasoning_content. Split those out so they
+            # feed the same reasoning pipeline instead of leaking into the answer.
+            splitter = ThinkTagSplitter()
             tool_call_state: dict[int, dict[str, Any]] = {}
             progress_state: dict[str, dict[str, Any]] = {}
 
@@ -165,8 +198,13 @@ class AgentLoop:
                         yield {"type": "reasoning", "content": chunk_text}
 
                     if delta.content:
-                        accumulated_content += delta.content
-                        yield {"type": "token", "content": delta.content}
+                        for kind, seg in splitter.feed(delta.content):
+                            if kind == REASONING:
+                                accumulated_reasoning += seg
+                                yield {"type": "reasoning", "content": seg}
+                            else:
+                                accumulated_content += seg
+                                yield {"type": "token", "content": seg}
 
                     if delta.tool_calls:
                         self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
@@ -186,6 +224,16 @@ class AgentLoop:
                 # Always close the upstream HTTP stream, including the vision
                 # retry path where we abandon it mid-flight.
                 await stream.aclose()
+
+            # Flush any <think> text the splitter was still buffering at EOF
+            # (e.g. an unterminated thought, or a held-back partial tag).
+            for kind, seg in splitter.flush():
+                if kind == REASONING:
+                    accumulated_reasoning += seg
+                    yield {"type": "reasoning", "content": seg}
+                else:
+                    accumulated_content += seg
+                    yield {"type": "token", "content": seg}
 
             # Build final tool calls list (sorted by index)
             tool_calls = [tool_call_state[i] for i in sorted(tool_call_state)]
@@ -219,6 +267,10 @@ class AgentLoop:
                 except json.JSONDecodeError:
                     args = {}
 
+                # Resolve chat-relative file paths to absolute so the artifact
+                # panel / cards / badges and the /files endpoints can locate them.
+                args = self._absolutize_tool_paths(name, args)
+
                 skill_md_path = ""
                 if name == "read_skill" and args.get("name"):
                     p = self.tools.get_skill_md_path(str(args["name"]))
@@ -229,7 +281,13 @@ class AgentLoop:
                 already_started = progress_state.get(call_id, {}).get("started", False)
                 if not already_started:
                     yield {"type": "tool_start", "id": call_id, "name": name, "input": args}
-                elif name != "write_file":
+                elif name == "write_file":
+                    # The early start streamed the (often relative) path; refresh
+                    # it to the absolute path so opening the file from its badge
+                    # hits the right location.
+                    if isinstance(args.get("path"), str) and args["path"]:
+                        yield {"type": "tool_input", "id": call_id, "input": {"path": args["path"]}}
+                else:
                     # The early start carried only the partial primary arg. Now
                     # that args are fully parsed, refresh the block with the
                     # complete input (e.g. read_file offset/limit, full command).
@@ -243,12 +301,56 @@ class AgentLoop:
                         yield {"type": "tool_chunk", "id": call_id, "content": full_content[emitted:]}
 
                 t0 = time.perf_counter()
-                try:
-                    output = await self.tools.execute(name, args)
-                    success = True
-                except Exception as exc:
-                    output = str(exc)
-                    success = False
+                tool_obj = self.tools.get(name)
+                if getattr(tool_obj, "streams_progress", False):
+                    # The tool publishes structured progress events while it runs
+                    # (e.g. the research tool's plan/search/sources/done). Run it
+                    # as a task and forward each queued event as tool_progress for
+                    # this call until the task finishes. Purely additive — every
+                    # other tool takes the plain await path in the else branch.
+                    queue: asyncio.Queue[dict[str, Any]] = tool_obj.progress_queue  # type: ignore[union-attr]
+                    exec_task = asyncio.create_task(self.tools.execute(name, args))
+                    # Hold a single pending getter across iterations instead of
+                    # creating+cancelling one each loop. Cancelling a fresh
+                    # queue.get() every pass can drop an item the getter already
+                    # dequeued (lost progress event); reusing one getter avoids
+                    # that and is cheaper.
+                    pending_get: asyncio.Task[dict[str, Any]] | None = None
+                    while not exec_task.done():
+                        if pending_get is None:
+                            pending_get = asyncio.ensure_future(queue.get())
+                        await asyncio.wait(
+                            {exec_task, pending_get}, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        if pending_get.done():
+                            yield {"type": "tool_progress", "id": call_id, "event": pending_get.result()}
+                            pending_get = None
+                    # Task finished. Recover an in-flight getter if it already
+                    # resolved; otherwise cancel it cleanly before draining.
+                    if pending_get is not None:
+                        if pending_get.done() and not pending_get.cancelled():
+                            yield {"type": "tool_progress", "id": call_id, "event": pending_get.result()}
+                        else:
+                            pending_get.cancel()
+                            try:
+                                await pending_get
+                            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                                pass
+                    while not queue.empty():
+                        yield {"type": "tool_progress", "id": call_id, "event": queue.get_nowait()}
+                    try:
+                        output = exec_task.result()
+                        success = True
+                    except Exception as exc:
+                        output = str(exc)
+                        success = False
+                else:
+                    try:
+                        output = await self.tools.execute(name, args)
+                        success = True
+                    except Exception as exc:
+                        output = str(exc)
+                        success = False
                 duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
                 # Tools may return a plain string or an OpenAI content list (e.g. image blocks).

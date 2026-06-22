@@ -1,16 +1,20 @@
 /** Single message bubble — user or assistant with process block, markdown, artifacts. */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp, PencilSimple, X } from "@phosphor-icons/react";
-import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning, Plugs, Globe } from "@phosphor-icons/react";
+import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning, Plugs, Globe, AppWindow } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
 import { parseMcpToolName } from "../../utils/mcpName";
 import { API_BASE } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import { ToolCallBlock } from "../ToolCalls/ToolCallBlock";
+import { ResearchCard } from "./ResearchCard";
+import { SourcesBox } from "./SourcesBox";
+import { aggregateUrls, extractUrls } from "../../utils/research";
 import { ArtifactCard } from "../Artifacts/ArtifactCard";
+import { WidgetView, WidgetSkeleton } from "../Artifacts/WidgetView";
 import { SupportCard } from "./SupportCard";
 import { Markdown } from "../Markdown/Markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -97,25 +101,61 @@ export function MessageBubble({
         const isLast = i === groups.length - 1;
         const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", support: false };
 
+        // Widgets render directly under the call that produced them — a skeleton
+        // while the model is still generating the HTML, the live widget once the
+        // call succeeds (the full HTML lives in the persisted tool input).
+        const groupWidgets = procSteps
+          .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
+          .map((s) => s.call)
+          .filter((c) => c.name === "show_widget");
+
+        // Research renders as its own card (Claude-style) — clicking it opens the
+        // side-panel timeline. It's lifted OUT of the collapsed process block.
+        const groupResearch = procSteps
+          .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
+          .map((s) => s.call)
+          .filter((c) => c.name === "research");
+        // present_files surfaces its results as ArtifactCards below the message
+        // (see `presented`), so its raw tool call is lifted out of the process
+        // block — otherwise it shows up twice and looks like a stray tool.
+        const visibleProc = procSteps.filter(
+          (s) => !(s.type === "tool" && (s.call.name === "research" || s.call.name === "present_files")),
+        );
+
         // Spinner while: any tool in this group is still running,
         // OR the global SSE stream is active but this group has no text yet
         // (tools just completed, model hasn't responded yet).
         // Non-last groups are always done — checkmark.
-        const anyGroupToolRunning = procSteps
+        // Research has its own card + spinner, so it doesn't drive the process
+        // block's streaming state (visibleProc excludes it).
+        const anyGroupToolRunning = visibleProc
           .filter((s): s is Extract<ProcessStep, { type: "tool" }> => s.type === "tool")
           .some((s) => s.call.status === "running");
         const blockStreaming = isLast && (anyGroupToolRunning || (isGlobalStreaming && !groupText));
 
         return (
           <div className="msg-group" key={i}>
-            {procSteps.length > 0 && (
+            {visibleProc.length > 0 && (
               <ProcessBlock
-                steps={procSteps}
+                steps={visibleProc}
                 isStreaming={blockStreaming}
                 liveFiles={liveFiles}
                 webSearchMode={message.webSearchMode}
               />
             )}
+            {groupResearch.map((c) => (
+              <ResearchCard key={`research-${c.id}`} call={c} />
+            ))}
+            {groupWidgets.map((c) => {
+              const wTitle = typeof c.input?.title === "string" ? c.input.title : undefined;
+              if (c.status === "success" && typeof c.input?.html === "string") {
+                return <WidgetView key={`widget-${c.id}`} html={String(c.input.html ?? "")} title={wTitle} />;
+              }
+              if (c.status === "running") {
+                return <WidgetSkeleton key={`widget-${c.id}`} title={wTitle} />;
+              }
+              return null;
+            })}
             {parsed.cleanText.trim() && <MarkdownContent text={parsed.cleanText} />}
             {parsed.support && <SupportCard />}
           </div>
@@ -481,6 +521,7 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
     edit_file: t("chat.tools.editFile.present"),
     read_skill: t("chat.tools.readSkill.present"),
     web_search: t("chat.tools.webSearch.present"),
+    show_widget: t("chat.tools.showWidget.present"),
   };
   const TOOL_VERBS_PAST: Record<string, string> = {
     bash_tool: t("chat.tools.bash.past"),
@@ -490,6 +531,7 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
     edit_file: t("chat.tools.editFile.past"),
     read_skill: t("chat.tools.readSkill.past"),
     web_search: t("chat.tools.webSearch.past"),
+    show_widget: t("chat.tools.showWidget.past"),
   };
 
   if (tools.length === 0) {
@@ -554,7 +596,13 @@ function ProcessBlock({
         <div className="thinking-body">
           {steps.map((step, i) => {
             if (step.type === "thought") {
-              return <ThoughtStep key={i} content={step.content} />;
+              return (
+                <ThoughtStep
+                  key={i}
+                  content={step.content}
+                  streaming={isStreaming && i === steps.length - 1}
+                />
+              );
             }
             if (step.type !== "tool") return null;
             const c = step.call;
@@ -575,6 +623,9 @@ function ProcessBlock({
             }
             if (c.name === "read_skill") {
               return <SkillReadStep key={c.id} call={c} />;
+            }
+            if (c.name === "show_widget") {
+              return <WidgetStep key={c.id} call={c} />;
             }
             if (c.name.startsWith("mcp__")) {
               return <McpToolStep key={c.id} call={c} />;
@@ -698,9 +749,10 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
   const openInPanel = () =>
     window.dispatchEvent(new CustomEvent("open-artifact", { detail: path }));
 
-  const previewContent = liveFile
-    ? liveFile.content.split("\n").slice(-40).join("\n")
-    : "";
+  // Render the full file (not just the tail): while pinned to the bottom the
+  // view auto-scrolls with new content; once the user scrolls up the auto-scroll
+  // stops (handleStreamScroll) and the whole file is reachable.
+  const previewContent = liveFile ? liveFile.content : "";
 
   return (
     <div className="thinking-step thinking-step--tool">
@@ -779,6 +831,33 @@ function EditFileStep({ call }: { call: ToolCall }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function WidgetStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
+  const title = typeof call.input?.title === "string" ? call.input.title.trim() : "";
+  const isBuilding = call.status === "running";
+  const isError = call.status === "error";
+
+  return (
+    <div className="thinking-step thinking-step--tool thinking-step--skill-read">
+      <span className="skill-read-icon"><AppWindow size={14} /></span>
+      <span className="skill-read-label">
+        {isBuilding
+          ? t("widget.building")
+          : isError
+            ? t("widget.error")
+            : title
+              ? t("widget.renderedNamed", { title })
+              : t("widget.rendered")}
+      </span>
+      {!isBuilding && !isError && call.durationMs != null && (
+        <span className="skill-read-duration">
+          {(call.durationMs / 1000).toFixed(1)}{t("chat.process.seconds")}
+        </span>
+      )}
     </div>
   );
 }
@@ -926,6 +1005,8 @@ function WebSearchStep({ call, mode }: { call: ToolCall; mode?: string }) {
   // Result count is parsed from the tool output header "— N result(s):".
   const match = output.match(/—\s*(\d+)\s+result/);
   const count = match ? Number(match[1]) : null;
+  // Domain-aggregated sources from the result URLs (same box as the research panel).
+  const agg = useMemo(() => aggregateUrls(extractUrls(output)), [output]);
   // litellm mode is branded "Tavily" in the UI.
   const modeLabel = mode ? t(`chat.webSearch.modes.${mode}`, { defaultValue: mode }) : "";
 
@@ -953,6 +1034,11 @@ function WebSearchStep({ call, mode }: { call: ToolCall; mode?: string }) {
           </div>
           {expanded && (
             <div className="tc-body">
+              {agg.total > 0 && (
+                <div className="ws-sources-wrap">
+                  <SourcesBox agg={agg} topN={6} />
+                </div>
+              )}
               <pre className="tc-pre">{output || t("chat.webSearch.noOutput")}</pre>
             </div>
           )}
@@ -1002,32 +1088,46 @@ function fileType(name: string, mime: string): string {
   return "FILE";
 }
 
-function ThoughtStep({ content }: { content: string }) {
+function ThoughtStep({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const isLong = content.length > 200;
-  const preview = content.slice(0, 200).replace(/\n+/g, " ").trimEnd();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isLong = content.length > 220;
 
+  // While streaming, keep the live window pinned to the newest reasoning so the
+  // text flows upward and no control ever moves under the cursor.
+  useEffect(() => {
+    if (!streaming) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [content, streaming]);
+
+  // Live reasoning: a fixed-height window, top-faded, no inline toggle — collapse
+  // is the (stable) ProcessBlock header above.
+  if (streaming) {
+    return (
+      <div className="thinking-step thinking-step--thought">
+        <span className="thinking-gic thinking-gic--pulse"><Brain /></span>
+        <div className="thought-live" ref={scrollRef}>
+          <div className="thought-live-text">{content}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Finished reasoning: content is static, so the expand/collapse sits in a fixed
+  // place below the text and stays clickable.
   return (
     <div className="thinking-step thinking-step--thought">
       <span className="thinking-gic"><Brain /></span>
       <div className="thinking-text">
-        {isLong && !expanded ? (
-          <>
-            {preview}{"… "}
-            <button className="thought-expand-btn" onClick={() => setExpanded(true)}>
-              {t("chat.thought.expand")}
-            </button>
-          </>
-        ) : (
-          <>
-            {content}
-            {isLong && (
-              <> <button className="thought-expand-btn" onClick={() => setExpanded(false)}>
-                {t("chat.thought.collapse")}
-              </button></>
-            )}
-          </>
+        <div className={`thought-body${isLong && !expanded ? " thought-body--clamped" : ""}`}>
+          {content}
+        </div>
+        {isLong && (
+          <button className="thought-expand-btn" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? t("chat.thought.collapse") : t("chat.thought.expand")}
+          </button>
         )}
       </div>
     </div>

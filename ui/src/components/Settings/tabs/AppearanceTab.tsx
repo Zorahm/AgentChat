@@ -1,9 +1,14 @@
 /** Settings → Appearance: language, theme, notification sound. */
 
-import { Globe, Palette, Sun, Moon, Monitor, Bell } from "@phosphor-icons/react";
+import { Globe, Palette, Sun, Moon, Monitor, Bell, MusicNote, Play, UploadSimple, Trash } from "@phosphor-icons/react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { SUPPORTED_LANGUAGES } from "../../../i18n/languages";
+import { setNotifySound, previewNotificationSound } from "../../../utils/notify";
 import type { SettingsData } from "../SettingsPanel";
+
+/** Custom notification sounds are inlined into settings as data URLs, so keep them small. */
+const MAX_SOUND_BYTES = 1024 * 1024;
 
 const FLAG_MAP: Record<string, string> = {
   en: "\u{1F1EC}\u{1F1E7}",
@@ -17,6 +22,39 @@ export function AppearanceTab({ settings, onUpdate }: {
   const { t, i18n } = useTranslation();
   const currentTheme = settings.theme || "system";
   const currentLang = settings.language || i18n.resolvedLanguage || "en";
+
+  const soundInputRef = useRef<HTMLInputElement>(null);
+  const [soundError, setSoundError] = useState<string | null>(null);
+
+  function onPickSound(e: ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the user re-pick the same file later
+    if (!file) return;
+    if (file.size > MAX_SOUND_BYTES) {
+      setSoundError(t("settings.general.notifySoundTooLarge"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        setSoundError(t("settings.general.notifySoundReadError"));
+        return;
+      }
+      setSoundError(null);
+      setNotifySound(dataUrl); // mirror immediately so preview works right away
+      onUpdate({ notify_sound_data: dataUrl, notify_sound_name: file.name });
+    };
+    reader.onerror = () => setSoundError(t("settings.general.notifySoundReadError"));
+    reader.readAsDataURL(file);
+  }
+
+  function resetSound(): void {
+    setSoundError(null);
+    setNotifySound(null);
+    // Empty string clears the setting on the backend (reverts to the chime).
+    onUpdate({ notify_sound_data: "", notify_sound_name: "" });
+  }
 
   return (
     <div className="st2-main">
@@ -114,13 +152,64 @@ export function AppearanceTab({ settings, onUpdate }: {
             <p className="t"><Bell size={16} /> {t("settings.general.notifySound")}</p>
             <p className="d">{t("settings.general.notifySoundHint")}</p>
           </div>
-          <div className="st2-mctl">
+          <div className="st2-mctl st2-notify-ctl">
             <div
               className={`st2-switch st2-switch--lg${settings.notify_sound ? " on" : ""}`}
               role="switch"
               aria-checked={settings.notify_sound ?? false}
               onClick={() => onUpdate({ notify_sound: !settings.notify_sound })}
             />
+
+            {settings.notify_sound && (
+              <div className="st2-notify-sound">
+                <input
+                  ref={soundInputRef}
+                  type="file"
+                  accept="audio/*"
+                  hidden
+                  onChange={onPickSound}
+                />
+                <div className="st2-notify-sound-cur">
+                  <MusicNote size={15} weight={settings.notify_sound_data ? "fill" : "regular"} />
+                  <span className="st2-notify-sound-name">
+                    {settings.notify_sound_data
+                      ? (settings.notify_sound_name || t("settings.general.notifySoundCustom"))
+                      : t("settings.general.notifySoundDefault")}
+                  </span>
+                </div>
+                <div className="st2-sound-ctl">
+                  <button
+                    type="button"
+                    className="st2-btn st2-btn--ghost"
+                    onClick={() => previewNotificationSound()}
+                    title={t("settings.general.notifySoundPreview")}
+                  >
+                    <Play size={16} weight="fill" />
+                  </button>
+                  <button
+                    type="button"
+                    className="st2-btn"
+                    onClick={() => soundInputRef.current?.click()}
+                  >
+                    <UploadSimple size={16} />{" "}
+                    {settings.notify_sound_data
+                      ? t("settings.general.notifySoundReplace")
+                      : t("settings.general.notifySoundChoose")}
+                  </button>
+                  {settings.notify_sound_data && (
+                    <button
+                      type="button"
+                      className="st2-btn st2-btn--danger"
+                      onClick={resetSound}
+                      title={t("settings.general.notifySoundReset")}
+                    >
+                      <Trash size={16} />
+                    </button>
+                  )}
+                </div>
+                {soundError && <p className="d st2-err st2-notify-err">{soundError}</p>}
+              </div>
+            )}
           </div>
         </div>
       </div>

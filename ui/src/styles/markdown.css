@@ -313,37 +313,31 @@
 /* ── Tables ─────────────────────────────────────────────────────────────── */
 
 .md table {
-  width: 100%;
   border-collapse: collapse;
-  margin: 1.4em 0;
+  margin: 1.2em 0;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   display: block;
+  width: max-content;
+  max-width: 100%;
   overflow-x: auto;
 }
 .md thead { background: transparent; }
-.md th {
-  text-align: left;
-  padding: 10px 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
-  font-weight: 500;
-  border-top: 1px solid var(--line-2);
-  border-bottom: 1px solid var(--line-2);
-}
+.md th,
 .md td {
   text-align: left;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 7px 13px;
+  border: 1px solid var(--line-2);
   color: var(--ink);
-  vertical-align: baseline;
+  vertical-align: top;
 }
-.md td:first-child, .md th:first-child { padding-left: 0; }
-.md td:last-child,  .md th:last-child  { padding-right: 0; }
-.md tbody tr:last-child td { border-bottom: 1px solid var(--line-2); }
+.md th {
+  font-weight: 600;
+  background: var(--surface-2);
+}
+.md tbody tr:nth-child(2n) {
+  background: var(--surface);
+}
 .md td code { font-size: 12px; }
 
 /* ── Images ─────────────────────────────────────────────────────────────── */

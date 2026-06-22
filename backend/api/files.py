@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import mimetypes
 import os
 import re
 import shlex
+import shutil
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +21,11 @@ from agent.wsl_exec import wsl_run, wsl_write_bytes
 router = APIRouter(prefix="/files", tags=["files"])
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
+
+# Office formats we can render by converting to PDF with LibreOffice.
+_OFFICE_EXTS = frozenset({"docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf"})
+_PREVIEW_DIR = Path(tempfile.gettempdir()) / "agentchat-preview"
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 async def _wsl_read_bytes(path: str) -> bytes:
@@ -92,6 +100,135 @@ async def serve_file(
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Office preview (LibreOffice → PDF) ─────────────────────────────────
+
+
+def _find_soffice() -> str | None:
+    """Locate LibreOffice's soffice executable for Windows/PowerShell mode."""
+    found = shutil.which("soffice") or shutil.which("soffice.com")
+    if found:
+        return found
+    for base in (os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")):
+        if base:
+            candidate = Path(base) / "LibreOffice" / "program" / "soffice.exe"
+            if candidate.exists():
+                return str(candidate)
+    return None
+
+
+async def _run_local(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
+    """Run a local subprocess off the event loop; return (code, stdout, stderr)."""
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run, args, capture_output=True, timeout=timeout, creationflags=_NO_WINDOW,
+        )
+    except FileNotFoundError:
+        return 127, "", f"{args[0]}: not found"
+    except subprocess.TimeoutExpired:
+        return 124, "", "conversion timed out"
+    return (
+        result.returncode,
+        result.stdout.decode("utf-8", errors="replace"),
+        result.stderr.decode("utf-8", errors="replace"),
+    )
+
+
+async def _office_to_pdf_windows(path: str) -> Path:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(path)
+    soffice = _find_soffice()
+    if not soffice:
+        raise RuntimeError("LibreOffice not found")
+
+    st = p.stat()
+    key = hashlib.sha1(f"{p.resolve()}:{st.st_mtime_ns}:{st.st_size}".encode()).hexdigest()
+    out_pdf = _PREVIEW_DIR / f"{key}.pdf"
+    if out_pdf.exists():
+        return out_pdf
+
+    work = _PREVIEW_DIR / key
+    work.mkdir(parents=True, exist_ok=True)
+    profile = (_PREVIEW_DIR / f"profile-{key}").as_uri()
+    code, out, err = await _run_local(
+        [soffice, "--headless", f"-env:UserInstallation={profile}",
+         "--convert-to", "pdf", "--outdir", str(work), str(p)],
+    )
+    produced = work / f"{p.stem}.pdf"
+    if not produced.exists():
+        raise RuntimeError((err or out or "conversion failed").strip())
+    produced.replace(out_pdf)
+    shutil.rmtree(work, ignore_errors=True)
+    return out_pdf
+
+
+async def _office_to_pdf_wsl(path: str) -> Path:
+    stat = await wsl_run(f"stat -c '%Y %s' {shlex.quote(path)}")
+    if stat.returncode != 0:
+        raise FileNotFoundError(path)
+    sig = stat.stdout.decode("utf-8", errors="replace").strip()
+    key = hashlib.sha1(f"{path}:{sig}".encode()).hexdigest()
+    out_pdf = _PREVIEW_DIR / f"{key}.pdf"
+    if out_pdf.exists():
+        return out_pdf
+
+    wsl_out = f"/tmp/agentchat-preview/{key}"
+    profile = f"/tmp/agentchat-preview/profile-{key}"
+    stem = Path(path).stem
+    result = await wsl_run(
+        f"mkdir -p {shlex.quote(wsl_out)} && "
+        f"soffice --headless -env:UserInstallation=file://{profile} "
+        f"--convert-to pdf --outdir {shlex.quote(wsl_out)} {shlex.quote(path)}",
+        timeout=120,
+    )
+    produced = f"{wsl_out}/{stem}.pdf"
+    try:
+        data = await _wsl_read_bytes(produced)
+    except FileNotFoundError:
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(err or "LibreOffice conversion failed (is it installed in WSL?)")
+    _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    out_pdf.write_bytes(data)
+    return out_pdf
+
+
+@router.get("/preview")
+async def preview_office(
+    request: Request,
+    path: str = Query(..., description="Absolute path to an Office file"),
+) -> FileResponse:
+    """Render an Office file (docx/pptx/xlsx/…) by converting it to PDF.
+
+    Uses LibreOffice headless; the PDF is cached by source mtime+size so a
+    refresh is instant. 503 when LibreOffice isn't installed — the UI falls back
+    to a download hint.
+    """
+    ext = Path(path).suffix.lower().lstrip(".")
+    if ext not in _OFFICE_EXTS:
+        raise HTTPException(status_code=400, detail=f"Not a previewable Office file: .{ext}")
+
+    _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.startswith("/"):
+            pdf = await _office_to_pdf_wsl(path)
+        else:
+            pdf = await _office_to_pdf_windows(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except RuntimeError as exc:
+        # Missing LibreOffice or a failed conversion — distinct from "no file".
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return FileResponse(
+        pdf,
+        media_type="application/pdf",
+        filename=f"{Path(path).stem}.pdf",
+        content_disposition_type="inline",
+    )
 
 
 # ── Upload ────────────────────────────────────────────────────────────

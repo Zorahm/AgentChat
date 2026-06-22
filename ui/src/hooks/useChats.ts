@@ -17,6 +17,7 @@ import type { ToolCall, ProcessStep } from "../types/tool-call";
 import type { LiveFile } from "../types/artifact";
 import { API_BASE } from "../utils/apiBase";
 import { safeStringify } from "../utils/safeJson";
+import { applyResearchEvent } from "../utils/research";
 import { i18n } from "../i18n";
 
 // ── Public types ───────────────────────────────────────────────────────────
@@ -68,6 +69,14 @@ export interface UseChatResult {
   /** Mirror the persisted web-search default (from /api/settings) into the hook
    *  so the composer toggle reflects it on load and survives app restarts. */
   setWebSearchDefault: (pref: Partial<WebSearchPref>) => void;
+  activeResearchEnabled: boolean;
+  setResearch: (enabled: boolean) => void;
+  /** Mirror the persisted research default (from /api/settings) into the hook. */
+  setResearchDefault: (enabled: boolean) => void;
+  /** Mirror the live thinking / effort composer toggles so retry/edit/project
+   *  sends reuse them instead of falling back to the model's defaults. */
+  setThinkingDefault: (enabled: boolean) => void;
+  setEffortDefault: (effort: string | null) => void;
 }
 
 // ── Persistence & migration ────────────────────────────────────────────────
@@ -100,6 +109,19 @@ interface WebSearchPref {
 // (module scope) and the send path can read the latest value synchronously
 // without threading it through. Kept in sync from hook state via an effect.
 let webSearchDefault: WebSearchPref = { enabled: false, mode: "auto" };
+
+// Sticky research toggle default — same rationale as webSearchDefault above
+// (mirrored from the persisted research_enabled setting, read synchronously by
+// makeSession + the send path).
+let researchDefault = false;
+
+// Sticky thinking / reasoning-effort mirror. App pushes the live composer
+// toggles here so the send path AND retry/editMessage (which run inside the hook,
+// away from App's state) reuse the reasoning preferences the user actually
+// picked. Without this, a retry/edit silently drops to the model's default
+// thinking/effort — a desync between the toggle on screen and how the model runs.
+let thinkingDefault = true;
+let effortDefault: string | null = null;
 
 const STORAGE_KEY = "aic-sessions-v2";
 const OLD_STORAGE_KEY = "aic-sessions-v1";
@@ -274,6 +296,10 @@ function migrateAssistantNode(raw: LegacyAssistantNode): AssistantNode {
       steps: v.steps as AssistantVariant["steps"],
       toolCalls: v.toolCalls as AssistantVariant["toolCalls"],
       reasoningContent: v.reasoningContent as string | undefined,
+      // Preserve the web-search badge across reloads. Omitting this dropped the
+      // indicator (and the native-search chip) every time a chat was rehydrated
+      // from the backend, even though the value was saved in the tree.
+      webSearchMode: v.webSearchMode as string | undefined,
       createdAt: Number(v.createdAt ?? Date.now()),
       children: migrateTreeNodes(v.children),
     })),
@@ -343,6 +369,7 @@ function makeSession(projectId?: string, dirSlug?: string): ChatSession {
     // toggle persists across new chats and app restarts.
     webSearchEnabled: webSearchDefault.enabled,
     webSearchMode: webSearchDefault.mode,
+    researchEnabled: researchDefault,
   };
 }
 
@@ -614,6 +641,22 @@ export interface WireMessage {
  *  the context window. Mirrors the backend's intent; see build_agent_messages. */
 const TOOL_OUTPUT_REPLAY_LIMIT = 6000;
 
+/** Arguments to replay for a tool call, trimmed where the full input would only
+ *  bloat the model's context. show_widget's `html` can be megabytes and the
+ *  widget is already rendered for the user — the tool is designed never to echo
+ *  its HTML back (see backend/tools/show_widget.py), so we drop it from history
+ *  and leave a short note in its place. Every other tool replays verbatim. */
+function leanToolArgs(c: ToolCall): Record<string, unknown> {
+  const input = c.input ?? {};
+  if (c.name === "show_widget" && typeof input.html === "string") {
+    return {
+      ...input,
+      html: "[widget HTML omitted from history — already rendered for the user]",
+    };
+  }
+  return input;
+}
+
 /** Expand rendered branch messages into wire messages, replaying each assistant
  *  turn's tool calls + (truncated) results. Without this the backend only sees
  *  assistant *text*, so every fact the model learned through a tool is lost on
@@ -633,7 +676,7 @@ function expandToWire(msgs: ChatMessage[]): WireMessage[] {
     out.push({
       role: "assistant",
       content: m.content,
-      tool_calls: calls.map((c) => ({ id: c.id, name: c.name, arguments: c.input ?? {} })),
+      tool_calls: calls.map((c) => ({ id: c.id, name: c.name, arguments: leanToolArgs(c) })),
     });
     for (const c of calls) {
       const raw = c.output ?? "";
@@ -996,6 +1039,21 @@ export function useChats(): UseChatResult {
       mode: typeof pref.mode === "string" ? pref.mode : "auto",
     });
   }, []);
+  // Reactive mirror of the sticky research default (same pattern as wsDefault).
+  const [rDefault, setRDefault] = useState<boolean>(researchDefault);
+  useEffect(() => { researchDefault = rDefault; }, [rDefault]);
+  const setResearchDefault = useCallback((enabled: boolean) => {
+    setRDefault(!!enabled);
+  }, []);
+  // Thinking/effort live in App's state and only feed the composer, so the hook
+  // needs no reactive copy — just keep the module-level mirror current for the
+  // send/retry/edit paths to read synchronously.
+  const setThinkingDefault = useCallback((enabled: boolean) => {
+    thinkingDefault = !!enabled;
+  }, []);
+  const setEffortDefault = useCallback((effort: string | null) => {
+    effortDefault = typeof effort === "string" ? effort : null;
+  }, []);
   /** Ids of every chat currently streaming. Many can run at once — opening a new
    *  chat or jumping to settings never interrupts a reply already in flight. */
   const [streamingIds, setStreamingIds] = useState<Set<string>>(() => new Set());
@@ -1200,11 +1258,15 @@ export function useChats(): UseChatResult {
             break;
           }
           case "tool_start": {
+            const toolName = String(data.name ?? "");
             const tc: ToolCall = {
               id: String(data.id ?? ""),
-              name: String(data.name ?? ""),
+              name: toolName,
               input: (data.input as Record<string, unknown>) ?? {},
               status: "running",
+              ...(toolName === "research"
+                ? { research: { status: "running" as const, steps: [], startedAt: Date.now() } }
+                : {}),
             };
             setSessions((prev) =>
               prev.map((s) => {
@@ -1261,6 +1323,29 @@ export function useChats(): UseChatResult {
             }
             break;
           }
+          case "tool_progress": {
+            // Structured progress from a streaming tool (research) — fold the
+            // event into that tool call's research timeline.
+            const callId = String(data.id ?? "");
+            const event = (data.event as Record<string, unknown>) ?? {};
+            const applyEvent = (tc: ToolCall): ToolCall =>
+              tc.id === callId && tc.research
+                ? { ...tc, research: applyResearchEvent(tc.research, event) }
+                : tc;
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  toolCalls: (v.toolCalls ?? []).map(applyEvent),
+                  steps: (v.steps ?? []).map((st) =>
+                    st.type === "tool" ? { type: "tool" as const, call: applyEvent(st.call) } : st,
+                  ),
+                }));
+              }),
+            );
+            break;
+          }
           case "tool_end": {
             const callId = String(data.id ?? "");
             const filePath = typeof data.file_path === "string" ? data.file_path : undefined;
@@ -1272,6 +1357,15 @@ export function useChats(): UseChatResult {
                     output: String(data.output ?? ""),
                     durationMs: Number(data.duration_ms ?? 0),
                     ...(filePath ? { filePath } : {}),
+                    ...(tc.research
+                      ? {
+                          research: {
+                            ...tc.research,
+                            status: "complete" as const,
+                            durationMs: Number(data.duration_ms ?? 0),
+                          },
+                        }
+                      : {}),
                   }
                 : tc;
             setSessions((prev) =>
@@ -1409,10 +1503,14 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: currentSession.mcpEnabledServers ?? [],
           project_id: currentSession.projectId ?? undefined,
-          thinking_enabled: thinkingEnabled,
-          effort: effort,
+          // Fall back to the sticky mirror when a caller omits these (e.g. the
+          // project-chat first-message path), so the model's thinking/effort
+          // always matches the composer toggles.
+          thinking_enabled: thinkingEnabled ?? thinkingDefault,
+          effort: effort ?? effortDefault ?? undefined,
           web_search_enabled: currentSession.webSearchEnabled ?? webSearchDefault.enabled,
           web_search_mode: currentSession.webSearchMode ?? webSearchDefault.mode,
+          research_enabled: currentSession.researchEnabled ?? researchDefault,
         },
         handler,
         (err: Error) => {
@@ -1488,8 +1586,11 @@ export function useChats(): UseChatResult {
         chat_id: sid,
         mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
         project_id: activeSession.projectId ?? undefined,
+        thinking_enabled: thinkingDefault,
+        effort: effortDefault ?? undefined,
         web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
         web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
+        research_enabled: activeSession.researchEnabled ?? researchDefault,
       },
       handler,
       (err: Error) => {
@@ -1566,8 +1667,11 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
           project_id: activeSession.projectId ?? undefined,
+          thinking_enabled: thinkingDefault,
+          effort: effortDefault ?? undefined,
           web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
           web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
+          research_enabled: activeSession.researchEnabled ?? researchDefault,
         },
         handler,
         (err: Error) => {
@@ -1605,15 +1709,21 @@ export function useChats(): UseChatResult {
               return { ...v, content: "[aborted]" };
             }
             if (!hasRunning) return v;
+            const cancel = (tc: ToolCall): ToolCall =>
+              tc.status === "running"
+                ? {
+                    ...tc,
+                    status: "cancelled" as const,
+                    ...(tc.research
+                      ? { research: { ...tc.research, status: "cancelled" as const } }
+                      : {}),
+                  }
+                : tc;
             return {
               ...v,
-              toolCalls: (v.toolCalls ?? []).map((tc) =>
-                tc.status === "running" ? { ...tc, status: "cancelled" as const } : tc,
-              ),
+              toolCalls: (v.toolCalls ?? []).map(cancel),
               steps: (v.steps ?? []).map((st) =>
-                st.type === "tool" && st.call.status === "running"
-                  ? { ...st, call: { ...st.call, status: "cancelled" as const } }
-                  : st,
+                st.type === "tool" ? { type: "tool" as const, call: cancel(st.call) } : st,
               ),
             };
           });
@@ -1777,6 +1887,17 @@ export function useChats(): UseChatResult {
     [activeId, activeSession],
   );
 
+  const setResearch = useCallback(
+    (enabled: boolean) => {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeId ? { ...s, researchEnabled: enabled } : s)),
+      );
+      // Sticky default — new/other chats inherit; App persists to settings.
+      setRDefault(enabled);
+    },
+    [activeId],
+  );
+
   const pinChat = useCallback((id: string) => {
     setSessions((prev) => {
       const pinnedIds = loadPinnedIds();
@@ -1810,6 +1931,7 @@ export function useChats(): UseChatResult {
     activeMcpEnabled: activeSession?.mcpEnabledServers ?? [],
     activeWebSearchEnabled: activeSession?.webSearchEnabled ?? wsDefault.enabled,
     activeWebSearchMode: activeSession?.webSearchMode ?? wsDefault.mode,
+    activeResearchEnabled: activeSession?.researchEnabled ?? rDefault,
     messages,
     branchNodes,
     liveFiles,
@@ -1831,5 +1953,9 @@ export function useChats(): UseChatResult {
     toggleMcpServer,
     setWebSearch,
     setWebSearchDefault,
+    setResearch,
+    setResearchDefault,
+    setThinkingDefault,
+    setEffortDefault,
   };
 }

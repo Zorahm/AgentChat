@@ -116,6 +116,10 @@
         "present": "searches the web",
         "past": "searched the web"
       },
+      "showWidget": {
+        "present": "renders a widget",
+        "past": "rendered a widget"
+      },
       "mcp": {
         "present": "uses {{server}}",
         "past": "used {{server}}"
@@ -194,6 +198,29 @@
         "native": "Native",
         "litellm": "Tavily",
         "searxng": "SearXNG"
+      }
+    },
+    "research": {
+      "toggle": "Research",
+      "hint": "Deep multi-step web research that writes a cited report.md",
+      "card": {
+        "complete": "Research complete",
+        "running": "Researching…",
+        "cancelled": "Research cancelled",
+        "untitled": "Research",
+        "sources_one": "{{count}} source",
+        "sources_other": "{{count}} sources"
+      },
+      "panel": {
+        "planCreated": "Research plan created",
+        "gathered_one": "Gathered {{count}} source",
+        "gathered_other": "Gathered {{count}} sources",
+        "otherSources_one": "{{count}} other source",
+        "otherSources_other": "{{count}} other sources",
+        "searching": "Searching…",
+        "working": "Researching…",
+        "reportReady": "Report ready",
+        "cancelled": "Cancelled"
       }
     }
   },
@@ -418,6 +445,14 @@
       "themeSystem": "System",
       "notifySound": "Completion sound",
       "notifySoundHint": "Play a chime when a reply or install finishes — only while the window is in the background.",
+      "notifySoundDefault": "Built-in chime",
+      "notifySoundCustom": "Custom sound",
+      "notifySoundChoose": "Choose file",
+      "notifySoundReplace": "Replace",
+      "notifySoundPreview": "Play sound",
+      "notifySoundReset": "Reset to default chime",
+      "notifySoundTooLarge": "File is too large — keep it under 1 MB.",
+      "notifySoundReadError": "Could not read that file.",
       "language": "Interface language",
       "languageHint": "Interface language. Applied immediately.",
       "sandbox": "Sandbox",
@@ -568,6 +603,9 @@
       "refreshing": "Refreshing\u2026",
       "defaultModel": "Default model",
       "defaultModelHint": "Which model to use for new chats. Models are grouped by provider. Switch anytime in the chat header.",
+      "researchModel": "Research model",
+      "researchModelHint": "Model the research tool's inner loop runs on. Leave on “Use default model” to match the chat model, or pick a cheaper/faster one for its many search steps.",
+      "researchUseDefault": "Use default model",
       "noModels": "\u2014 no models loaded. Add a provider key and refresh. \u2014",
       "searchPlaceholder": "Search models\u2026",
       "temperature": "Temperature",
@@ -776,8 +814,11 @@
     "anthropicSubtitle": "Official document & design skills from Anthropic.",
     "fromGithub": "From GitHub",
     "installed": "Installed",
+    "requires": "Requires",
+    "requiresInstall": "install in Terminal",
     "metaAuthor": "Author",
     "catalog": {
+      "agentchat": { "label": "About AgentChat", "desc": "Lets the model answer questions about this app and its features" },
       "docx": { "label": "Word (.docx)", "desc": "Create and edit Word documents" },
       "xlsx": { "label": "Excel (.xlsx)", "desc": "Create and edit Excel spreadsheets" },
       "pptx": { "label": "PowerPoint (.pptx)", "desc": "Create and edit presentations" },
@@ -904,6 +945,8 @@
     "loading": "Loading\u2026",
     "previewUnavailable": "Preview unavailable for",
     "downloadHint": "click Download to open in native app",
+    "convertingPreview": "Rendering preview…",
+    "officePreviewHint": "Install LibreOffice (Settings → Terminal) to preview Office files, or click Download.",
     "fileNotAvailable": "File not available",
     "refreshHint": "click \u21ba to refresh",
     "emptyFile": "Empty file",
@@ -915,6 +958,13 @@
     "autoScroll": "auto-scroll",
     "lines": "lines",
     "chars": "chars"
+  },
+  "widget": {
+    "defaultTitle": "Widget",
+    "building": "Rendering widget…",
+    "rendered": "Widget",
+    "renderedNamed": "Widget: {{title}}",
+    "error": "Widget failed"
   },
   "greetings": {
     "morning": [

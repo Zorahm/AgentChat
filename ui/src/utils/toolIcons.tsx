@@ -4,7 +4,7 @@ import {
   Brain, BookOpen, Terminal, MagnifyingGlass, Globe,
   FileTs, FileJs, FileCss, FileHtml, FileRs, FileSql,
   FileText, FileCode, FilePdf, FileDoc, FileXls, FilePpt, FileZip, FileImage,
-  File, Eye,
+  File, Eye, AppWindow,
 } from "@phosphor-icons/react";
 
 export function toolIcon(name: string): React.ReactNode {
@@ -16,6 +16,7 @@ export function toolIcon(name: string): React.ReactNode {
     case "read_photo": return <FileImage />;
     case "write_file": return <FileCode />;
     case "present_files": return <Eye />;
+    case "show_widget": return <AppWindow />;
     default: return <Terminal />;
   }
 }

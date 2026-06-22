@@ -100,10 +100,47 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
         </div>
       </section>
 
-      {/* 02 Generation parameters */}
+      {/* 02 Research model */}
       <section>
         <div className="st2-mh">
           <span className="st2-mn">02</span>
+          <h2>{t("settings.models.researchModel")}</h2>
+        </div>
+        <p className="st2-md">
+          {t("settings.models.researchModelHint")}
+        </p>
+        <div className="st2-mrows">
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.models.researchModel")}</p>
+              <p className="d">{t("settings.models.researchModelHint")}</p>
+            </div>
+            <div className="st2-mctl">
+              <select
+                className="st2-models-select"
+                value={settings.research_model || ""}
+                onChange={(e) => onUpdate({ research_model: e.target.value })}
+              >
+                <option value="">{t("settings.models.researchUseDefault")}</option>
+                {Array.from(grouped.entries()).map(([provider, models]) => (
+                  <optgroup key={provider} label={provider}>
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name ?? m.id}{m.thinking ? " · thinking" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 03 Generation parameters */}
+      <section>
+        <div className="st2-mh">
+          <span className="st2-mn">03</span>
           <h2>{t("settings.models.generationParams")}</h2>
         </div>
         <p className="st2-md">

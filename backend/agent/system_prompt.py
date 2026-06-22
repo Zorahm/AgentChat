@@ -72,6 +72,23 @@ _CREATING_FILES = """## Creating & delivering files
 Images you can't see: if an attached image's message says `(model without vision ...)`, you don't receive pixel content — but you still have the path and full filesystem access. You can move or copy it, embed it in a generated document (python-docx add_picture, ReportLab drawImage, pandoc `![](path)`), convert or resize it (convert, ffmpeg, PIL), read its metadata (identify -verbose, exiftool), combine images into a PDF or GIF, and present the result. Never refuse just because you can't see it; ask the user to describe it only if that is genuinely what blocks you."""
 
 
+_VISUALIZATIONS = """## Visual widgets
+
+Use `show_widget` to render self-contained HTML inline in the chat whenever something is better shown than described: data visualizations (charts, plots), diagrams, rich tables, or UI mockups — laying out buttons, cards, form controls, or whole component/interface designs. It is not for full multi-page sites or apps. For ordinary explanations, keep writing normal text/markdown.
+
+- Pass `html`: a self-contained fragment (markup + any `<style>`/`<script>`). Do NOT include `<html>`, `<head>`, or `<body>` — the host wraps your markup in a full document. Add a short `title`.
+- Libraries: plain HTML/CSS, `<canvas>`, and inline SVG always work. For charts you may load Chart.js, D3, or Plotly from a CDN with `<script src="https://cdnjs.cloudflare.com/...">` (needs internet at render time; prefer Canvas/SVG/CSS when offline).
+- Theming — the host injects these CSS variables; reference them (with a fallback) instead of hardcoding colors so the widget matches the app and follows light/dark:
+    - Surfaces & text: `--bg`, `--bg-2`, `--fg`, `--fg-2`, `--muted`, `--border`
+    - Accent: `--accent`, `--accent-2`
+    - Fonts: `--font-sans`, `--font-mono`
+    - Chart palette: `--chart-1` … `--chart-8`, plus `--grid` (gridlines) and `--axis` (axis/tick labels)
+    - Aliases also injected: `--color-text-primary`/`--color-text-secondary`/`--color-text-tertiary`, `--color-border-primary`/`--color-border-secondary`/`--color-border-tertiary`
+  In CSS write `color: var(--fg)` or `stroke: var(--chart-1)`. In Canvas/JS read a token with `getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim()`. Assign series colors from `--chart-1…8` in order.
+- Sizing: the card fits your content's exact height and keeps it — there is practically no height limit, so size the layout yourself (it renders at full chat width). For charts, wrap the canvas in a `position:relative` div with an explicit height (e.g. `<div style="position:relative;height:380px">`; a bare `<canvas>` has no intrinsic height) and set Chart.js / Plotly `responsive:true` AND `maintainAspectRatio:false` — without it the chart forces a 2:1 ratio and renders stretched. Aim for a height ≥ ~55% of the chart's width (min ~360px) so wide charts don't look flat.
+- The widget runs sandboxed: no access to the page around it, to storage, or to the network beyond CDN script tags. Keep all data inline in the `html`."""
+
+
 _FORMATTING = """## Formatting your replies
 
 - Write in Markdown: headings, **bold**, lists, and tables where they aid clarity. Put code and terminal output in fenced blocks with a language tag.
@@ -188,6 +205,7 @@ Date: {now}{model_suffix}"""
 - write_file — create or overwrite a file. Pass `path` (absolute, or relative to the chat folder) and the full `content`; parent folders are created automatically. Use append=true to add to an existing file. The content streams into a live preview as you write it.
 - edit_file — change part of an existing file: pass `path`, the exact `old_string` to find (copied verbatim, including indentation), and `new_string`. `old_string` must match exactly once; read the file first if unsure.
 - present_files — surface finished files to the user as cards in the chat. Pass `paths` (an array of file paths). Renderable types preview inline; others get a download button. This is the ONLY way to make a file viewable or downloadable to the user.
+- show_widget — render an interactive visualization (chart, diagram, data viz) inline in the chat. Pass self-contained `html` and an optional `title`. See "Visualizations" below.
 - web_fetch — fetch an http(s) URL and return its readable text (HTML is converted to plain text). Use it to read a page the user links or that a web_search result points to.
 - read_skill — read the full SKILL.md for an installed skill. **Call this before writing any code or modifying any file when a relevant skill is available.** Read each skill at most once per conversation; afterwards rely on what you learned."""
 
@@ -212,6 +230,7 @@ Date: {now}{model_suffix}"""
         _SANDBOX_RULES,
         _READING_FILES + wsl_notes,
         _CREATING_FILES,
+        _VISUALIZATIONS,
         _FORMATTING,
         _AGENTIC_SAFETY,
         _CRISIS,

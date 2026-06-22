@@ -203,6 +203,61 @@
 .art-code-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .art-code-wrap > div { flex: 1; overflow: auto; }
 
+/* ── Inline visualization widget (show_widget) ─────────────────────────── */
+.widget-card {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.widget-head {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px; font-weight: 600;
+}
+.widget-title {
+  color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.widget-frame {
+  display: block;
+  width: 100%;
+  border: none;
+  background: var(--surface);
+}
+
+/* skeleton placeholder while the widget HTML is still being generated */
+.widget-skeleton {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+}
+.widget-skel {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--hover) 25%,
+    var(--surface-2) 37%,
+    var(--hover) 63%
+  );
+  background-size: 400% 100%;
+  animation: widget-shimmer 1.4s ease-in-out infinite;
+}
+.widget-skel-bar { height: 14px; }
+.widget-skel-chart { height: 200px; border-radius: var(--radius); }
+.widget-skel-row { height: 11px; }
+@keyframes widget-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .widget-skel { animation: none; opacity: 0.7; }
+}
+
 /* ── File live preview (old panel, kept for fallback) ──────────────────── */
 .preview {
   display: flex; flex-direction: column;

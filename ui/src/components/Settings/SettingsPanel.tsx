@@ -52,6 +52,8 @@ export interface SettingsData {
   user_name: string;
   theme: string;
   notify_sound?: boolean;
+  notify_sound_data?: string | null;
+  notify_sound_name?: string | null;
   language?: string;
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
@@ -59,6 +61,8 @@ export interface SettingsData {
   web_search_mode?: string;
   searxng_url?: string | null;
   tavily_api_key_set?: boolean;
+  research_enabled?: boolean;
+  research_model?: string;
   mcp_servers?: MCPServerConfig[];
 }
 

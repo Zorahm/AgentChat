@@ -64,6 +64,9 @@ def _has_marker_above(skill_path: Path, root: Path) -> bool:
 
 
 class GitHubSkillInstaller:
+    # Noise we never copy when installing a bundled skill from a local dir.
+    _COPY_IGNORE = ("__pycache__", "*.pyc", ".git", ".DS_Store", "node_modules")
+
     def __init__(
         self,
         skills_dir: Path,
@@ -228,6 +231,41 @@ class GitHubSkillInstaller:
             raise ValueError(f"'{subdir}' in '{repo_source}' has no SKILL.md")
 
         self._write_marker(dest, source=f"{repo_source}/{subdir}")
+        self._reader.rebuild()
+        installed: list[SkillEntry] = [
+            e for e in self._reader.list_skills() if _is_subpath(e.path, dest)
+        ]
+        if not installed:
+            raise RuntimeError(f"Skill installed to {dest} but none found after rebuild")
+        return installed
+
+    def install_local(self, source_dir: Path, install_as: str) -> list[SkillEntry]:
+        """Install a single skill folder by copying it from a local directory.
+
+        Used by the curated catalog for the bundled office skills (docx/xlsx/
+        pptx/pdf): they ship with the app, so installation is an offline
+        ``copytree`` from the bundled source into ``skills_dir/install_as``.
+        """
+        if not _SAFE_NAME_RE.match(install_as):
+            raise ValueError(f"Unsafe skill name: '{install_as}'")
+        if not source_dir.is_dir():
+            raise ValueError(f"Bundled skill not found at {source_dir}")
+        if not (source_dir / "SKILL.md").is_file() and not list(source_dir.rglob("SKILL.md")):
+            raise ValueError(f"'{source_dir}' has no SKILL.md")
+
+        dest = self.skills_dir / install_as
+        if dest.exists() and not _has_marker_above(dest, self.skills_dir):
+            raise ValueError(
+                f"'{install_as}' already exists at {dest} and wasn't installed by "
+                f"AgentChat. Remove it manually if you really want to replace it."
+            )
+        if dest.exists():
+            shutil.rmtree(dest)
+
+        self.skills_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_dir, dest, ignore=shutil.ignore_patterns(*self._COPY_IGNORE))
+
+        self._write_marker(dest, source=f"bundled:{install_as}")
         self._reader.rebuild()
         installed: list[SkillEntry] = [
             e for e in self._reader.list_skills() if _is_subpath(e.path, dest)

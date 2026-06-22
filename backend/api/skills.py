@@ -15,6 +15,7 @@ from api.schemas.skills import (
     SkillInfo,
     SkillLocation,
 )
+from paths import resolve_bundled_skills
 from skills.catalog import CURATED_BY_KEY
 from skills.reader import SkillEntry
 
@@ -67,8 +68,18 @@ async def install_catalog_skill(request: Request, body: CatalogInstallRequest) -
     curated = CURATED_BY_KEY.get(body.key)
     if curated is None:
         raise HTTPException(status_code=400, detail=f"Unknown catalog skill '{body.key}'")
+    # Bundled skills (the office four) install offline from the local copy;
+    # fall back to GitHub if the bundle is missing or the skill isn't bundled.
+    bundled_root = resolve_bundled_skills()
     try:
-        entries = installer.install_subdir(curated.repo, curated.subdir, curated.key)
+        if curated.local_subdir and bundled_root is not None:
+            source_dir = bundled_root / curated.local_subdir
+            if source_dir.is_dir():
+                entries = installer.install_local(source_dir, curated.key)
+            else:
+                entries = installer.install_subdir(curated.repo, curated.subdir, curated.key)
+        else:
+            entries = installer.install_subdir(curated.repo, curated.subdir, curated.key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

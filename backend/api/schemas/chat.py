@@ -74,6 +74,12 @@ class ChatRequest(BaseModel):
         description="Requested web search mode: auto|native|litellm|searxng. "
         "Falls back to the configured default when None.",
     )
+    research_enabled: bool | None = Field(
+        default=None,
+        description="Per-chat research toggle. When truthy, the `research` tool "
+        "(deep multi-step web research → report.md) is wired for the turn. Falls "
+        "back to the persisted sticky default when None.",
+    )
     effort: str | None = Field(
         default=None,
         description="Reasoning effort level (low/medium/high/max/xhigh). "

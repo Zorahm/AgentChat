@@ -44,6 +44,8 @@ interface ChatViewProps {
   webSearchEnabled: boolean;
   webSearchMode: string;
   onWebSearchChange: (enabled: boolean, mode?: string) => void;
+  researchEnabled: boolean;
+  onResearchChange: (enabled: boolean) => void;
 }
 
 /** Animates `text` character-by-character. `done` derives from displayed
@@ -88,6 +90,7 @@ export function ChatView({
   effortLevel, onEffortChange,
   mcpEnabled, onToggleMcpServer,
   webSearchEnabled, webSearchMode, onWebSearchChange,
+  researchEnabled, onResearchChange,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -200,6 +203,8 @@ export function ChatView({
               webSearchEnabled={webSearchEnabled}
               webSearchMode={webSearchMode}
               onWebSearchChange={onWebSearchChange}
+              researchEnabled={researchEnabled}
+              onResearchChange={onResearchChange}
             />
           </div>
         </div>
@@ -263,6 +268,8 @@ export function ChatView({
             webSearchEnabled={webSearchEnabled}
             webSearchMode={webSearchMode}
             onWebSearchChange={onWebSearchChange}
+            researchEnabled={researchEnabled}
+            onResearchChange={onResearchChange}
           />
         </>
       )}
