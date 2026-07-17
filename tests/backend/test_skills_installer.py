@@ -82,3 +82,80 @@ class TestInstallLocal:
         src = _make_bundled_skill(tmp_path / "bundle", "docx")
         with pytest.raises(ValueError, match="Unsafe skill name"):
             inst.install_local(src, "../evil")
+
+
+def _client(inst, reader):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.skills import router
+
+    app = FastAPI()
+    app.state.skill_installer = inst
+    app.state.skill_reader = reader
+    app.include_router(router)
+    return TestClient(app)
+
+
+class TestInstallLocalEndpoint:
+    """POST /skills/install-local — installs a SKILL.md the model wrote in a chat."""
+
+    def test_installs_from_chat_sandbox_and_slugifies_name(self, installer, tmp_path: Path) -> None:
+        inst, reader, skills_dir = installer
+        skill = tmp_path / "AgentChat" / "chats" / "chat-x" / "myskill"
+        (skill / "scripts").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: My Skill\ndescription: d\n---\n# x\n", encoding="utf-8"
+        )
+        (skill / "scripts" / "run.py").write_text("print(1)\n", encoding="utf-8")
+
+        r = _client(inst, reader).post(
+            "/skills/install-local", json={"path": str(skill / "SKILL.md")}
+        )
+        assert r.status_code == 200, r.text
+        # Skill NAME comes from frontmatter; the install FOLDER is the slug.
+        assert [s["name"] for s in r.json()] == ["My Skill"]
+        assert (skills_dir / "my-skill" / "SKILL.md").is_file()
+        assert (skills_dir / "my-skill" / "scripts" / "run.py").is_file()
+
+    def test_rejects_path_outside_chat_sandbox(self, installer, tmp_path: Path) -> None:
+        inst, reader, _skills_dir = installer
+        loose = tmp_path / "somewhere" / "myskill"
+        loose.mkdir(parents=True)
+        (loose / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+
+        r = _client(inst, reader).post(
+            "/skills/install-local", json={"path": str(loose / "SKILL.md")}
+        )
+        assert r.status_code == 400
+
+    def test_installs_skill_archive_from_chat_sandbox(self, installer, tmp_path: Path) -> None:
+        import io
+        import zipfile
+
+        inst, reader, skills_dir = installer
+        chat_dir = tmp_path / "AgentChat" / "chats" / "chat-x"
+        chat_dir.mkdir(parents=True)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("packed/SKILL.md", "---\nname: Packed\n---\n# p\n")
+            zf.writestr("packed/scripts/run.py", "print(1)\n")
+        archive = chat_dir / "myskill.skill"
+        archive.write_bytes(buf.getvalue())
+
+        r = _client(inst, reader).post(
+            "/skills/install-local", json={"path": str(archive)}
+        )
+        assert r.status_code == 200, r.text
+        # Install folder = archive stem; SKILL.md is found at any depth.
+        assert (skills_dir / "myskill" / "packed" / "SKILL.md").is_file()
+        assert reader.get("Packed") is not None
+
+    def test_rejects_non_skill_md_path(self, installer, tmp_path: Path) -> None:
+        inst, reader, _skills_dir = installer
+        f = tmp_path / "AgentChat" / "chats" / "chat-x" / "notes.md"
+        f.parent.mkdir(parents=True)
+        f.write_text("hi", encoding="utf-8")
+
+        r = _client(inst, reader).post("/skills/install-local", json={"path": str(f)})
+        assert r.status_code == 400

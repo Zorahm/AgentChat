@@ -1,4 +1,31 @@
 {
+  "mobile": {
+    "connectTitle": "Connect to a backend",
+    "connectSubtitle": "This app is a client. Enter the address of a computer or server running AgentChat with remote access enabled.",
+    "reconnectTitle": "Connection lost",
+    "reconnectSubtitle": "Couldn't reach the backend — the token may have expired, or the network dropped. Scan the QR again or re-enter the address to reconnect.",
+    "backendUrlLabel": "Backend address",
+    "backendUrlPlaceholder": "http://192.168.1.50:8787",
+    "tokenLabel": "Access token",
+    "tokenPlaceholder": "Paste the remote-access token",
+    "pasteHint": "Tip: paste the full pairing link (with ?token=…) from the desktop app's remote-access QR and the token fills in automatically.",
+    "connectButton": "Connect",
+    "connecting": "Connecting…",
+    "connectingHint": "Checking the address and signing in — this can take a few seconds.",
+    "errUrlRequired": "Enter the backend address.",
+    "errToken": "Invalid token, or remote access is turned off on that backend.",
+    "errUnreachable": "Can't reach that backend. Check the address and that the device can reach it on the network.",
+    "errGeneric": "The backend responded with an error.",
+    "scanOption": "Scan QR",
+    "scanOptionHint": "If you're sharing from a PC",
+    "manualOption": "Enter manually",
+    "manualOptionHint": "VDS / VPS / self-hosted",
+    "scanning": "Point the camera at the QR code",
+    "scanCancel": "Cancel",
+    "scanPermDenied": "Camera access denied. Allow the camera in system settings.",
+    "scanFailed": "Couldn't scan the code.",
+    "back": "Back"
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",
@@ -40,6 +67,10 @@
     "add": "Add",
     "remove": "Remove",
     "attachFiles": "Attach files",
+    "addToChat": "Add to chat",
+    "quickCamera": "Camera",
+    "quickPhotos": "Photos",
+    "quickFiles": "Files",
     "newChatTitle": "New chat",
     "chatFiles": "Chat files",
     "howCanIHelp": "How can I help?",
@@ -130,7 +161,23 @@
       "thought": "Thought",
       "thinkingWith": "Thinking, ",
       "thoughtWith": "Thought, ",
-      "seconds": "s"
+      "seconds": "s",
+      "done": "Done"
+    },
+    "usage": {
+      "tokensAbbrev": "tkn",
+      "notAvailable": "n/a",
+      "estimatedTitle": "Estimated locally — the provider didn't report usage for this call.",
+      "title": "{{prompt}} prompt + {{completion}} completion tokens",
+      "breakdown": {
+        "system": "System prompt: {{count}}",
+        "memory": "Memory files: {{count}}",
+        "skills": "Skills: {{count}}",
+        "tools": "System tools: {{count}}",
+        "mcpTools": "MCP tools: {{count}}",
+        "history": "Conversation history: {{count}}",
+        "message": "Your message: {{count}}"
+      }
     },
     "bash": {
       "emptyCommand": "(empty command)",
@@ -139,6 +186,28 @@
       "cancelled": "\u23f9 cancelled",
       "output": "Output",
       "seconds": "s"
+    },
+    "askUser": {
+      "asked": "Asked you a question",
+      "askedN": "Asked you {{count}} questions",
+      "chooseOne": "Choose one",
+      "pickAny": "Pick any",
+      "yourAnswer": "Your own answer…",
+      "back": "Back",
+      "skip": "Skip",
+      "submit": "Submit",
+      "next": "Next"
+    },
+    "toolCall": {
+      "running": "⟳ running",
+      "error": "✗ error",
+      "cancelled": "⏹ cancelled",
+      "success": "✓",
+      "duration": " · {{duration}}s",
+      "input": "Input",
+      "output": "Output",
+      "emptyInput": "(empty)",
+      "emptyOutput": "(no output)"
     },
     "writeFile": {
       "writing": "Writing",
@@ -222,6 +291,9 @@
         "reportReady": "Report ready",
         "cancelled": "Cancelled"
       }
+    },
+    "agent": {
+      "rowLabel": "Agent"
     }
   },
   "support": {
@@ -274,7 +346,11 @@
     "filesTooltip": "Files",
     "skillsButton": "Skills",
     "projectsButton": "Projects",
+    "usage": "Usage",
+    "usageButton": "Usage",
     "recent": "Recent",
+    "pinned": "Pinned",
+    "recentEmpty": "No recent chats",
     "userFallback": "User",
     "settingsHint": "Settings",
     "unpin": "Unpin",
@@ -294,6 +370,57 @@
     "updateInstalling": "Installing…",
     "updateFailed": "Update failed",
     "updateRetry": "Retry"
+  },
+  "library": {
+    "tabChats": "Chats",
+    "tabFiles": "Files",
+    "searchChats": "Search chats…",
+    "searchFiles": "Search files…",
+    "close": "Back to chat"
+  },
+  "usage": {
+    "title": "Usage",
+    "description": "Token and cost tracking across every chat and model.",
+    "loading": "Loading…",
+    "period": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "all": "All time"
+    },
+    "summary": {
+      "cost": "Total cost",
+      "tokens": "Tokens",
+      "calls": "Requests"
+    },
+    "byModel": {
+      "title": "By model",
+      "empty": "No usage recorded for this period yet.",
+      "tokensAbbrev": "tkn",
+      "cachedAbbrev": "cached"
+    },
+    "breakdown": {
+      "title": "Where tokens go",
+      "hint": "System prompt and tool schemas are resent on every call — often the biggest cost, not your messages.",
+      "empty": "No usage recorded for this period yet.",
+      "system": "System prompt",
+      "memory": "Memory files",
+      "skills": "Skills",
+      "tools": "System tools",
+      "mcpTools": "MCP tools",
+      "history": "Conversation history",
+      "message": "Messages"
+    },
+    "daily": {
+      "title": "Daily",
+      "empty": "No usage recorded for this period yet."
+    },
+    "topChats": {
+      "title": "Top chats",
+      "empty": "No usage recorded for this period yet.",
+      "deletedChat": "(deleted chat)",
+      "callsAbbrev": "calls"
+    }
   },
   "projects": {
     "title": "Projects",
@@ -397,7 +524,8 @@
       "terminal": "Terminal",
       "sandbox": "Sandbox",
       "paths": "Remote",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "agents": "Agents"
     },
     "shortcuts": {
       "title": "Keyboard shortcuts",
@@ -455,6 +583,8 @@
       "notifySoundReadError": "Could not read that file.",
       "language": "Interface language",
       "languageHint": "Interface language. Applied immediately.",
+      "describeActions": "AI-written action descriptions",
+      "describeActionsHint": "Let the model describe what it's doing in its own words (e.g. “Checking how tests are structured”) instead of the built-in status line like “Read skill”.",
       "sandbox": "Sandbox",
       "sandboxDescription": "File and shell access boundary. By default the model only sees the current chat folder.",
       "unrestricted": "Unrestricted mode",
@@ -465,6 +595,16 @@
       "sandboxRestartAgent": "Restart the agent to restore the sandbox.",
       "terminal": "Terminal",
       "terminalDescription": "Which shell the agent uses to execute commands. Default is bash inside WSL, with automatic fallback to Windows PowerShell if WSL is not installed.",
+      "terminalNativeDescription": "On Linux/macOS the agent runs the host's native bash inside a bwrap sandbox \u2014 no WSL or PowerShell needed.",
+      "nativeBash": "Native bash",
+      "nativeBashActive": "Local /bin/bash",
+      "nativeZsh": "Native zsh",
+      "nativeZshActive": "Local /bin/zsh",
+      "nativeZshNotFound": "zsh not found on PATH",
+      "shellPreferenceNativeHint": "Which interpreter bash_tool spawns \u2014 bash (default) or zsh. Pick zsh only if you want zsh-specific behavior.",
+      "shellBash": "bash",
+      "shellZsh": "zsh",
+      "zshMissingWarning": "zsh is selected but not installed \u2014 commands will fail until you install zsh or switch back to bash.",
       "wslBash": "WSL \u00b7 bash",
       "wslFound": "wsl.exe found",
       "wslNotFound": "wsl.exe not installed",
@@ -595,6 +735,39 @@
       "installExitFail": "Failed (exit {{code}})",
       "installTimedOut": "Timed out (300s)",
       "installAddServer": "Add as server"
+    },
+    "agents": {
+      "title": "Agents",
+      "description": "Persona profiles you can attach to a chat — name, gradient avatar, and an optional system-prompt override.",
+      "empty": "No agents yet. Add one below.",
+      "addAgent": "Add agent",
+      "defaultTag": "Default",
+      "defaultLockedHint": "Fixed — create a new agent to customize",
+      "overrideTag": "Custom prompt",
+      "name": "Name",
+      "avatar": "Avatar",
+      "colorFrom": "Gradient start",
+      "colorTo": "Gradient end",
+      "systemPrompt": "System prompt",
+      "systemPromptPlaceholder": "Leave empty to use AgentChat's built-in prompt (tools, sandbox, safety rules). Fill in to replace it entirely.",
+      "overrideWarning": "A non-empty prompt REPLACES the built-in one entirely — including tool descriptions, sandbox rules, and safety rules. If you remove them, the model may lose the ability to use tools correctly. Use \"Load current default\" to start from the real thing.",
+      "loadDefault": "Load current default",
+      "resetToDefault": "Reset to default",
+      "saving": "Saving…",
+      "save": "Save",
+      "delete": "Delete",
+      "saveError": "Failed to save agent",
+      "deleteConfirm": "Delete agent '{{name}}'?",
+      "validationIdName": "ID and name are required",
+      "validationIdFormat": "ID: latin letters/numbers, _ -",
+      "validationIdExists": "ID already exists",
+      "newAgent": "New agent",
+      "namePlaceholder": "Pirate captain",
+      "id": "ID",
+      "idPlaceholder": "pirate",
+      "adding": "Adding…",
+      "add": "Add",
+      "cancel": "Cancel"
     },
     "models": {
       "title": "Models",
@@ -810,10 +983,14 @@
     "emptySearch": "Nothing found",
     "emptyAll": "No skills installed",
     "addTitle": "Add a skill",
-    "anthropicTitle": "Anthropic skills",
-    "anthropicSubtitle": "Official document & design skills from Anthropic.",
+    "catalogTitle": "Useful skills",
+    "catalogSubtitle": "Ready-made skills — install only what you need.",
+    "catalogAuthor": "by {{author}}",
     "fromGithub": "From GitHub",
     "installed": "Installed",
+    "installSkill": "Install skill",
+    "installSkillTitle": "Install this skill into your skills library",
+    "skillInstalled": "Installed",
     "requires": "Requires",
     "requiresInstall": "install in Terminal",
     "metaAuthor": "Author",
@@ -883,6 +1060,14 @@
     "shellWsl": "WSL (Ubuntu)",
     "shellWslDesc": "Linux environment with office-format libraries. Needs a one-time install.",
     "shellPowershellNote": "PowerShell is ready to use \u2014 no extra installation required.",
+    "step3DescriptionNative": "The agent runs commands in your own shell on {{distro}}, sandboxed with bwrap. Pick the interpreter and check the libraries it needs.",
+    "nativeThisSystem": "this system",
+    "shellBash": "bash",
+    "shellBashDesc": "The default. Uses /bin/bash.",
+    "shellZsh": "zsh",
+    "shellZshDesc": "Uses /bin/zsh instead. Pick this only if you want zsh-specific behavior.",
+    "zshMissing": "zsh is selected but not installed \u2014 commands will fail until you install it or switch back to bash.",
+    "nativeInstallHint": "Some libraries are missing. Install them with {{manager}} \u2014 package names may differ on your release:",
     "winChecking": "Checking installed libraries\u2026",
     "winRestartHint": "These power the office-format skills (Word/Excel/PDF). Install via winget, then click Re-check \u2014 some tools are detected only after restarting the app.",
     "winInstall": "Install libraries",
@@ -916,20 +1101,18 @@
     "installingWsl": "Installing\u2026",
     "allSet": "All set.",
     "recheck": "Re-check",
-    "step4Title": "Skills from Anthropic",
-    "step4Description": "A ready-made toolkit that extends the model: document creation and office format handling.",
+    "step4Title": "Skills",
+    "step4Description": "Skills extend the model with extra abilities: document creation and office format handling.",
     "skillDocx": "Word (.docx) \u2014 reports, styled documents with tables",
     "skillXlsx": "Excel (.xlsx) \u2014 spreadsheets, formulas, cell formatting",
     "skillPptx": "PowerPoint (.pptx) \u2014 presentations with slides and templates",
     "skillPdf": "PDF \u2014 generation and parsing",
     "skillCreate": "Skill creation \u2014 meta-skill for writing your own",
-    "skillsSource": "Source: github.com/anthropics/skills. Installation takes 10\u201330 seconds.",
-    "skillsInstalled": "Installed: {{count}} skills.",
+    "skillsSource": "Install, add and remove skills any time on the Skills page in Settings.",
     "finishing": "Finishing\u2026",
     "finish": "Finish",
-    "installSkills": "Install",
-    "installingSkills": "Installing\u2026",
-    "skipSkills": "Skip"
+    "openSkills": "Open Skills",
+    "skipSkills": "Later"
   },
   "artifacts": {
     "open": "Open",
@@ -937,6 +1120,20 @@
     "preview": "Preview",
     "code": "Code",
     "download": "Download",
+    "downloadAndOpen": "Download and open",
+    "downloadFailed": "Couldn't download this file",
+    "saveAs": "Save as…",
+    "kind": {
+      "code": "Code",
+      "pdf": "PDF",
+      "document": "Document",
+      "spreadsheet": "Spreadsheet",
+      "presentation": "Presentation",
+      "archive": "Archive",
+      "image": "Image",
+      "text": "Text",
+      "file": "File"
+    },
     "more": "More",
     "copy": "Copy",
     "refresh": "Refresh",
@@ -957,7 +1154,12 @@
     "statusDone": "\u2713 done",
     "autoScroll": "auto-scroll",
     "lines": "lines",
-    "chars": "chars"
+    "chars": "chars",
+    "description": "Description",
+    "archiveContents": "Archive contents",
+    "archiveLoading": "Reading archive…",
+    "archiveError": "Couldn’t read this archive",
+    "selectFile": "Select a file to preview"
   },
   "widget": {
     "defaultTitle": "Widget",

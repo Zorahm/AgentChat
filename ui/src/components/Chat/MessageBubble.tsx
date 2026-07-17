@@ -6,8 +6,8 @@ import { Copy, Check, ArrowClockwise, CaretLeft, CaretRight, CaretDown, CaretUp,
 import { Brain, Spinner, CheckCircle, CaretDoubleDown, Warning, Plugs, Globe, AppWindow } from "@phosphor-icons/react";
 import { toolIcon, fileExtIcon } from "../../utils/toolIcons";
 import { parseMcpToolName } from "../../utils/mcpName";
-import { API_BASE } from "../../utils/apiBase";
-import type { ChatMessage, AttachmentInfo } from "../../types/chat";
+import { API_BASE, withToken } from "../../utils/apiBase";
+import type { ChatMessage, AttachmentInfo, MessageUsage } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import { ToolCallBlock } from "../ToolCalls/ToolCallBlock";
 import { ResearchCard } from "./ResearchCard";
@@ -23,9 +23,10 @@ import { parseArtifacts } from "../../utils/parseArtifacts";
 import { presentedArtifacts } from "../../utils/presentedFiles";
 import { getLang } from "../../utils/getLang";
 import { basename } from "../../utils/basename";
+import { toolActivity } from "../../utils/toolActivity";
 import { formatTime } from "../../utils/formatTime";
 import type { LiveFile } from "../../types/artifact";
-import { BookOpen } from "@phosphor-icons/react";
+import { BookOpen, Question } from "@phosphor-icons/react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -176,6 +177,8 @@ export function MessageBubble({
 
       {iterExhausted && <IterationsExhaustedCard count={iterExhausted.count} />}
 
+      {!isGlobalStreaming && message.usage && <UsageLine usage={message.usage} />}
+
       {!isGlobalStreaming && <MsgActions content={parseArtifacts(message.content).cleanText} onRetry={isLastAssistantInBranch ? onRetry : undefined} />}
     </div>
   );
@@ -207,6 +210,50 @@ function ThinkingIndicator() {
   );
 }
 
+/* ── Per-message usage/cost line ───────────────────────────────────── */
+
+function formatTokenCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function buildUsageTooltip(usage: MessageUsage, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const lines: string[] = [];
+  if (usage.usageSource === "estimated") lines.push(t("chat.usage.estimatedTitle"));
+  const b = usage.breakdown;
+  if (b) {
+    // Skip categories that don't apply to this turn (e.g. no MCP servers
+    // enabled, not a project chat) instead of padding the tooltip with zeros.
+    const rows: [keyof typeof b, string][] = [
+      ["system", "chat.usage.breakdown.system"],
+      ["memory", "chat.usage.breakdown.memory"],
+      ["skills", "chat.usage.breakdown.skills"],
+      ["tools", "chat.usage.breakdown.tools"],
+      ["mcpTools", "chat.usage.breakdown.mcpTools"],
+      ["history", "chat.usage.breakdown.history"],
+      ["message", "chat.usage.breakdown.message"],
+    ];
+    for (const [key, i18nKey] of rows) {
+      if (b[key] > 0) lines.push(t(i18nKey, { count: b[key] }));
+    }
+  } else {
+    lines.push(t("chat.usage.title", { prompt: usage.promptTokens, completion: usage.completionTokens }));
+  }
+  return lines.join("\n");
+}
+
+function UsageLine({ usage }: { usage: MessageUsage }) {
+  const { t } = useTranslation();
+  const estimated = usage.usageSource === "estimated";
+  const costLabel = usage.costUsd == null ? t("chat.usage.notAvailable") : `$${usage.costUsd.toFixed(3)}`;
+  return (
+    <div className="msg-usage" title={buildUsageTooltip(usage, t)}>
+      {estimated && "≈ "}
+      {formatTokenCount(usage.promptTokens)} → {formatTokenCount(usage.completionTokens)} {t("chat.usage.tokensAbbrev")} · {costLabel}
+    </div>
+  );
+}
+
 /* ── User bubble with inline editor + variant navigation ──────────── */
 
 interface UserBubbleProps {
@@ -226,7 +273,10 @@ function UserBubble({
   const [editing, setEditing] = useState(false);
   const MAX_LINES = 8;
   const hasAttachments = (message.attachments?.length ?? 0) > 0;
-  const legacyHtml = !message.displayHtml &&
+  // Pre-displayHtml builds stored tiptap HTML directly in `content`; detect
+  // those by shape. Messages flagged plainText are known-plain — never treat
+  // their content as HTML, even if the user pasted something tag-shaped.
+  const legacyHtml = !message.displayHtml && !message.plainText &&
     (message.content.startsWith("<p>") || message.content.startsWith("<div>"))
     ? message.content
     : null;
@@ -267,7 +317,7 @@ function UserBubble({
               <div className="msg-img-row">
                 {images.map((a) => {
                   const src = a.data_url
-                    ?? (a.path ? `${API_BASE}/files/serve?path=${encodeURIComponent(a.path)}` : null);
+                    ?? (a.path ? withToken(`${API_BASE}/files/serve?path=${encodeURIComponent(a.path)}`) : null);
                   return src ? (
                     <div key={a.name} className="msg-img-thumb">
                       <img src={src} alt={a.name} />
@@ -542,6 +592,11 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
   const seen = new Set<string>();
   const verbs: string[] = [];
   for (const tool of tools) {
+    const activity = toolActivity(tool.call);
+    if (activity) {
+      verbs.push(activity);
+      continue;
+    }
     if (seen.has(tool.call.name)) continue;
     seen.add(tool.call.name);
     const mcp = parseMcpToolName(tool.call.name);
@@ -593,6 +648,7 @@ function ProcessBlock({
       </div>
 
       {open && (
+        <>
         <div className="thinking-body">
           {steps.map((step, i) => {
             if (step.type === "thought") {
@@ -624,6 +680,9 @@ function ProcessBlock({
             if (c.name === "read_skill") {
               return <SkillReadStep key={c.id} call={c} />;
             }
+            if (c.name === "ask_user") {
+              return <AskUserStep key={c.id} call={c} />;
+            }
             if (c.name === "show_widget") {
               return <WidgetStep key={c.id} call={c} />;
             }
@@ -643,6 +702,13 @@ function ProcessBlock({
             );
           })}
         </div>
+        {!isStreaming && (
+          <div className="thinking-done">
+            <span className="thinking-done-ic"><CheckCircle weight="fill" /></span>
+            <span className="thinking-done-lbl">{t("chat.process.done")}</span>
+          </div>
+        )}
+        </>
       )}
     </div>
   );
@@ -759,7 +825,7 @@ function WriteFileStep({ call, liveFile }: { call: ToolCall; liveFile?: LiveFile
       <span className="thinking-gic">{fileExtIcon(ext)}</span>
       <div className="thinking-content">
         <div className="tc-write-label">
-          {isWriting ? t("chat.writeFile.writing") : t("chat.writeFile.wrote")}
+          {toolActivity(call) || (isWriting ? t("chat.writeFile.writing") : t("chat.writeFile.wrote"))}
           <button className="tc-write-badge" onClick={openInPanel} title={t("chat.writeFile.openInPanel")}>
             {fileName}
           </button>
@@ -814,7 +880,7 @@ function EditFileStep({ call }: { call: ToolCall }) {
       <span className="thinking-gic">{fileExtIcon(ext)}</span>
       <div className="thinking-content">
         <div className="tc-write-label">
-          {isEditing ? t("chat.editFile.editing") : t("chat.editFile.edited")}
+          {toolActivity(call) || (isEditing ? t("chat.editFile.editing") : t("chat.editFile.edited"))}
           <button className="tc-write-badge" onClick={openInPanel} title={t("chat.editFile.openFile")}>
             {fileName}
           </button>
@@ -845,13 +911,13 @@ function WidgetStep({ call }: { call: ToolCall }) {
     <div className="thinking-step thinking-step--tool thinking-step--skill-read">
       <span className="skill-read-icon"><AppWindow size={14} /></span>
       <span className="skill-read-label">
-        {isBuilding
+        {toolActivity(call) || (isBuilding
           ? t("widget.building")
           : isError
             ? t("widget.error")
             : title
               ? t("widget.renderedNamed", { title })
-              : t("widget.rendered")}
+              : t("widget.rendered"))}
       </span>
       {!isBuilding && !isError && call.durationMs != null && (
         <span className="skill-read-duration">
@@ -901,9 +967,9 @@ function IterationsExhaustedCard({ count }: { count: number }) {
 function SkillReadStep({ call }: { call: ToolCall }) {
   const { t } = useTranslation();
   const skillName = String(call.input?.name ?? "");
-  const label = call.status === "running"
+  const label = toolActivity(call) || (call.status === "running"
     ? t("chat.skill.reading", { skillName })
-    : t("chat.skill.read", { skillName });
+    : t("chat.skill.read", { skillName }));
 
   const handleClick = () => {
     const filePath = call.filePath;
@@ -925,6 +991,25 @@ function SkillReadStep({ call }: { call: ToolCall }) {
       {!call.filePath && call.status !== "running" && (
         <span className="skill-read-duration">
           {call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)}${t("chat.skill.seconds")}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AskUserStep({ call }: { call: ToolCall }) {
+  const { t } = useTranslation();
+  const questions = Array.isArray(call.input?.questions) ? call.input.questions : [];
+  const n = questions.length;
+  const label = n > 1 ? t("chat.askUser.askedN", { count: n }) : t("chat.askUser.asked");
+
+  return (
+    <div className="thinking-step thinking-step--tool thinking-step--skill-read">
+      <span className="skill-read-icon"><Question size={13} /></span>
+      <span className="skill-read-label">{label}</span>
+      {call.status !== "running" && call.durationMs != null && (
+        <span className="skill-read-duration">
+          {(call.durationMs / 1000).toFixed(1)}{t("chat.process.seconds")}
         </span>
       )}
     </div>
@@ -1017,11 +1102,11 @@ function WebSearchStep({ call, mode }: { call: ToolCall; mode?: string }) {
         <div className={`mcp-step${expanded ? " expanded" : ""}`}>
           <div className="mcp-head" onClick={() => setExpanded((v) => !v)}>
             <span className="mcp-head-badge">
-              {isRunning
+              {toolActivity(call) || (isRunning
                 ? t("chat.webSearch.searching")
                 : count != null
                   ? t("chat.webSearch.results", { count })
-                  : t("chat.webSearch.searched")}
+                  : t("chat.webSearch.searched"))}
             </span>
             <span className="mcp-head-tool">{query}</span>
             {modeLabel && !isRunning && <span className="ws-mode-tag">{modeLabel}</span>}

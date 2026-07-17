@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  Plus, MagnifyingGlass, DotsThree, Trash, CaretRight,
+  Plus, MagnifyingGlass, DotsThree, Trash, CaretRight, CaretLeft,
   Folder, LinkSimple, CheckCircle, FileDoc, FileXls, FilePpt, FilePdf, PaintBrush, Sparkle,
 } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { playNotificationSound } from "../../utils/notify";
+import { basename } from "../../utils/basename";
 import { Markdown } from "../Markdown/Markdown";
 import { useTranslation } from "react-i18next";
 
@@ -37,20 +38,21 @@ interface CatalogItem {
   // Tools the skill's scripts need at runtime. Shown as a "requires" line so the
   // user knows to install them (Settings → Terminal) before running the skill.
   requires?: string;
+  // Matches the `author` this skill's SKILL.md actually installs with (see
+  // backend/skills/catalog.py + installer.py's _ensure_author_field): "AgentChat"
+  // for our own bundled/adapted skills, "Anthropic" for the one installed
+  // unmodified from GitHub.
+  author: string;
 }
 
 const CATALOG: CatalogItem[] = [
-  { key: "agentchat", icon: <Sparkle size={20} weight="duotone" /> },
-  { key: "docx", icon: <FileDoc size={20} weight="duotone" />, requires: "Python (python-docx); optional pandoc, LibreOffice" },
-  { key: "xlsx", icon: <FileXls size={20} weight="duotone" />, requires: "Python (openpyxl, pandas); optional LibreOffice" },
-  { key: "pptx", icon: <FilePpt size={20} weight="duotone" />, requires: "Python (python-pptx); optional LibreOffice, poppler" },
-  { key: "pdf", icon: <FilePdf size={20} weight="duotone" />, requires: "Python (pypdf, pdfplumber, reportlab), poppler" },
-  { key: "frontend-design", icon: <PaintBrush size={20} weight="duotone" /> },
+  { key: "agentchat", icon: <Sparkle size={20} weight="duotone" />, author: "AgentChat" },
+  { key: "docx", icon: <FileDoc size={20} weight="duotone" />, requires: "Python (python-docx); optional pandoc, LibreOffice", author: "AgentChat" },
+  { key: "xlsx", icon: <FileXls size={20} weight="duotone" />, requires: "Python (openpyxl, pandas); optional LibreOffice", author: "AgentChat" },
+  { key: "pptx", icon: <FilePpt size={20} weight="duotone" />, requires: "Python (python-pptx); optional LibreOffice, poppler", author: "AgentChat" },
+  { key: "pdf", icon: <FilePdf size={20} weight="duotone" />, requires: "Python (pypdf, pdfplumber, reportlab), poppler", author: "AgentChat" },
+  { key: "frontend-design", icon: <PaintBrush size={20} weight="duotone" />, author: "Anthropic" },
 ];
-
-function basename(p: string): string {
-  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-}
 
 function fmtFileSize(bytes: number, t: Tx): string {
   if (bytes < 1024) return `${bytes} ${t("skills.fileSizeBytes")}`;
@@ -196,8 +198,8 @@ function AddSkillPane({
     <div className="sk2-detail-scroll">
       <h3 className="sk2-add-title">{t("skills.addTitle")}</h3>
 
-      <div className="sk2-add-section">{t("skills.anthropicTitle")}</div>
-      <p className="sk2-add-sub">{t("skills.anthropicSubtitle")}</p>
+      <div className="sk2-add-section">{t("skills.catalogTitle")}</div>
+      <p className="sk2-add-sub">{t("skills.catalogSubtitle")}</p>
       <div className="sk2-cat-grid">
         {CATALOG.map((c) => {
           const installed = installedKeys.has(c.key);
@@ -207,6 +209,7 @@ function AddSkillPane({
               <div className="sk2-cat-ic">{c.icon}</div>
               <div className="sk2-cat-body">
                 <div className="sk2-cat-label">{t(`skills.catalog.${c.key}.label`)}</div>
+                <div className="sk2-cat-author">{t("skills.catalogAuthor", { author: c.author })}</div>
                 <div className="sk2-cat-desc">{t(`skills.catalog.${c.key}.desc`)}</div>
                 {c.requires && (
                   <div className="sk2-cat-req">
@@ -280,6 +283,9 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // Mobile only: which of the two master-detail panes is showing full-screen.
+  // Irrelevant on desktop (both panes are always visible there; see CSS).
+  const [view, setView] = useState<"list" | "detail">("list");
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("");
   const [installing, setInstalling] = useState(false);
@@ -351,7 +357,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       const installed = (await res.json()) as SkillInfo[];
       await fetchSkills();
       playNotificationSound();
-      if (installed[0]) setSelected(installed[0].name);
+      if (installed[0]) { setSelected(installed[0].name); setView("detail"); }
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -375,7 +381,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       setSource("");
       await fetchSkills();
       playNotificationSound();
-      if (installed[0]) setSelected(installed[0].name);
+      if (installed[0]) { setSelected(installed[0].name); setView("detail"); }
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -398,7 +404,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       const installed = (await res.json()) as SkillInfo[];
       await fetchSkills();
       playNotificationSound();
-      if (installed[0]) setSelected(installed[0].name);
+      if (installed[0]) { setSelected(installed[0].name); setView("detail"); }
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -413,7 +419,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       if (!res.ok) throw new Error((await res.json()).detail ?? t("skills.installFailed"));
       setContents((prev) => { const m = new Map(prev); m.delete(name); return m; });
       setFiles((prev) => { const m = new Map(prev); m.delete(name); return m; });
-      if (selected === name) setSelected(null);
+      if (selected === name) { setSelected(null); setView("list"); }
       await fetchSkills();
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -433,7 +439,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
     setIsDragging(false);
     const dropped = Array.from(e.dataTransfer.files);
     const f = dropped.find((x) => /\.(skill|zip)$/i.test(x.name)) ?? dropped[0];
-    if (f) { setSelected(null); await uploadFile(f); }
+    if (f) { setSelected(null); setView("detail"); await uploadFile(f); }
   };
 
   const filtered = skills.filter((s) => {
@@ -447,6 +453,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
   return (
     <div
       className={`sk2-root${isDragging ? " is-dragging" : ""}`}
+      data-mview={view}
       onDragEnter={handleDrag(true)}
       onDragLeave={handleDrag(false)}
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
@@ -466,7 +473,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
         type="file"
         accept=".skill,.zip,application/zip"
         style={{ display: "none" }}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelected(null); uploadFile(f); } e.target.value = ""; }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) { setSelected(null); setView("detail"); uploadFile(f); } e.target.value = ""; }}
       />
 
       {/* Left rail — installed list */}
@@ -476,7 +483,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
           <span className="sk2-list-title">{t("skills.title")}</span>
           <button
             className={`sk2-add-btn${selected === null ? " active" : ""}`}
-            onClick={() => { setSelected(null); setError(null); }}
+            onClick={() => { setSelected(null); setError(null); setView("detail"); }}
             title={t("skills.addTitle")}
           >
             <Plus size={16} weight="bold" />
@@ -495,7 +502,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
             <button
               key={s.name}
               className={`sk2-row${selected === s.name ? " active" : ""}`}
-              onClick={() => setSelected(s.name)}
+              onClick={() => { setSelected(s.name); setView("detail"); }}
             >
               <span className={`sk2-row-badge ${getBadgeColor(s.name)}`}>{s.name[0]?.toUpperCase() ?? "?"}</span>
               <span className="sk2-row-info">
@@ -511,8 +518,15 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
         <div className="sk2-list-foot"><b>{skills.length}</b> {t("skills.installedCount")}</div>
       </aside>
 
-      {/* Right pane — detail or add */}
+      {/* Right pane — detail or add. On mobile it's swapped in over the list
+          (see CSS) rather than stacked underneath it, with its own back bar. */}
       <section className="sk2-detail">
+        <div className="sk2-detail-mobbar">
+          <button className="sk2-mob-back" onClick={() => setView("list")} aria-label={t("skills.back")} title={t("skills.back")}>
+            <CaretLeft size={20} weight="bold" />
+          </button>
+          <span className="sk2-detail-mobbar-title">{activeSkill ? activeSkill.name : t("skills.addTitle")}</span>
+        </div>
         {activeSkill ? (
           <SkillDetailPane
             skill={activeSkill}

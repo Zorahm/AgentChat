@@ -1,0 +1,73 @@
+/* BottomSheet — modal sheet sliding up from the bottom (mobile)
+ *
+ * The handle is a full-width drag-to-resize zone. Pull up to expand the sheet,
+ * pull down to shrink it. Height clamped between MIN_HEIGHT (320px) and 92vh. */
+
+.bs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: rgba(0, 0, 0, 0);
+  transition: background 0.24s ease;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bs-backdrop--open {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.bs-sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 92vh;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(100%);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.bs-sheet--open {
+  transform: translateY(0);
+}
+
+/* During a handle drag the sheet height is controlled by JS inline style,
+ * so kill both the CSS transition and the max-height constraint. */
+.bs-sheet--dragging {
+  transition: none;
+}
+
+/* Full-width drag-to-resize zone. The ::after bar is a visual hint only.
+ * touch-action: none prevents the page behind from scrolling during drag. */
+.bs-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.bs-handle::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 5px;
+  background: var(--line-2);
+  border-radius: 3px;
+}
+
+.bs-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

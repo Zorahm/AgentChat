@@ -182,7 +182,7 @@
 
 .proj-detail-main { min-width: 0; }
 /* Taller composer here — the sidebar narrows this column, so give it more room. */
-.proj-detail-main .tiptap-editor { min-height: 92px; max-height: 280px; }
+.proj-detail-main .composer-editor { min-height: 92px; max-height: 280px; }
 
 .proj-back {
   display: inline-flex;

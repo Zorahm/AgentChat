@@ -16,7 +16,7 @@ export function ResearchMenuSection({ enabled, onChange }: ResearchMenuSectionPr
   return (
     <div className="cpm-section">
       <button
-        className={`cpm-item${enabled ? " cpm-item--on" : ""}`}
+        className={`cpm-item cpm-item--toggle${enabled ? " cpm-item--on" : ""}`}
         onClick={() => onChange(!enabled)}
         title={t("chat.research.hint")}
       >

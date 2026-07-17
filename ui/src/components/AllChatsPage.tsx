@@ -15,6 +15,11 @@ interface AllChatsPageProps {
   onRename: (id: string, title: string) => void;
   onPin: (id: string) => void;
   onBack: () => void;
+  /** When embedded in the Library page, the standalone header/search is hidden
+   *  and the query is controlled from the parent's shared search box. */
+  embedded?: boolean;
+  query?: string;
+  onQueryChange?: (q: string) => void;
 }
 
 type SortMode = "newest" | "oldest" | "alpha";
@@ -60,15 +65,18 @@ function formatTime(ts: number): string {
 
 export function AllChatsPage({
   sessions, activeId, onSwitch, onDelete, onRename, onPin, onBack,
+  embedded = false, query: extQuery, onQueryChange,
 }: AllChatsPageProps) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
+  const query = extQuery !== undefined ? extQuery : internalQuery;
+  const setQuery = onQueryChange ?? setInternalQuery;
   const [sort, setSort] = useState<SortMode>("newest");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { searchRef.current?.focus(); }, []);
+  useEffect(() => { if (!embedded) searchRef.current?.focus(); }, [embedded]);
 
   const sorted = useMemo(() => {
     const arr = [...sessions];
@@ -123,49 +131,63 @@ export function AllChatsPage({
     alpha: t("allChats.sortAlpha"),
   };
 
-  return (
-    <div className="ac-page">
-      {/* ── Header ── */}
-      <div className="ac-head">
-        <button className="ac-back" onClick={onBack} title={t("allChats.cancel")}>
-          <ArrowLeft size={18} weight="bold" />
+  const actions = (
+    <div className="ac-head-actions">
+      <button className="ac-toolbar-btn" onClick={cycleSortMode} title={t("allChats.sortTooltip")}>
+        {sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
+        <span>{sortLabel[sort]}</span>
+      </button>
+      {selectMode ? (
+        <button className="ac-toolbar-btn ac-toolbar-btn--active" onClick={handleExitSelect}>
+          <X size={14} weight="bold" />
+          <span>{t("allChats.cancel")}</span>
         </button>
-        <div className="ac-head-titles">
-          <h2 className="ac-head-title">{t("allChats.title")}</h2>
-          <span className="ac-head-count">{sessions.length}</span>
-        </div>
-        <div className="ac-search">
-          <MagnifyingGlass size={14} className="ac-search-icon" />
-          <input
-            ref={searchRef}
-            placeholder={t("allChats.searchPlaceholder")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-            <button className="ac-search-clear" onClick={() => setQuery("")}>
-              <X size={12} weight="bold" />
-            </button>
-          )}
-        </div>
-        <div className="ac-head-actions">
-          <button className="ac-toolbar-btn" onClick={cycleSortMode} title={t("allChats.sortTooltip")}>
-            {sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
-            <span>{sortLabel[sort]}</span>
+      ) : (
+        <button className="ac-toolbar-btn" onClick={() => setSelectMode(true)}>
+          <Check size={14} weight="bold" />
+          <span>{t("allChats.select")}</span>
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className={`ac-page${embedded ? " ac-page--embedded" : ""}`}>
+      {/* ── Header (standalone only) ── */}
+      {!embedded && (
+        <div className="ac-head">
+          <button className="ac-back" onClick={onBack} title={t("allChats.cancel")}>
+            <ArrowLeft size={18} weight="bold" />
           </button>
-          {selectMode ? (
-            <button className="ac-toolbar-btn ac-toolbar-btn--active" onClick={handleExitSelect}>
-              <X size={14} weight="bold" />
-              <span>{t("allChats.cancel")}</span>
-            </button>
-          ) : (
-            <button className="ac-toolbar-btn" onClick={() => setSelectMode(true)}>
-              <Check size={14} weight="bold" />
-              <span>{t("allChats.select")}</span>
-            </button>
-          )}
+          <div className="ac-head-titles">
+            <h2 className="ac-head-title">{t("allChats.title")}</h2>
+            <span className="ac-head-count">{sessions.length}</span>
+          </div>
+          <div className="ac-search">
+            <MagnifyingGlass size={14} className="ac-search-icon" />
+            <input
+              ref={searchRef}
+              placeholder={t("allChats.searchPlaceholder")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button className="ac-search-clear" onClick={() => setQuery("")}>
+                <X size={12} weight="bold" />
+              </button>
+            )}
+          </div>
+          {actions}
         </div>
-      </div>
+      )}
+
+      {/* ── Embedded toolbar (Library tab) ── */}
+      {embedded && (
+        <div className="ac-embed-toolbar">
+          <span className="ac-head-count">{sessions.length}</span>
+          {actions}
+        </div>
+      )}
 
       {/* ── Bulk bar (visible only in select mode with selections) ── */}
       {selectMode && (

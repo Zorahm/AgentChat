@@ -3,7 +3,10 @@
  * Rendered identically for WSL and PowerShell so both shells get the same
  * one-click experience. The only per-shell differences — Linux credentials,
  * the VPN network fix, the winget-missing note — arrive through slots
- * (`beforeActions`, `secondaryActions`, `note`) rather than separate layouts. */
+ * (`beforeActions`, `secondaryActions`, `note`) rather than separate layouts.
+ *
+ * The install props are optional: a native Linux/macOS host has no single
+ * package manager to drive, so that caller renders a read-only checklist. */
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowClockwise, CheckCircle, XCircle } from "@phosphor-icons/react";
@@ -22,11 +25,11 @@ interface DependencyCardProps {
   allOk: boolean;
   rechecking: boolean;
   onRecheck: () => void;
-  installing: boolean;
-  showInstall: boolean;
-  installLabel: string;
-  installDisabled: boolean;
-  onInstall: () => void;
+  installing?: boolean;
+  showInstall?: boolean;
+  installLabel?: string;
+  installDisabled?: boolean;
+  onInstall?: () => void;
   note?: string | null;
   beforeActions?: ReactNode;
   secondaryActions?: ReactNode;
@@ -39,10 +42,10 @@ export function DependencyCard({
   allOk,
   rechecking,
   onRecheck,
-  installing,
-  showInstall,
+  installing = false,
+  showInstall = false,
   installLabel,
-  installDisabled,
+  installDisabled = false,
   onInstall,
   note,
   beforeActions,
@@ -96,7 +99,7 @@ export function DependencyCard({
       <div className="ob-dep-actions">
         {allOk ? (
           <span className="ob-success ob-success--inline">{t("onboarding.allSet")}</span>
-        ) : showInstall ? (
+        ) : showInstall && onInstall ? (
           <button className="ob-btn" onClick={onInstall} disabled={installDisabled}>
             {installLabel}
           </button>

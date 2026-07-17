@@ -1,6 +1,4 @@
-"""Write file tool — the single canonical write path for both the ``write_file``
-tool call and the streaming ``<file>`` tag (loop.py delegates the tag's on-disk
-write here).
+"""Write file tool — the canonical write path for the ``write_file`` tool call.
 
 Design follows OpenCode's Write tool, adapted for a chat agent (no LSP, no diff,
 no permission prompts — sandbox checks live in :mod:`agent.sandbox`):
@@ -13,7 +11,7 @@ no permission prompts — sandbox checks live in :mod:`agent.sandbox`):
 
 from __future__ import annotations
 
-import os
+import ntpath
 import posixpath
 from pathlib import Path
 
@@ -44,6 +42,10 @@ def _resolve_write_path(path: str, policy: SandboxPolicy) -> str:
     have it land in the chat folder instead of erroring out. Cross-namespace
     paths (a Windows path in WSL mode or vice-versa) are returned unchanged so
     :meth:`SandboxPolicy.check_write` can reject them with a clear message.
+
+    Each branch joins with its namespace's own module (``ntpath`` / ``posixpath``)
+    rather than ``os.path``, so the result depends on the policy's shell and not
+    on the host the backend happens to run on.
     """
     path = path.strip()
     if not path:
@@ -51,11 +53,11 @@ def _resolve_write_path(path: str, policy: SandboxPolicy) -> str:
 
     if policy.shell == "powershell":
         if _looks_windows_abs(path):
-            return os.path.normpath(path)
+            return ntpath.normpath(path)
         if path.startswith("/"):
             return path  # wrong namespace — let check_write explain
         if policy.chat_dir:
-            return os.path.normpath(os.path.join(policy.chat_dir, path))
+            return ntpath.normpath(ntpath.join(policy.chat_dir, path))
         return path
 
     # wsl / posix

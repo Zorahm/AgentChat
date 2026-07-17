@@ -27,6 +27,7 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         extra_body: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": model,
@@ -42,6 +43,11 @@ class LLMClient:
             kwargs["extra_headers"] = self.extra_headers
         if extra_body:
             kwargs["extra_body"] = extra_body
+        if metadata:
+            # Read back in llm/usage_logging.py's CustomLogger callback to
+            # attribute usage/cost to a chat + message without threading a
+            # return value through every provider's response shape.
+            kwargs["metadata"] = metadata
         return kwargs
 
     async def completion(
@@ -50,9 +56,10 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         extra_body: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> litellm.ModelResponse:
         """Non-streaming completion. Returns the full ModelResponse."""
-        kwargs = self._kwargs(model, messages, tools, extra_body)
+        kwargs = self._kwargs(model, messages, tools, extra_body, metadata)
         kwargs["stream"] = False
         return await litellm.acompletion(**kwargs)
 
@@ -62,10 +69,14 @@ class LLMClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         extra_body: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AsyncGenerator[Any, None]:
         """Streaming completion. Yields raw LiteLLM chunks as they arrive."""
-        kwargs = self._kwargs(model, messages, tools, extra_body)
+        kwargs = self._kwargs(model, messages, tools, extra_body, metadata)
         kwargs["stream"] = True
+        # Without this, usage only arrives for OpenAI-compatible providers by
+        # accident; Anthropic and others ignore the extra kwarg harmlessly.
+        kwargs["stream_options"] = {"include_usage": True}
         response = await litellm.acompletion(**kwargs)
         async for chunk in response:
             yield chunk

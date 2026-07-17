@@ -23,7 +23,7 @@ export function pickGreeting(name?: string): string {
   const pool = getPool(catalog, hour);
   const idx = Math.floor(Math.random() * pool.length);
   let phrase = pool[idx] ?? pool[0] ?? "Привет!";
-  if (name) phrase = phrase.replace(/\{name\}/g, name);
+  if (name) phrase = phrase.replace(/\{name\}/g, "\n" + name);
   else phrase = phrase.replace(/,?\s*\{name\}/g, "").replace(/\{name\},?\s*/g, "");
   return phrase;
 }

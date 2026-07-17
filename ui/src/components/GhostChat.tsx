@@ -1,4 +1,4 @@
-/** Easter egg — Ghost Chat. Triggered by rapid logo clicks. */
+/** Easter egg by Herman — Ghost Chat. Triggered by rapid logo clicks. */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 

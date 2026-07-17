@@ -11,9 +11,16 @@ BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.sandbox import SandboxPolicy
+from shell import resolve_active_shell
 from tools.present_files import PresentFilesTool
 from tools.show_widget import ShowWidgetTool
 from tools.write_file import WriteFileTool, _resolve_write_path
+
+# The shell whose path namespace matches this host: "powershell" on Windows,
+# "posix" on Linux/macOS. The tools below are anchored at a real ``tmp_path``
+# (``C:\…`` on Windows, ``/tmp/…`` elsewhere) and check_write rejects the other
+# namespace outright, so the shell has to follow the host rather than be pinned.
+HOST_SHELL = resolve_active_shell("powershell")
 
 
 class TestBashTool:
@@ -31,10 +38,10 @@ class TestReadFileTool:
 
 
 def _tool(chat_dir: Path) -> WriteFileTool:
-    """A restricted (sandboxed) write tool anchored at *chat_dir*, PowerShell
-    namespace so we exercise the Windows local-fs path without needing WSL."""
+    """A restricted (sandboxed) write tool anchored at *chat_dir*, in the host's
+    own namespace so we exercise the local-fs path without needing WSL."""
     tool = WriteFileTool()
-    tool.set_policy(SandboxPolicy(chat_dir=str(chat_dir), shell="powershell"))
+    tool.set_policy(SandboxPolicy(chat_dir=str(chat_dir), shell=HOST_SHELL))
     return tool
 
 
@@ -109,20 +116,40 @@ class TestWriteFileTool:
     @pytest.mark.asyncio
     async def test_unrestricted_allows_arbitrary_absolute(self, tmp_path: Path) -> None:
         tool = WriteFileTool()
-        tool.set_policy(SandboxPolicy(unrestricted=True, shell="powershell"))
+        tool.set_policy(SandboxPolicy(unrestricted=True, shell=HOST_SHELL))
         target = tmp_path / "anywhere" / "x.txt"
         out = await tool.execute(path=str(target), content="ok")
         assert out.startswith("Created")
         assert target.read_text(encoding="utf-8") == "ok"
 
-    def test_resolve_relative_against_chat_dir(self, tmp_path: Path) -> None:
-        pol = SandboxPolicy(chat_dir=str(tmp_path), shell="powershell")
-        assert _resolve_write_path("x/y.txt", pol) == str(tmp_path / "x" / "y.txt")
+    # Pure string resolution, nothing touches disk — so unlike the tests above
+    # this one can cover both namespaces regardless of which host it runs on.
+    @pytest.mark.parametrize(
+        ("shell_mode", "chat_dir", "expected"),
+        [
+            (
+                "powershell",
+                "C:\\Users\\ZorahM\\AgentChat\\chats\\c1",
+                "C:\\Users\\ZorahM\\AgentChat\\chats\\c1\\x\\y.txt",
+            ),
+            (
+                "posix",
+                "/home/zorahm/AgentChat/chats/c1",
+                "/home/zorahm/AgentChat/chats/c1/x/y.txt",
+            ),
+        ],
+        ids=["windows", "posix"],
+    )
+    def test_resolve_relative_against_chat_dir(
+        self, shell_mode: str, chat_dir: str, expected: str
+    ) -> None:
+        pol = SandboxPolicy(chat_dir=chat_dir, shell=shell_mode)
+        assert _resolve_write_path("x/y.txt", pol) == expected
 
 
 def _present_tool(chat_dir: Path) -> PresentFilesTool:
     tool = PresentFilesTool()
-    tool.set_policy(SandboxPolicy(chat_dir=str(chat_dir), shell="powershell"))
+    tool.set_policy(SandboxPolicy(chat_dir=str(chat_dir), shell=HOST_SHELL))
     return tool
 
 

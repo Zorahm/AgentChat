@@ -1,4 +1,4 @@
-/** React component rendered as the inline mention chip in TipTap.
+/** React component rendered as the inline mention chip in Composer.
  *  Uses @phosphor-icons/react icons directly. */
 
 import { type NodeViewProps } from "@tiptap/react";

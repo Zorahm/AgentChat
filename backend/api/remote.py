@@ -17,11 +17,9 @@ import subprocess
 from fastapi import APIRouter, HTTPException, Request
 
 from api.schemas.settings import RemoteAccessInfo
+from shell import NO_WINDOW
 
 router = APIRouter(tags=["remote"])
-
-# Suppress the console-window flash when spawning the Tailscale CLI on Windows.
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # Tailscale (and other CGNAT-based mesh VPNs) hand out addresses from
 # 100.64.0.0/10. A phone joined to the tailnet can reach this address but NOT
@@ -61,7 +59,7 @@ def _tailscale_ipv4() -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
-            creationflags=_NO_WINDOW,
+            creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError):
         return None

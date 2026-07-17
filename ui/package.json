@@ -1,6 +1,6 @@
 {
   "name": "custom-ai-chat-ui",
-  "version": "2.1.0",
+  "version": "3.0.0-pre",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-barcode-scanner": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@tiptap/extension-mention": "^3.23.4",

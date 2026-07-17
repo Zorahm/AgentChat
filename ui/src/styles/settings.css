@@ -12,6 +12,7 @@
 @import "./settings/settings-models.css";
 @import "./settings/settings-about.css";
 @import "./settings/settings-mcp.css";
+@import "./settings/settings-agents.css";
 @import "./settings/settings-shortcuts.css";
 @import "./settings/settings-sandbox.css";
 @import "./settings/settings-errors-loading.css";

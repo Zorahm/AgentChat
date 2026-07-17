@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.base import BaseTool
-from tools.registry import ToolRegistry
+from tools.registry import ToolRegistry, inject_activity_field, strip_activity_field
 
 
 class MCPAwareRegistry(ToolRegistry):
@@ -51,16 +51,19 @@ class MCPAwareRegistry(ToolRegistry):
         names.extend(n for n in self._tools.keys() if n not in names)
         return names
 
-    def to_openai_schema(self) -> list[dict[str, Any]]:
-        return self._base.to_openai_schema() + [
-            t.get_definition().model_dump() for t in self._tools.values()
-        ]
+    def to_openai_schema(self, describe_actions: bool = False) -> list[dict[str, Any]]:
+        overlay_schemas = [t.get_definition().model_dump() for t in self._tools.values()]
+        if describe_actions:
+            # Covers our own overlay tools (web_search, research); real MCP
+            # server schemas (name starts with "mcp__") are skipped inside.
+            overlay_schemas = inject_activity_field(overlay_schemas)
+        return self._base.to_openai_schema(describe_actions) + overlay_schemas
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
         proxy = self._tools.get(name)
         if proxy is not None:
             try:
-                return await proxy.execute(**arguments)
+                return await proxy.execute(**strip_activity_field(arguments))
             except TypeError as e:
                 return f"Error: invalid arguments for '{name}' — {e}"
         return await self._base.execute(name, arguments)

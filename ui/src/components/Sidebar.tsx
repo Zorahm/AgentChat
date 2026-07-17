@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images, ArrowClockwise, CloudArrowDown, WarningCircle } from "@phosphor-icons/react";
+import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images, CaretRight, ArrowClockwise, CloudArrowDown, WarningCircle, ChartBar } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
 import type { AppUpdate } from "../hooks/useAppUpdate";
 import { useLongPress } from "../hooks/useLongPress";
@@ -16,8 +16,8 @@ interface SidebarProps {
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onPin: (id: string) => void;
-  activeView: "chat" | "skills" | "settings" | "allchats" | "projects" | "files";
-  onNavigate: (view: "chat" | "skills" | "settings" | "allchats" | "projects" | "files") => void;
+  activeView: "chat" | "skills" | "settings" | "library" | "projects" | "usage";
+  onNavigate: (view: "chat" | "skills" | "settings" | "library" | "projects" | "usage") => void;
   collapsed: boolean;
   onToggle: () => void;
   userName: string;
@@ -183,6 +183,25 @@ export function Sidebar({
     }
   }, [draggedId, orderIds, allDisplayed, sessions, executeDrop]);
 
+  const renderChatItem = (s: ChatSession) => (
+    <ChatItem
+      key={s.id}
+      session={s}
+      active={s.id === activeId}
+      streaming={streamingIds.has(s.id)}
+      isProject={!!s.projectId}
+      isDragOver={s.id === dragOverId}
+      onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
+      onDelete={() => onDelete(s.id)}
+      onRename={(title) => onRename(s.id, title)}
+      onPin={() => onPin(s.id)}
+      onDragStart={(e) => handleDragStart(e, s.id)}
+      onDragOver={(e) => handleDragOver(e, s.id)}
+      onDrop={(e) => handleDrop(e, s.id)}
+      onDragEnd={handleDragEnd}
+    />
+  );
+
   if (collapsed) {
     const hasPinned = pinned.length > 0;
     const hasRecent = recent.length > 0;
@@ -200,12 +219,12 @@ export function Sidebar({
         </button>
 
         {/* Search */}
-        <button className="sb-col-search" onClick={() => onNavigate("allchats")} title={t("sidebar.search")}>
+        <button className="sb-col-search" onClick={() => onNavigate("library")} title={t("sidebar.search")}>
           <MagnifyingGlass size={15} weight="bold" />
         </button>
 
-        {/* Files */}
-        <button className="sb-col-search" onClick={() => onNavigate("files")} title={t("sidebar.filesTooltip")}>
+        {/* Files (Library → Files tab) */}
+        <button className="sb-col-search" onClick={() => onNavigate("library")} title={t("sidebar.filesTooltip")}>
           <Images size={15} weight="bold" />
         </button>
 
@@ -272,6 +291,13 @@ export function Sidebar({
             <FolderOpen size={16} />
           </button>
           <button
+            className={`sb-col-btn${activeView === "usage" ? " sb-col-btn--active" : ""}`}
+            onClick={() => onNavigate("usage")}
+            title={t("sidebar.usage")}
+          >
+            <ChartBar size={16} />
+          </button>
+          <button
             className={`sb-col-btn${activeView === "settings" ? " sb-col-btn--active" : ""}`}
             onClick={() => onNavigate("settings")}
             title={t("sidebar.settings")}
@@ -332,67 +358,64 @@ export function Sidebar({
       </div>
 
       <div className="sb-body">
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <button className="sb-new-chat" onClick={() => onNew()} style={{ flex: 1, marginBottom: 0 }}>
-            <span>{t("sidebar.newChatButton")}</span>
+        <nav className="sb-nav">
+          <button className="sb-nav-item sb-nav-item--primary" onClick={() => onNew()}>
+            <Plus weight="bold" />
+            <span>{t("sidebar.newChat")}</span>
           </button>
-
           <button
-            className="sb-col-search"
-            style={{ marginBottom: 0, width: '38px', height: '38px' }}
-            onClick={() => onNavigate("allchats")}
-            title={t("sidebar.searchTooltip")}
+            className={`sb-nav-item${activeView === "library" ? " active" : ""}`}
+            onClick={() => onNavigate("library")}
           >
-            <MagnifyingGlass size={16} weight="bold" />
+            <MagnifyingGlass />
+            <span>{t("sidebar.searchTooltip")}</span>
           </button>
-
           <button
-            className="sb-col-search"
-            style={{ marginBottom: 0, width: '38px', height: '38px' }}
-            onClick={() => onNavigate("files")}
-            title={t("sidebar.filesTooltip")}
+            className={`sb-nav-item${activeView === "projects" ? " active" : ""}`}
+            onClick={() => onNavigate("projects")}
           >
-            <Images size={16} weight="bold" />
+            <FolderOpen />
+            <span>{t("sidebar.projectsButton")}</span>
           </button>
+          <button
+            className={`sb-nav-item${activeView === "skills" ? " active" : ""}`}
+            onClick={() => onNavigate("skills")}
+          >
+            <Books />
+            <span>{t("sidebar.skillsButton")}</span>
+          </button>
+          <button
+            className={`sb-nav-item${activeView === "usage" ? " active" : ""}`}
+            onClick={() => onNavigate("usage")}
+          >
+            <ChartBar />
+            <span>{t("sidebar.usageButton")}</span>
+          </button>
+        </nav>
+
+        <div className="sb-groups">
+          {pinned.length > 0 && (
+            <SidebarGroup
+              label={t("sidebar.pinned")}
+              count={pinned.length}
+              storageKey="aic-grp-pinned-v1"
+              defaultOpen
+            >
+              {pinned.map(renderChatItem)}
+            </SidebarGroup>
+          )}
+
+          <SidebarGroup
+            label={t("sidebar.recent")}
+            count={recent.length}
+            storageKey="aic-grp-recent-v1"
+            defaultOpen
+          >
+            {recent.length > 0
+              ? recent.map(renderChatItem)
+              : <p className="sb-group-empty">{t("sidebar.recentEmpty")}</p>}
+          </SidebarGroup>
         </div>
-        <button className="sb-skills-btn" onClick={() => onNavigate("skills")}>
-          <Books />
-          <span>{t("sidebar.skillsButton")}</span>
-        </button>
-        <button
-          className={`sb-skills-btn${activeView === "projects" ? " active" : ""}`}
-          onClick={() => onNavigate("projects")}
-        >
-          <FolderOpen />
-          <span>{t("sidebar.projectsButton")}</span>
-        </button>
-
-        <div className="sb-section-header">
-          <span className="sb-section-label">{t("sidebar.recent")}</span>
-        </div>
-
-        <div className="sb-list">
-          {allDisplayed.map((s) => (
-            <ChatItem
-              key={s.id}
-              session={s}
-              active={s.id === activeId}
-              streaming={streamingIds.has(s.id)}
-              isProject={!!s.projectId}
-              isDragOver={s.id === dragOverId}
-              onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
-              onDelete={() => onDelete(s.id)}
-              onRename={(title) => onRename(s.id, title)}
-              onPin={() => onPin(s.id)}
-              onDragStart={(e) => handleDragStart(e, s.id)}
-              onDragOver={(e) => handleDragOver(e, s.id)}
-              onDrop={(e) => handleDrop(e, s.id)}
-              onDragEnd={handleDragEnd}
-            />
-          ))}
-        </div>
-
-
       </div>
 
       {update?.visible && <UpdateBanner update={update} />}
@@ -845,6 +868,41 @@ function ChatChip({
       {initial}
       {streaming && <span className="sb-chip-stream-dot" />}
     </button>
+  );
+}
+
+/* ── Sidebar collapsible group (Pinned / Recents) ───────────────────────── */
+
+function SidebarGroup({
+  label, count, storageKey, defaultOpen = true, children,
+}: {
+  label: string;
+  count: number;
+  storageKey: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(() => {
+    const raw = localStorage.getItem(storageKey);
+    return raw === null ? defaultOpen : raw === "1";
+  });
+
+  const toggle = useCallback(() => {
+    setOpen((o) => {
+      localStorage.setItem(storageKey, o ? "0" : "1");
+      return !o;
+    });
+  }, [storageKey]);
+
+  return (
+    <div className={`sb-group${open ? " is-open" : ""}`}>
+      <button className="sb-group-head" onClick={toggle}>
+        <CaretRight className="sb-group-caret" size={11} weight="bold" />
+        <span className="sb-group-label">{label}</span>
+        <span className="sb-group-count">{count}</span>
+      </button>
+      {open && <div className="sb-group-body">{children}</div>}
+    </div>
   );
 }
 

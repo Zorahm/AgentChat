@@ -14,6 +14,16 @@
 .mobile-drawer-backdrop { display: none; }
 
 @media (max-width: 768px) {
+  /* ── Visible viewport height ──────────────────────────────────────────
+   * --app-height is set from visualViewport.height by useViewportHeight() and
+   * is the real on-screen height; the #root → .app-body → .chat %-chain follows
+   * it. 100dvh is only the pre-JS fallback — on its own it can resolve taller
+   * than the visible area (devtools device mode, collapsing URL bar) and clip
+   * the bottom-pinned composer. var() keeps the composer above the keyboard too. */
+  html, body {
+    height: var(--app-height, 100dvh);
+  }
+
   /* ── Single-column shell ──────────────────────────────────────────────
    * App.tsx sets grid-template-columns inline, so we must override with
    * !important. The chat column becomes the only flow column; sidebar and
@@ -23,7 +33,8 @@
     grid-template-columns: 1fr !important;
   }
 
-  /* ── Sidebar → off-canvas drawer ─────────────────────────────────────── */
+  /* ── Sidebar internals: hide the hamburger (mobile uses its own drawer toggle) ── */
+  .sb-hamburger { display: none; }
   .sidebar {
     position: fixed;
     top: 0;
@@ -78,11 +89,11 @@
     left: 10px;
     z-index: 5;
   }
-  .chat--welcome { position: relative; }
+  .chat--welcome { position: relative; justify-content: flex-start; }
 
   /* In an active chat the button sits inline at the start of the header.
    * Pin hamburger + title to the left; the files button drifts right. */
-  .chat-head { padding: 0 12px; gap: 8px; justify-content: flex-start; }
+  .chat-head { padding: env(safe-area-inset-top, 0px) 12px 0; gap: 8px; justify-content: flex-start; }
   .chat-head > div { min-width: 0; }
   .chat-head-btn { margin-left: auto; }
   .chat-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -94,10 +105,39 @@
   .composer { padding: 10px 10px calc(14px + env(safe-area-inset-bottom)); }
   .chat:not(.chat--welcome) .composer-box { max-width: 100%; }
 
-  .chat-welcome { padding: 24px 16px; gap: 18px; }
-  .chat-welcome-hgroup { gap: 12px; }
-  .chat-welcome-logo { width: 56px; height: 56px; }
-  .chat-welcome-title { font-size: 24px; white-space: normal; }
+  /* ── Shrink buttons across the interface ─────────────────────────────── */
+  .icon-btn { width: 28px; height: 28px; }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .send-btn { width: 28px; height: 28px; }
+  .chat-head-btn { width: 28px; height: 28px; }
+  .chat-mobile-menu-btn { width: 34px; height: 34px; }
+  .ms-pill { font-size: 12.5px; }
+
+  /* Welcome: ghost centred, composer pinned to bottom. Fill .chat via flex
+   * (it's a definite-height flex column) instead of height:100% — the percentage
+   * chain can overshoot the visible viewport in some webviews and push the
+   * composer below .chat's overflow:hidden edge, hiding it. */
+  .chat-welcome { flex: 1; min-height: 0; max-width: 100%; padding: 0 16px 0; gap: 0; }
+  .chat-welcome-hgroup { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding-bottom: 24px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  .chat-welcome-logo { width: 96px; height: 96px; margin-top: 0; }
+  .chat-welcome-title { font-size: 24px; white-space: pre-line; }
+  .chat--welcome .composer { padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+
+  /* Composer: start single-line, grow to ~10 lines then scroll. */
+  .composer-editor { max-height: 250px; }
+  .chat--welcome .composer-editor {
+    min-height: 44px;
+    max-height: 260px;
+    padding: 12px 12px 8px;
+    font-size: 16px;
+  }
+  .chat--welcome .composer-ph {
+    padding: 12px 12px 8px;
+    font-size: 16px;
+  }
+  .chat--welcome .composer-bar {
+    padding: 4px 10px 6px 12px;
+  }
 
   /* ── Right-hand panels → full-screen overlays ────────────────────────── */
   .art-panel,
@@ -112,7 +152,7 @@
   .art-resize-handle { display: none; }
 
   /* ── Modals / page overlays: edge-to-edge ────────────────────────────── */
-  .ac-modal-overlay { padding: 0; }
+  .ac-modal-overlay { padding: env(safe-area-inset-top, 0px) 0 0; }
   .ac-modal-content { max-width: 100%; }
   .ac-page {
     max-height: 100vh;

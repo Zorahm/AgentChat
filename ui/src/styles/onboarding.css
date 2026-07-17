@@ -12,6 +12,7 @@
 }
 
 .ob-card {
+  position: relative;
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   backdrop-filter: blur(16px);
   color: var(--ink);
@@ -115,6 +116,18 @@
   border-radius: 8px;
   font-size: 13px;
   margin-bottom: 16px;
+}
+
+/* Advisory, not a failure: the picked shell is missing but nothing broke yet —
+   so it reads as a note, not as the red .ob-error box. */
+.ob-warn {
+  background: var(--accent-soft);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin: 16px 0 0;
 }
 
 .ob-body h3 {
@@ -365,6 +378,24 @@
 
 .ob-dep-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 
+/* Native hosts can't be offered a one-click install, so they get the command to
+   run instead — selectable, because the whole point is copying it out. */
+.ob-native-install { margin: 14px 0 0; }
+.ob-native-cmd {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
 .ob-dep-actions {
   display: flex;
   flex-wrap: wrap;
@@ -438,3 +469,69 @@
   .ob-shell-choice { grid-template-columns: 1fr; }
   .ob-wsl-creds-row { grid-template-columns: 1fr; }
 }
+
+/* ── Mobile connect screen (APK) ───────────────────────────────────── */
+.mc-choices {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.mc-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-2, var(--bg));
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.mc-choice:hover,
+.mc-choice:active { border-color: var(--accent); }
+.mc-choice > svg { color: var(--accent); }
+.mc-choice-title { font-weight: 600; font-size: 15px; }
+.mc-choice-sub { font-size: 12px; color: var(--muted); }
+
+/* Scanning: page background is stripped to transparent (set inline in JS) so
+   the native camera shows through; only this overlay is painted. */
+.mc-scan {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: transparent;
+  z-index: 1000;
+}
+.mc-scan-frame {
+  width: 240px;
+  height: 240px;
+  border: 3px solid #fff;
+  border-radius: 16px;
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.45);
+}
+.mc-scan-hint {
+  color: #fff;
+  font-size: 14px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.mc-scan-cancel { background: rgba(0, 0, 0, 0.6); color: #fff; }
+
+/* Connecting: shown inside the normal card while we verify the backend. */
+.mc-connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px 8px;
+}
+.mc-connecting .ob-spin { color: var(--muted); }
+.mc-connecting-title { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0; }
+.mc-connecting-hint { font-size: 13px; color: var(--muted); margin: 0; }

@@ -1,13 +1,16 @@
-/** Chat input — TipTap editor with @mentions + file attachments. */
+/** Chat input — Composer with @mentions + file attachments. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, X, Plus, Paperclip, Image as ImageIcon } from "@phosphor-icons/react";
+import { ArrowUp, X, Plus, Paperclip, Image as ImageIcon, Camera } from "@phosphor-icons/react";
 import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
 import { mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
+import type { Agent } from "../../types/agent";
+import { BottomSheet } from "../BottomSheet";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { McpMenuSection } from "./MCPChip";
 import { WebSearchMenuSection } from "./WebSearchMenuSection";
 import { ResearchMenuSection } from "./ResearchMenuSection";
@@ -41,6 +44,9 @@ interface ChatInputProps {
   onWebSearchChange?: (enabled: boolean, mode?: string) => void;
   researchEnabled?: boolean;
   onResearchChange?: (enabled: boolean) => void;
+  agents?: Agent[];
+  agentId?: string;
+  onAgentChange?: (agentId: string) => void;
   /** When true (e.g. a file is dragged anywhere over a project), show the drop
    *  overlay even before the cursor reaches the composer. */
   externalDragActive?: boolean;
@@ -75,13 +81,17 @@ export function ChatInput({
   mcpEnabled, onToggleMcpServer,
   webSearchEnabled, webSearchMode, onWebSearchChange,
   researchEnabled, onResearchChange, externalDragActive,
+  agents, agentId, onAgentChange,
 }: ChatInputProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [textLen, setTextLen] = useState(0);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [plusOpen, setPlusOpen] = useState(false);
   const [plusUp, setPlusUp] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
   // Always-current mirror of pendingFiles, so async handlers (handleSend after
   // awaiting uploads, removeFile) read the latest paths instead of a stale closure.
@@ -287,7 +297,7 @@ export function ChatInput({
       }),
     ],
     editorProps: {
-      attributes: { class: "tiptap-editor", "data-placeholder": placeholder ?? t("chat.placeholder") },
+      attributes: { class: "composer-editor", "data-placeholder": placeholder ?? t("chat.placeholder") },
       handlePaste: (view, event) => handlePasteRef.current(view, event),
     },
     onUpdate: ({ editor: ed }) => {
@@ -321,6 +331,16 @@ export function ChatInput({
     setTextLen(fillText.length);
     onFillTextConsumed?.();
   }, [fillText, editor, onFillTextConsumed]);
+
+  /* ── mobile: auto-scroll editor to bottom so new text stays visible ──── */
+
+  useEffect(() => {
+    if (!editor || !isMobile) return;
+    const el = editor.view.dom;
+    if (el.scrollHeight > el.clientHeight) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [textLen, isMobile, editor]);
 
   /* ── focus from the "focus input" keyboard shortcut ─────────── */
 
@@ -393,26 +413,36 @@ export function ChatInput({
     fileInputRef.current?.click();
   }, []);
 
+  const openCamera = useCallback(() => {
+    setPlusOpen(false);
+    cameraInputRef.current?.click();
+  }, []);
+
+  const openPhotos = useCallback(() => {
+    setPlusOpen(false);
+    photoInputRef.current?.click();
+  }, []);
+
   useEffect(() => {
-    if (!plusOpen) return;
+    if (!plusOpen || isMobile) return;
     const onDoc = (e: MouseEvent) => {
       if (plusRef.current && !plusRef.current.contains(e.target as Node)) setPlusOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [plusOpen]);
+  }, [plusOpen, isMobile]);
 
   const handleFileSelected = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files || files.length === 0) return;
       processFiles(files);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      e.target.value = "";
     },
     [processFiles],
   );
 
-  /* ── global file drop (outside tiptap) ───────── */
+  /* ── global file drop (outside composer) ───────── */
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -579,16 +609,69 @@ export function ChatInput({
           </div>
         )}
 
-        <div className="tiptap-wrap">
+        <div className="composer-wrap">
           <EditorContent editor={editor} />
-          {textLen === 0 && <div className="tiptap-ph">{placeholder ?? t("chat.placeholder")}</div>}
+          {textLen === 0 && <div className="composer-ph">{placeholder ?? t("chat.placeholder")}</div>}
         </div>
 
         <div className="composer-bar">
           <div className="composer-left">
             <div className="composer-plus" ref={plusRef}>
               <button className="icon-btn" title={t("chat.add")} onClick={togglePlus}><Plus /></button>
-              {plusOpen && (
+              {plusOpen && isMobile && (
+                <BottomSheet open={plusOpen} onClose={() => setPlusOpen(false)}>
+                  <div className="cpm-sheet cpm-sheet--claude">
+                    <div className="cpm-sheet-head">
+                      <span className="cpm-sheet-title">{t("chat.addToChat")}</span>
+                      <button
+                        className="cpm-sheet-close"
+                        onClick={() => setPlusOpen(false)}
+                        aria-label={t("common.close")}
+                      >
+                        <X />
+                      </button>
+                    </div>
+
+                    <div className="cpm-quick-row">
+                      <button className="cpm-quick" onClick={openCamera}>
+                        <span className="cpm-quick-ic"><Camera weight="duotone" /></span>
+                        <span className="cpm-quick-label">{t("chat.quickCamera")}</span>
+                      </button>
+                      <button className="cpm-quick" onClick={openPhotos}>
+                        <span className="cpm-quick-ic"><ImageIcon weight="duotone" /></span>
+                        <span className="cpm-quick-label">{t("chat.quickPhotos")}</span>
+                      </button>
+                      <button className="cpm-quick" onClick={openFilePicker}>
+                        <span className="cpm-quick-ic"><Paperclip weight="duotone" /></span>
+                        <span className="cpm-quick-label">{t("chat.quickFiles")}</span>
+                      </button>
+                    </div>
+
+                    <div className="cpm-list">
+                      {onResearchChange && (
+                        <ResearchMenuSection
+                          enabled={researchEnabled ?? false}
+                          onChange={onResearchChange}
+                        />
+                      )}
+                      {onWebSearchChange && (
+                        <WebSearchMenuSection
+                          enabled={webSearchEnabled ?? false}
+                          mode={webSearchMode ?? "auto"}
+                          onChange={onWebSearchChange}
+                        />
+                      )}
+                      {onToggleMcpServer && (
+                        <McpMenuSection
+                          enabledIds={mcpEnabled ?? []}
+                          onToggle={onToggleMcpServer}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </BottomSheet>
+              )}
+              {plusOpen && !isMobile && (
                 <div className={`composer-plus-menu${plusUp ? "" : " composer-plus-menu--down"}`}>
                   <button className="cpm-item" onClick={openFilePicker}>
                     <Paperclip /> <span>{t("chat.attachFiles")}</span>
@@ -615,7 +698,21 @@ export function ChatInput({
                 </div>
               )}
             </div>
+            <ModelSelector
+              models={models}
+              model={model}
+              onChange={onModelChange}
+              thinkingEnabled={thinkingEnabled}
+              onThinkingToggle={onThinkingToggle}
+              effortLevel={effortLevel}
+              onEffortChange={onEffortChange}
+              agents={agents}
+              agentId={agentId}
+              onAgentChange={onAgentChange}
+            />
             <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleFileSelected} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFileSelected} />
+            <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleFileSelected} />
 
             {(hasText || pendingFiles.length > 0) && (
               <span className="composer-token-count">
@@ -626,16 +723,6 @@ export function ChatInput({
           </div>
 
           <div className="composer-right">
-            <ModelSelector
-              models={models}
-              model={model}
-              onChange={onModelChange}
-              thinkingEnabled={thinkingEnabled}
-              onThinkingToggle={onThinkingToggle}
-              effortLevel={effortLevel}
-              onEffortChange={onEffortChange}
-            />
-
             {isStreaming ? (
               <button className="send-btn stop-btn" onClick={onStop} title={t("chat.stop")}><X /></button>
             ) : (

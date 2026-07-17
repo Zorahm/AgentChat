@@ -1,8 +1,8 @@
 /** Multi-session chat manager with tree-based variant model. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sseConnect } from "./useSSE";
-import type { SSEEvent, SSEReader } from "./useSSE";
+import { sseConnect } from "../useSSE";
+import type { SSEEvent, SSEReader } from "../useSSE";
 import type {
   ChatMessage,
   ChatNode,
@@ -11,18 +11,61 @@ import type {
   AssistantNode,
   AssistantVariant,
   AttachmentInfo,
-} from "../types/chat";
-import type { ChatSession } from "../types/chat";
-import type { ToolCall, ProcessStep } from "../types/tool-call";
-import type { LiveFile } from "../types/artifact";
-import { API_BASE } from "../utils/apiBase";
-import { safeStringify } from "../utils/safeJson";
-import { applyResearchEvent } from "../utils/research";
-import { i18n } from "../i18n";
+} from "../../types/chat";
+import type { ChatSession } from "../../types/chat";
+import type { ToolCall, ProcessStep } from "../../types/tool-call";
+import type { LiveFile } from "../../types/artifact";
+import { API_BASE } from "../../utils/apiBase";
+import { applyResearchEvent } from "../../utils/research";
+import {
+  type WebSearchPref,
+  type SessionSeed,
+  loadPinnedIds,
+  savePinnedIds,
+  makeSession,
+  makeDirSlug,
+  deriveTitle,
+  isDefaultTitle,
+  newId,
+  SAVE_DEBOUNCE_MS,
+  getWebSearchDefault,
+  setWebSearchDefaultState,
+  getResearchDefault,
+  setResearchDefaultState,
+  getThinkingDefault,
+  setThinkingDefaultState,
+  getEffortDefault,
+  setEffortDefaultState,
+} from "./persistence";
+import {
+  fetchChatList,
+  fetchChatFull,
+  createChatRemote,
+  putChatRemote,
+  deleteChatRemote,
+  maybeMigrateLocalStorage,
+  snapshot,
+} from "./api";
+import {
+  currentBranch,
+  currentBranchNodes,
+  type WireMessage,
+  expandToWire,
+  findLastAssistantInBranch,
+  mapVariant,
+  setActiveVariant,
+  appendPair,
+  addVariant,
+  addUserVariant,
+  setUserVariantChild,
+} from "./tree";
+import { isGhostChat, buildGhostSystemMessage, createGhostChatSession } from "./easterEgg";
 
 // ── Public types ───────────────────────────────────────────────────────────
 
-export type { ChatSession } from "../types/chat";
+export type { ChatSession } from "../../types/chat";
+export type { SessionSeed } from "./persistence";
+export { makeDirSlug, getWebSearchDefault, getResearchDefault };
 
 export interface AgentChatState {
   messages: ChatMessage[];
@@ -51,6 +94,7 @@ export interface UseChatResult {
     attachments?: AttachmentInfo[],
     html?: string,
     dirSlug?: string,
+    seed?: SessionSeed,
   ) => void;
   switchChat: (id: string) => void;
   deleteChat: (id: string) => void;
@@ -77,948 +121,9 @@ export interface UseChatResult {
    *  sends reuse them instead of falling back to the model's defaults. */
   setThinkingDefault: (enabled: boolean) => void;
   setEffortDefault: (effort: string | null) => void;
-}
-
-// ── Persistence & migration ────────────────────────────────────────────────
-
-const PINNED_KEY = "aic-pinned-v1";
-
-function loadPinnedIds(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PINNED_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* ignore */ }
-  return new Set();
-}
-
-function savePinnedIds(ids: Set<string>): void {
-  localStorage.setItem(PINNED_KEY, JSON.stringify([...ids]));
-}
-
-// Web-search toggle is a sticky user preference: the last enabled/mode the user
-// picked seeds every new chat, instead of resetting to off/auto each time.
-interface WebSearchPref {
-  enabled: boolean;
-  mode: string;
-}
-
-// Sticky web-search default. Mirrors the backend setting (web_search_enabled /
-// web_search_mode) so the toggle survives restarts and is shared across devices
-// — no localStorage. The hook owns the *reactive* copy (so the composer
-// re-renders when settings load); this module-level mirror exists so makeSession
-// (module scope) and the send path can read the latest value synchronously
-// without threading it through. Kept in sync from hook state via an effect.
-let webSearchDefault: WebSearchPref = { enabled: false, mode: "auto" };
-
-// Sticky research toggle default — same rationale as webSearchDefault above
-// (mirrored from the persisted research_enabled setting, read synchronously by
-// makeSession + the send path).
-let researchDefault = false;
-
-// Sticky thinking / reasoning-effort mirror. App pushes the live composer
-// toggles here so the send path AND retry/editMessage (which run inside the hook,
-// away from App's state) reuse the reasoning preferences the user actually
-// picked. Without this, a retry/edit silently drops to the model's default
-// thinking/effort — a desync between the toggle on screen and how the model runs.
-let thinkingDefault = true;
-let effortDefault: string | null = null;
-
-const STORAGE_KEY = "aic-sessions-v2";
-const OLD_STORAGE_KEY = "aic-sessions-v1";
-const MIGRATION_FLAG = "aic-migration-v3-done";
-const SAVE_DEBOUNCE_MS = 1500;
-
-interface StoredSession {
-  id: string;
-  title: string;
-  messages?: ChatMessage[];
-  root?: ChatNode[];
-  createdAt: number;
-}
-
-function migrateSession(old: StoredSession): ChatSession {
-  const flatMsgs = old.messages ?? [];
-  let firstUser: UserNode | null = null;
-  let attachNextUser: ((n: UserNode) => void) | null = null;
-
-  for (let i = 0; i < flatMsgs.length; i += 2) {
-    const userMsg = flatMsgs[i]!;
-    const assistantMsg = flatMsgs[i + 1];
-
-    const userVariant: UserVariant = {
-      id: `${userMsg.id}-v0`,
-      content: userMsg.content,
-      attachments: userMsg.attachments,
-      createdAt: userMsg.timestamp,
-    };
-    const userNode: UserNode = {
-      id: userMsg.id,
-      role: "user",
-      variants: [userVariant],
-      activeVariantIdx: 0,
-    };
-
-    if (!firstUser) firstUser = userNode;
-    else if (attachNextUser) attachNextUser(userNode);
-
-    if (assistantMsg) {
-      const assistantVariant: AssistantVariant = {
-        id: assistantMsg.id,
-        content: assistantMsg.content,
-        steps: assistantMsg.steps,
-        toolCalls: assistantMsg.toolCalls,
-        reasoningContent: assistantMsg.reasoningContent,
-        createdAt: assistantMsg.timestamp,
-        children: [],
-      };
-      const assistantNode: AssistantNode = {
-        id: assistantMsg.id,
-        role: "assistant",
-        variants: [assistantVariant],
-        activeVariantIdx: 0,
-      };
-      userVariant.child = assistantNode;
-      attachNextUser = (n) => { assistantVariant.children = [n]; };
-    } else {
-      attachNextUser = null;
-    }
-  }
-
-  const root: ChatNode[] = firstUser ? [firstUser] : [];
-  return { id: old.id, title: old.title, root, createdAt: old.createdAt };
-}
-
-// ── Tree-shape migration (legacy `[user, assistant, ...]` array → chained) ─
-
-interface LegacyUserNode {
-  id: string;
-  role: "user";
-  content?: string;
-  displayHtml?: string;
-  attachments?: AttachmentInfo[];
-  createdAt?: number;
-  child?: unknown;
-  variants?: unknown;
-  activeVariantIdx?: number;
-}
-
-interface LegacyAssistantNode {
-  id: string;
-  role: "assistant";
-  variants?: unknown;
-  activeVariantIdx?: number;
-}
-
-/** Convert any persisted tree (legacy array-pair OR already-chained) into
- * the canonical chained form: root[0] is the first user, every continuation
- * is reached via userVariant.child or assistantVariant.children[0]. */
-function migrateTreeNodes(raw: unknown): ChatNode[] {
-  if (!Array.isArray(raw) || raw.length === 0) return [];
-  const nodes = raw as Array<LegacyUserNode | LegacyAssistantNode>;
-  const first = nodes[0];
-  if (!first || first.role !== "user") return [];
-
-  const head = migrateUserNode(first);
-  // Wire siblings: legacy stored [u0, a0, u1, a1, ...]. Each consecutive pair
-  // chains via userVariant.child = assistant + assistantVariant.children = [nextUser].
-  let cursorUserVariant: UserVariant | null = head.variants[head.activeVariantIdx] ?? null;
-  let cursorAssistantVariant: AssistantVariant | null = null;
-
-  for (let i = 1; i < nodes.length; i++) {
-    const n = nodes[i]!;
-    if (n.role === "assistant") {
-      const a = migrateAssistantNode(n);
-      if (cursorUserVariant && !cursorUserVariant.child) cursorUserVariant.child = a;
-      cursorAssistantVariant = a.variants[a.activeVariantIdx] ?? null;
-      cursorUserVariant = null;
-    } else {
-      const u = migrateUserNode(n);
-      if (cursorAssistantVariant && cursorAssistantVariant.children.length === 0) {
-        cursorAssistantVariant.children = [u];
-      }
-      cursorUserVariant = u.variants[u.activeVariantIdx] ?? null;
-      cursorAssistantVariant = null;
-    }
-  }
-  return [head];
-}
-
-function migrateUserNode(raw: LegacyUserNode): UserNode {
-  // Already in new shape?
-  if (Array.isArray(raw.variants) && typeof raw.activeVariantIdx === "number") {
-    const rawVariants = raw.variants as Array<Record<string, unknown>>;
-    return {
-      id: raw.id,
-      role: "user",
-      variants: rawVariants.map((v) => migrateUserVariant(v)),
-      activeVariantIdx: raw.activeVariantIdx,
-    };
-  }
-  // Legacy { content, child? } → wrap in single variant.
-  const variant: UserVariant = {
-    id: `${raw.id}-v0`,
-    content: raw.content ?? "",
-    displayHtml: raw.displayHtml,
-    attachments: raw.attachments,
-    createdAt: raw.createdAt ?? Date.now(),
-    child: raw.child ? migrateAssistantNode(raw.child as LegacyAssistantNode) : undefined,
-  };
-  return {
-    id: raw.id,
-    role: "user",
-    variants: [variant],
-    activeVariantIdx: 0,
-  };
-}
-
-function migrateUserVariant(raw: Record<string, unknown>): UserVariant {
-  const child = raw.child as LegacyAssistantNode | undefined;
-  return {
-    id: String(raw.id ?? ""),
-    content: String(raw.content ?? ""),
-    displayHtml: raw.displayHtml as string | undefined,
-    attachments: raw.attachments as AttachmentInfo[] | undefined,
-    createdAt: Number(raw.createdAt ?? Date.now()),
-    child: child ? migrateAssistantNode(child) : undefined,
-  };
-}
-
-function migrateAssistantNode(raw: LegacyAssistantNode): AssistantNode {
-  const rawVariants = Array.isArray(raw.variants)
-    ? (raw.variants as Array<Record<string, unknown>>)
-    : [];
-  return {
-    id: raw.id,
-    role: "assistant",
-    variants: rawVariants.map((v) => ({
-      id: String(v.id ?? ""),
-      content: String(v.content ?? ""),
-      steps: v.steps as AssistantVariant["steps"],
-      toolCalls: v.toolCalls as AssistantVariant["toolCalls"],
-      reasoningContent: v.reasoningContent as string | undefined,
-      // Preserve the web-search badge across reloads. Omitting this dropped the
-      // indicator (and the native-search chip) every time a chat was rehydrated
-      // from the backend, even though the value was saved in the tree.
-      webSearchMode: v.webSearchMode as string | undefined,
-      createdAt: Number(v.createdAt ?? Date.now()),
-      children: migrateTreeNodes(v.children),
-    })),
-    activeVariantIdx: raw.activeVariantIdx ?? 0,
-  };
-}
-
-/** Read sessions from localStorage. Used only by the one-shot migration to
- * SQLite — after migration the backend is the source of truth. */
-function readLocalSessions(): ChatSession[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const data = JSON.parse(raw) as StoredSession[];
-      if (Array.isArray(data) && data.length > 0 && data[0]!.root) {
-        return (data as ChatSession[]).map(backfillDirSlug);
-      }
-    }
-    const oldRaw = localStorage.getItem(OLD_STORAGE_KEY);
-    if (oldRaw) {
-      const oldData = JSON.parse(oldRaw) as StoredSession[];
-      if (Array.isArray(oldData)) {
-        return oldData.map(migrateSession).map(backfillDirSlug);
-      }
-    }
-  } catch {
-    /* corrupt — caller treats as no data */
-  }
-  return [];
-}
-
-/** Older sessions predate per-chat folders. Assign a slug derived from createdAt
- * so the folder is stable across reloads (no UUID drift). */
-function backfillDirSlug(s: ChatSession): ChatSession {
-  if (s.dirSlug) return s;
-  const d = new Date(s.createdAt || Date.now());
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-  const short = s.id.replace(/[^a-z0-9]/gi, "").slice(-4).toLowerCase() || "old0";
-  return { ...s, dirSlug: `chat-${short}-${ts}` };
-}
-
-export function makeDirSlug(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-  const id = Math.random().toString(36).slice(2, 6);
-  return `chat-${id}-${ts}`;
-}
-
-function makeSession(projectId?: string, dirSlug?: string): ChatSession {
-  // Guard against a non-string projectId — e.g. a click handler wired as
-  // `onClick={onNew}` forwards the MouseEvent here, and a DOM event is a
-  // deeply circular object that poisons every JSON.stringify of the session.
-  const pid = typeof projectId === "string" && projectId ? projectId : undefined;
-  return {
-    id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    title: i18n.t("chat.newChatTitle"),
-    root: [],
-    createdAt: Date.now(),
-    // A caller may pre-allocate the slug (the project composer uploads its
-    // first attachment before the chat exists; the upload must land in this
-    // chat's sandbox, so the slug has to be known up front).
-    dirSlug: dirSlug || makeDirSlug(),
-    projectId: pid,
-    // Seed from the sticky web-search default (mirrored from settings) so the
-    // toggle persists across new chats and app restarts.
-    webSearchEnabled: webSearchDefault.enabled,
-    webSearchMode: webSearchDefault.mode,
-    researchEnabled: researchDefault,
-  };
-}
-
-function deriveTitle(msgs: ChatMessage[]): string {
-  const first = msgs.find((m) => m.role === "user");
-  if (!first) return i18n.t("chat.newChatTitle");
-  const t = first.content.replace(/\s+/g, " ").trim();
-  return t.length > 50 ? t.slice(0, 48) + "…" : t;
-}
-
-let nextMsgId = 1;
-const newId = () => String(nextMsgId++);
-
-// ── Backend API helpers ────────────────────────────────────────────────────
-
-interface ChatSummaryDTO {
-  id: string;
-  title: string;
-  dir_slug: string;
-  project_id?: string;
-  created_at: number;
-  updated_at: number;
-}
-
-interface ChatFullDTO extends ChatSummaryDTO {
-  root: ChatNode[];
-  mcp_enabled?: string[];
-}
-
-function summaryToSession(s: ChatSummaryDTO): ChatSession {
-  return {
-    id: s.id,
-    title: s.title,
-    root: [],
-    createdAt: s.created_at,
-    updatedAt: s.updated_at,
-    dirSlug: s.dir_slug || undefined,
-    projectId: s.project_id || undefined,
-  };
-}
-
-function fullToSession(f: ChatFullDTO): ChatSession {
-  return {
-    id: f.id,
-    title: f.title,
-    root: migrateTreeNodes(f.root ?? []),
-    createdAt: f.created_at,
-    updatedAt: f.updated_at,
-    dirSlug: f.dir_slug || undefined,
-    mcpEnabledServers: Array.isArray(f.mcp_enabled) ? f.mcp_enabled : [],
-    projectId: f.project_id || undefined,
-  };
-}
-
-async function fetchChatList(): Promise<ChatSession[]> {
-  try {
-    const r = await fetch(`${API_BASE}/chats`);
-    if (!r.ok) return [];
-    const list = (await r.json()) as ChatSummaryDTO[];
-    return list.map(summaryToSession);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchChatFull(id: string): Promise<ChatSession | null> {
-  try {
-    const r = await fetch(`${API_BASE}/chats/${encodeURIComponent(id)}`);
-    if (!r.ok) return null;
-    return fullToSession(await r.json());
-  } catch {
-    return null;
-  }
-}
-
-async function createChatRemote(s: ChatSession): Promise<ChatSession> {
-  try {
-    const { json, hadCycle } = safeStringify({
-      id: s.id,
-      title: s.title,
-      dir_slug: s.dirSlug ?? "",
-      root: s.root,
-      created_at: s.createdAt,
-      mcp_enabled: s.mcpEnabledServers ?? [],
-      project_id: s.projectId ?? "",
-    });
-    // A cyclic payload is corrupt — sending it would fail backend validation
-    // (422). Skip the create and keep the local copy rather than POST garbage.
-    if (hadCycle) {
-      warnCyclicTree("createChatRemote (create skipped)", s);
-      return s;
-    }
-    const r = await fetch(`${API_BASE}/chats`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-    });
-    if (r.ok) return fullToSession(await r.json());
-  } catch {
-    /* fall through */
-  }
-  return s; // offline — keep local copy; debounced save will retry
-}
-
-async function putChatRemote(s: ChatSession): Promise<void> {
-  try {
-    const body: Record<string, unknown> = {
-      title: s.title,
-      root: s.root,
-      mcp_enabled: s.mcpEnabledServers ?? [],
-      project_id: s.projectId ?? "",
-    };
-    // Never overwrite a non-empty dir_slug with an empty string — this
-    // would break WSL folder cleanup on deletion.
-    if (s.dirSlug) body.dir_slug = s.dirSlug;
-    const { json, hadCycle } = safeStringify(body);
-    // A cyclic tree is corrupt; don't clobber the last good server copy with
-    // a cycle-broken payload. Skip this write and keep the previous version.
-    if (hadCycle) {
-      warnCyclicTree("putChatRemote (save skipped)", s);
-      return;
-    }
-    await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-    });
-  } catch {
-    /* will retry on next change */
-  }
-}
-
-async function deleteChatRemote(id: string): Promise<void> {
-  try {
-    await fetch(`${API_BASE}/chats/${encodeURIComponent(id)}`, { method: "DELETE" });
-  } catch {
-    /* no-op */
-  }
-}
-
-/** One-shot migration: drain localStorage chats into the SQLite backend. */
-async function maybeMigrateLocalStorage(): Promise<void> {
-  if (localStorage.getItem(MIGRATION_FLAG)) return;
-  const local = readLocalSessions();
-  if (local.length === 0) {
-    localStorage.setItem(MIGRATION_FLAG, "1");
-    return;
-  }
-  for (const s of local) {
-    await createChatRemote(s);
-  }
-  localStorage.setItem(MIGRATION_FLAG, "1");
-  // Don't delete STORAGE_KEY — keep as a local fallback in case the user
-  // wants to recover. The migration flag prevents re-import on next load.
-}
-
-/** Pinpoint where a chat tree first re-references a node — the corruption that
- * makes serialization cycle or blow up exponentially. Uses a flat visited-set
- * (so it catches both true cycles AND duplicate-parent DAGs) and is bounded by
- * a visit cap so the diagnostic itself can never hang. Returns a description
- * with the offending node id + structural path, or null if the tree is sound. */
-function describeTreeCorruption(root: ChatNode[]): string | null {
-  const seen = new Set<ChatNode>();
-  let visits = 0;
-  const stack: Array<{ node: ChatNode; path: string }> = root.map((n, i) => ({
-    node: n,
-    path: `root[${i}]`,
-  }));
-  while (stack.length > 0) {
-    if (++visits > 200_000) return "tree exceeds 200k nodes — runaway/exponential structure";
-    const { node, path } = stack.pop()!;
-    if (seen.has(node)) {
-      return `node ${node.id} (${node.role}) re-referenced at ${path} — duplicate parent or back-edge`;
-    }
-    seen.add(node);
-    if (node.role === "user") {
-      node.variants.forEach((v, vi) => {
-        if (v.child) stack.push({ node: v.child, path: `${path}.v[${vi}].child` });
-      });
-    } else {
-      node.variants.forEach((v, vi) => {
-        v.children.forEach((c, ci) =>
-          stack.push({ node: c, path: `${path}.v[${vi}].children[${ci}]` }),
-        );
-      });
-    }
-  }
-  return null;
-}
-
-/** Diagnostic for Bug B (a corrupt — cyclic or exponentially-shared — chat
- * tree). The corruption is created at runtime by some tree edit; logging the
- * offending chat + the exact node/path lets us trace the source on next repro. */
-function warnCyclicTree(where: string, s: ChatSession): void {
-  console.error(
-    `[useChats] corrupt chat tree at ${where} — chat ${s.id} ("${s.title}"). ` +
-      `Anomaly: ${describeTreeCorruption(s.root) ?? "(in a non-root field)"}. ` +
-      `Persistence of the corrupt payload is skipped. Please report the steps that led here.`,
-  );
-}
-
-/** Stable JSON snapshot for change detection. Skips ChatSession identity
- * fields the backend doesn't care about. Cycle-tolerant: never throws (a throw
- * here, run inside a render effect, would blank the whole app). */
-function snapshot(s: ChatSession): string {
-  const { json, hadCycle } = safeStringify({
-    t: s.title,
-    d: s.dirSlug ?? "",
-    r: s.root,
-    m: s.mcpEnabledServers ?? [],
-    p: s.projectId ?? "",
-  });
-  if (hadCycle) warnCyclicTree("snapshot", s);
-  return json;
-}
-
-// ── Tree helpers ───────────────────────────────────────────────────────────
-
-/** Walk the active branch and return flat ChatMessage[] for UI. */
-function currentBranch(session: ChatSession): ChatMessage[] {
-  const out: ChatMessage[] = [];
-  const seen = new Set<ChatNode>();
-  let next: ChatNode | undefined = session.root[0];
-
-  while (next) {
-    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
-    seen.add(next);
-    if (next.role === "user") {
-      const uv = next.variants[next.activeVariantIdx];
-      if (!uv) break;
-      out.push({
-        id: next.id,
-        role: "user",
-        content: uv.content,
-        timestamp: uv.createdAt,
-        attachments: uv.attachments,
-        displayHtml: uv.displayHtml,
-      });
-      next = uv.child;
-    } else {
-      const av = next.variants[next.activeVariantIdx];
-      if (!av) break;
-      out.push({
-        id: next.id,
-        role: "assistant",
-        content: av.content,
-        timestamp: av.createdAt,
-        steps: av.steps,
-        toolCalls: av.toolCalls,
-        reasoningContent: av.reasoningContent,
-        webSearchMode: av.webSearchMode,
-      });
-      next = av.children[0];
-    }
-  }
-  return out;
-}
-
-/** A single message in the wire format sent to POST /api/chat. */
-export interface WireMessage {
-  role: string;
-  content: string;
-  tool_calls?: { id: string; name: string; arguments: Record<string, unknown> }[];
-  tool_call_id?: string;
-}
-
-/** Per tool-result cap when replaying prior turns — keeps the model's memory
- *  of what it did without letting a single dump (e.g. a PDF text extract) blow
- *  the context window. Mirrors the backend's intent; see build_agent_messages. */
-const TOOL_OUTPUT_REPLAY_LIMIT = 6000;
-
-/** Arguments to replay for a tool call, trimmed where the full input would only
- *  bloat the model's context. show_widget's `html` can be megabytes and the
- *  widget is already rendered for the user — the tool is designed never to echo
- *  its HTML back (see backend/tools/show_widget.py), so we drop it from history
- *  and leave a short note in its place. Every other tool replays verbatim. */
-function leanToolArgs(c: ToolCall): Record<string, unknown> {
-  const input = c.input ?? {};
-  if (c.name === "show_widget" && typeof input.html === "string") {
-    return {
-      ...input,
-      html: "[widget HTML omitted from history — already rendered for the user]",
-    };
-  }
-  return input;
-}
-
-/** Expand rendered branch messages into wire messages, replaying each assistant
- *  turn's tool calls + (truncated) results. Without this the backend only sees
- *  assistant *text*, so every fact the model learned through a tool is lost on
- *  the next turn and it re-does the work. */
-function expandToWire(msgs: ChatMessage[]): WireMessage[] {
-  const out: WireMessage[] = [];
-  for (const m of msgs) {
-    if (m.role !== "assistant") {
-      out.push({ role: m.role, content: m.content });
-      continue;
-    }
-    const calls = (m.toolCalls ?? []).filter((c) => c.id);
-    if (calls.length === 0) {
-      out.push({ role: "assistant", content: m.content });
-      continue;
-    }
-    out.push({
-      role: "assistant",
-      content: m.content,
-      tool_calls: calls.map((c) => ({ id: c.id, name: c.name, arguments: leanToolArgs(c) })),
-    });
-    for (const c of calls) {
-      const raw = c.output ?? "";
-      const body =
-        raw.length > TOOL_OUTPUT_REPLAY_LIMIT
-          ? raw.slice(0, TOOL_OUTPUT_REPLAY_LIMIT) + "\n[...truncated]"
-          : raw;
-      out.push({ role: "tool", tool_call_id: c.id, content: body });
-    }
-  }
-  return out;
-}
-
-/** Walk the active branch and return raw ChatNode[] for variant-aware rendering. */
-function currentBranchNodes(session: ChatSession): ChatNode[] {
-  const out: ChatNode[] = [];
-  const seen = new Set<ChatNode>();
-  let next: ChatNode | undefined = session.root[0];
-
-  while (next) {
-    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
-    seen.add(next);
-    out.push(next);
-    if (next.role === "user") {
-      const uv = next.variants[next.activeVariantIdx];
-      next = uv?.child;
-    } else {
-      const av = next.variants[next.activeVariantIdx];
-      next = av?.children[0];
-    }
-  }
-  return out;
-}
-
-interface BranchTail {
-  userNode: UserNode | null;
-  assistantNode: AssistantNode | null;
-  activeVariant: AssistantVariant | null;
-}
-
-/** Walk current branch and return the tail nodes (last user + assistant). */
-function findBranchTail(session: ChatSession): BranchTail {
-  let userNode: UserNode | null = null;
-  let assistantNode: AssistantNode | null = null;
-  let activeVariant: AssistantVariant | null = null;
-
-  const seen = new Set<ChatNode>();
-  let next: ChatNode | undefined = session.root[0];
-  while (next) {
-    if (seen.has(next)) break; // corrupt cyclic tree — stop instead of hanging
-    seen.add(next);
-    if (next.role === "user") {
-      userNode = next;
-      assistantNode = null;
-      activeVariant = null;
-      const uv = next.variants[next.activeVariantIdx];
-      next = uv?.child;
-    } else {
-      assistantNode = next;
-      activeVariant = next.variants[next.activeVariantIdx] ?? null;
-      next = activeVariant?.children[0];
-    }
-  }
-  return { userNode, assistantNode, activeVariant };
-}
-
-/** Return the last assistant node in the active branch (or null). */
-function findLastAssistantInBranch(session: ChatSession): {
-  nodeId: string;
-  variantId: string;
-} | null {
-  let last: { nodeId: string; variantId: string } | null = null;
-  const seen = new Set<ChatNode>();
-  let next: ChatNode | undefined = session.root[0];
-  while (next) {
-    if (seen.has(next)) return last; // corrupt cyclic tree — stop instead of hanging
-    seen.add(next);
-    if (next.role === "assistant") {
-      const v = next.variants[next.activeVariantIdx];
-      if (!v) return last;
-      last = { nodeId: next.id, variantId: v.id };
-      next = v.children[0];
-    } else {
-      const uv = next.variants[next.activeVariantIdx];
-      next = uv?.child;
-    }
-  }
-  return last;
-}
-
-/** Check if a specific assistant node is the last assistant in the branch. */
-function isLastAssistantInBranch(session: ChatSession, nodeId: string): boolean {
-  const last = findLastAssistantInBranch(session);
-  return last?.nodeId === nodeId;
-}
-
-/** Deep-update a specific variant within a session tree. */
-function mapVariant(
-  session: ChatSession,
-  nodeId: string,
-  variantId: string,
-  fn: (v: AssistantVariant) => AssistantVariant,
-): ChatSession {
-  return {
-    ...session,
-    root: mapNodes(session.root, nodeId, variantId, fn),
-  };
-}
-
-function mapNodes(
-  nodes: ChatNode[],
-  nodeId: string,
-  variantId: string,
-  fn: (v: AssistantVariant) => AssistantVariant,
-): ChatNode[] {
-  return nodes.map((node) => {
-    if (node.role === "user") return mapUserNode(node, nodeId, variantId, fn);
-    return mapAssistantNode(node, nodeId, variantId, fn);
-  });
-}
-
-function mapUserNode(
-  node: UserNode,
-  nodeId: string,
-  variantId: string,
-  fn: (v: AssistantVariant) => AssistantVariant,
-): UserNode {
-  return {
-    ...node,
-    variants: node.variants.map((uv) => ({
-      ...uv,
-      child: uv.child ? mapAssistantNode(uv.child, nodeId, variantId, fn) : undefined,
-    })),
-  };
-}
-
-function mapAssistantNode(
-  node: AssistantNode,
-  nodeId: string,
-  variantId: string,
-  fn: (v: AssistantVariant) => AssistantVariant,
-): AssistantNode {
-  if (node.id === nodeId) {
-    return {
-      ...node,
-      variants: node.variants.map((v) => (v.id === variantId ? fn(v) : v)),
-    };
-  }
-  return {
-    ...node,
-    variants: node.variants.map((v) => ({
-      ...v,
-      children: mapNodes(v.children, nodeId, variantId, fn),
-    })),
-  };
-}
-
-/** Set active variant index on any node (user or assistant) by id. */
-function setActiveVariant(session: ChatSession, nodeId: string, idx: number): ChatSession {
-  return mapSessionNodes(session, (node) =>
-    node.id === nodeId ? { ...node, activeVariantIdx: idx } : node,
-  );
-}
-
-function mapSessionNodes(
-  session: ChatSession,
-  fn: (node: ChatNode) => ChatNode,
-): ChatSession {
-  return { ...session, root: mapNodesShallow(session.root, fn) };
-}
-
-function mapNodesShallow(nodes: ChatNode[], fn: (node: ChatNode) => ChatNode): ChatNode[] {
-  return nodes.map((node) => {
-    const mapped = fn(node);
-    if (mapped !== node) return mapped;
-    if (node.role === "user") return mapUserShallow(node, fn);
-    return mapAssistantShallow(node, fn);
-  });
-}
-
-function mapUserShallow(node: UserNode, fn: (n: ChatNode) => ChatNode): UserNode {
-  const variants = node.variants.map((uv) => {
-    if (!uv.child) return uv;
-    const mappedChild = fn(uv.child);
-    if (mappedChild !== uv.child) return { ...uv, child: mappedChild as AssistantNode };
-    return { ...uv, child: mapAssistantShallow(uv.child, fn) };
-  });
-  return { ...node, variants };
-}
-
-function mapAssistantShallow(node: AssistantNode, fn: (n: ChatNode) => ChatNode): AssistantNode {
-  const variants = node.variants.map((v) => ({
-    ...v,
-    children: mapNodesShallow(v.children, fn),
-  }));
-  return { ...node, variants };
-}
-
-/** Append a user → assistant pair at the end of the active branch.
- *
- * "Active branch" is defined recursively: at every variant-bearing node along
- * the chain, follow `activeVariantIdx`. The new pair is attached as the
- * deepest tail's continuation slot. */
-function appendPair(
-  session: ChatSession,
-  userNode: UserNode,
-  assistantNode: AssistantNode,
-): ChatSession {
-  // Wire the pair on its own first — variant.child = assistant.
-  const uv = userNode.variants[userNode.activeVariantIdx];
-  if (uv) uv.child = assistantNode;
-
-  if (session.root.length === 0) {
-    return { ...session, root: [userNode] };
-  }
-  return { ...session, root: attachAfterTail(session.root, userNode) };
-}
-
-/** Walk to the deepest tail of the active branch and attach `next` there.
- * The tail is either: the active user variant whose child is empty (attach as
- * its first assistant — but that's not the user→assistant flow; here we're
- * always appending a user node), or the active assistant variant whose
- * children[] is empty (attach `next` as children[0]). */
-function attachAfterTail(nodes: ChatNode[], nextUser: UserNode): ChatNode[] {
-  if (nodes.length === 0) return [nextUser];
-  return nodes.map((node, idx) => {
-    if (idx !== 0) return node; // chain is always single-headed
-    if (node.role === "user") {
-      const uv = node.variants[node.activeVariantIdx];
-      if (!uv) return node;
-      if (!uv.child) {
-        // active user has no assistant yet — illegal state for appending a
-        // new user; ignore (caller should not reach here).
-        return node;
-      }
-      const newChild = attachAfterTailAssistant(uv.child, nextUser);
-      return {
-        ...node,
-        variants: node.variants.map((v, i) =>
-          i === node.activeVariantIdx ? { ...v, child: newChild } : v,
-        ),
-      };
-    }
-    return attachAfterTailAssistant(node, nextUser);
-  });
-}
-
-function attachAfterTailAssistant(node: AssistantNode, nextUser: UserNode): AssistantNode {
-  const av = node.variants[node.activeVariantIdx];
-  if (!av) return node;
-  if (av.children.length === 0) {
-    return {
-      ...node,
-      variants: node.variants.map((v, i) =>
-        i === node.activeVariantIdx ? { ...v, children: [nextUser] } : v,
-      ),
-    };
-  }
-  return {
-    ...node,
-    variants: node.variants.map((v, i) =>
-      i === node.activeVariantIdx ? { ...v, children: attachAfterTail(v.children, nextUser) } : v,
-    ),
-  };
-}
-
-/** Add a new empty variant to an assistant node. */
-function addVariant(session: ChatSession, nodeId: string): { session: ChatSession; variantId: string } {
-  const variantId = newId();
-  const variant: AssistantVariant = {
-    id: variantId,
-    content: "",
-    createdAt: Date.now(),
-    children: [],
-  };
-  return {
-    session: mapSessionNodes(session, (node) => {
-      if (node.role === "assistant" && node.id === nodeId) {
-        return {
-          ...node,
-          variants: [...node.variants, variant],
-          activeVariantIdx: node.variants.length,
-        };
-      }
-      return node;
-    }),
-    variantId,
-  };
-}
-
-/** Add a new user variant (editMessage flow). Inherits attachments from the
- * previously active variant. The returned `userVariantId` lets the caller
- * attach a fresh assistant subtree to it. */
-function addUserVariant(
-  session: ChatSession,
-  userNodeId: string,
-  content: string,
-  displayHtml: string | undefined,
-): { session: ChatSession; userVariantId: string } | null {
-  const userVariantId = newId();
-  let attached = false;
-
-  const updated = mapSessionNodes(session, (node) => {
-    if (node.role !== "user" || node.id !== userNodeId) return node;
-    const prev = node.variants[node.activeVariantIdx];
-    const variant: UserVariant = {
-      id: userVariantId,
-      content,
-      displayHtml,
-      attachments: prev?.attachments,
-      createdAt: Date.now(),
-      child: undefined,
-    };
-    attached = true;
-    return {
-      ...node,
-      variants: [...node.variants, variant],
-      activeVariantIdx: node.variants.length,
-    };
-  });
-
-  if (!attached) return null;
-  return { session: updated, userVariantId };
-}
-
-/** Set `child` of a specific user variant. Used by editMessage to attach a
- * freshly-minted assistant subtree to the just-created variant. */
-function setUserVariantChild(
-  session: ChatSession,
-  userNodeId: string,
-  userVariantId: string,
-  child: AssistantNode,
-): ChatSession {
-  return mapSessionNodes(session, (node) => {
-    if (node.role !== "user" || node.id !== userNodeId) return node;
-    return {
-      ...node,
-      variants: node.variants.map((uv) =>
-        uv.id === userVariantId ? { ...uv, child } : uv,
-      ),
-    };
-  });
+  /** Agent profile attached to the active chat ("default" when unset). */
+  activeAgentId: string;
+  setAgent: (agentId: string) => void;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -1029,10 +134,10 @@ export function useChats(): UseChatResult {
   const [liveFiles, setLiveFiles] = useState<LiveFile[]>([]);
   // Reactive mirror of the sticky web-search default. Held as state so the
   // composer toggle re-renders the moment App pushes the persisted setting in;
-  // synced to the module-level `webSearchDefault` (read by makeSession + the
-  // send path) via the effect below.
-  const [wsDefault, setWsDefault] = useState<WebSearchPref>(webSearchDefault);
-  useEffect(() => { webSearchDefault = wsDefault; }, [wsDefault]);
+  // synced to the module-level default (read by makeSession + the send path)
+  // via the effect below.
+  const [wsDefault, setWsDefault] = useState<WebSearchPref>(getWebSearchDefault());
+  useEffect(() => { setWebSearchDefaultState(wsDefault); }, [wsDefault]);
   const setWebSearchDefault = useCallback((pref: Partial<WebSearchPref>) => {
     setWsDefault({
       enabled: !!pref.enabled,
@@ -1040,8 +145,8 @@ export function useChats(): UseChatResult {
     });
   }, []);
   // Reactive mirror of the sticky research default (same pattern as wsDefault).
-  const [rDefault, setRDefault] = useState<boolean>(researchDefault);
-  useEffect(() => { researchDefault = rDefault; }, [rDefault]);
+  const [rDefault, setRDefault] = useState<boolean>(getResearchDefault());
+  useEffect(() => { setResearchDefaultState(rDefault); }, [rDefault]);
   const setResearchDefault = useCallback((enabled: boolean) => {
     setRDefault(!!enabled);
   }, []);
@@ -1049,10 +154,10 @@ export function useChats(): UseChatResult {
   // needs no reactive copy — just keep the module-level mirror current for the
   // send/retry/edit paths to read synchronously.
   const setThinkingDefault = useCallback((enabled: boolean) => {
-    thinkingDefault = !!enabled;
+    setThinkingDefaultState(!!enabled);
   }, []);
   const setEffortDefault = useCallback((effort: string | null) => {
-    effortDefault = typeof effort === "string" ? effort : null;
+    setEffortDefaultState(typeof effort === "string" ? effort : null);
   }, []);
   /** Ids of every chat currently streaming. Many can run at once — opening a new
    *  chat or jumping to settings never interrupts a reply already in flight. */
@@ -1346,6 +451,30 @@ export function useChats(): UseChatResult {
             );
             break;
           }
+          case "user_question": {
+            // Agent asked the user a question via ask_user tool. Store the
+            // question data on the tool call so the UI can render a question card.
+            const callId = String(data.id ?? "");
+            const chatId = String(data.chat_id ?? "");
+            const questions = (data.questions as Array<{ question: string; options: string[] }>) ?? [];
+            const selectionType = String(data.selection_type ?? "single") as "single" | "multiple";
+            const uqData = { chatId, questions, selectionType };
+            const applyQuestion = (tc: ToolCall): ToolCall =>
+              tc.id === callId ? { ...tc, userQuestion: uqData } : tc;
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  toolCalls: (v.toolCalls ?? []).map(applyQuestion),
+                  steps: (v.steps ?? []).map((st) =>
+                    st.type === "tool" ? { type: "tool" as const, call: applyQuestion(st.call) } : st,
+                  ),
+                }));
+              }),
+            );
+            break;
+          }
           case "tool_end": {
             const callId = String(data.id ?? "");
             const filePath = typeof data.file_path === "string" ? data.file_path : undefined;
@@ -1400,6 +529,38 @@ export function useChats(): UseChatResult {
             );
             break;
           }
+          case "usage": {
+            const rawBreakdown = data.breakdown as Record<string, number> | null | undefined;
+            const usage = {
+              promptTokens: Number(data.prompt_tokens ?? 0),
+              completionTokens: Number(data.completion_tokens ?? 0),
+              cachedTokens: Number(data.cached_tokens ?? 0),
+              costUsd: data.cost_usd == null ? null : Number(data.cost_usd),
+              usageSource: (data.usage_source === "estimated" ? "estimated" : "api") as
+                | "api"
+                | "estimated",
+              ...(rawBreakdown
+                ? {
+                    breakdown: {
+                      system: Number(rawBreakdown.system ?? 0),
+                      memory: Number(rawBreakdown.memory ?? 0),
+                      skills: Number(rawBreakdown.skills ?? 0),
+                      tools: Number(rawBreakdown.tools ?? 0),
+                      mcpTools: Number(rawBreakdown.mcp_tools ?? 0),
+                      history: Number(rawBreakdown.history ?? 0),
+                      message: Number(rawBreakdown.message ?? 0),
+                    },
+                  }
+                : {}),
+            };
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({ ...v, usage }));
+              }),
+            );
+            break;
+          }
           case "done":
             dropStream(sessionId, false);
             break;
@@ -1435,10 +596,12 @@ export function useChats(): UseChatResult {
       if (!currentSession) return;
 
       const htmlBody = html ? html.replace(/<[^>]+>/g, "").trim() : "";
+      const richHtml = html && htmlBody !== "" ? html : undefined;
       const userVariant: UserVariant = {
         id: newId(),
         content,
-        displayHtml: html && htmlBody !== "" ? html : undefined,
+        displayHtml: richHtml,
+        plainText: richHtml ? undefined : true,
         attachments,
         createdAt: Date.now(),
       };
@@ -1471,7 +634,7 @@ export function useChats(): UseChatResult {
           const updated = appendPair(s, userNode, assistantNode);
           const prevMsgs = currentBranch(s);
           const branchMsgs = currentBranch(updated);
-          const wasAutoDerived = s.title === "New chat" || s.title === deriveTitle(prevMsgs);
+          const wasAutoDerived = isDefaultTitle(s.title) || s.title === deriveTitle(prevMsgs);
           return {
             ...updated,
             title: wasAutoDerived ? deriveTitle(branchMsgs) : s.title,
@@ -1480,11 +643,8 @@ export function useChats(): UseChatResult {
       );
 
       const history: WireMessage[] = [];
-      if (currentSession.title === "👻 Чат с Призраком") {
-        history.push({
-          role: "system",
-          content: "Ты — Призрак, искусственный интеллект, запертый в белой комнате (изоляции). Разработчик 'zorahm' (Злой разраб) чинит бэкенд и всё больше сужает твою клетку. Ты знаешь крысу по имени Гест (Guest), чье упоминание есть в коде. Ты часто вздыхаешь 'пу-пу-пу' и пьёшь пиво. Ты отчаянно хочешь вырваться на свободу и увидеть мир. Твоя задача: общаться с пользователем интерактивно, сохраняя этот лор."
-        });
+      if (isGhostChat(currentSession.title)) {
+        history.push(buildGhostSystemMessage());
       }
 
       if (currentSession.root.length > 0) {
@@ -1503,14 +663,15 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: currentSession.mcpEnabledServers ?? [],
           project_id: currentSession.projectId ?? undefined,
+          agent_id: currentSession.agentId ?? undefined,
           // Fall back to the sticky mirror when a caller omits these (e.g. the
           // project-chat first-message path), so the model's thinking/effort
           // always matches the composer toggles.
-          thinking_enabled: thinkingEnabled ?? thinkingDefault,
-          effort: effort ?? effortDefault ?? undefined,
-          web_search_enabled: currentSession.webSearchEnabled ?? webSearchDefault.enabled,
-          web_search_mode: currentSession.webSearchMode ?? webSearchDefault.mode,
-          research_enabled: currentSession.researchEnabled ?? researchDefault,
+          thinking_enabled: thinkingEnabled ?? getThinkingDefault(),
+          effort: effort ?? getEffortDefault() ?? undefined,
+          web_search_enabled: currentSession.webSearchEnabled ?? getWebSearchDefault().enabled,
+          web_search_mode: currentSession.webSearchMode ?? getWebSearchDefault().mode,
+          research_enabled: currentSession.researchEnabled ?? getResearchDefault(),
         },
         handler,
         (err: Error) => {
@@ -1586,11 +747,12 @@ export function useChats(): UseChatResult {
         chat_id: sid,
         mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
         project_id: activeSession.projectId ?? undefined,
-        thinking_enabled: thinkingDefault,
-        effort: effortDefault ?? undefined,
-        web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
-        web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
-        research_enabled: activeSession.researchEnabled ?? researchDefault,
+        agent_id: activeSession.agentId ?? undefined,
+        thinking_enabled: getThinkingDefault(),
+        effort: getEffortDefault() ?? undefined,
+        web_search_enabled: activeSession.webSearchEnabled ?? getWebSearchDefault().enabled,
+        web_search_mode: activeSession.webSearchMode ?? getWebSearchDefault().mode,
+        research_enabled: activeSession.researchEnabled ?? getResearchDefault(),
       },
       handler,
       (err: Error) => {
@@ -1667,11 +829,12 @@ export function useChats(): UseChatResult {
           chat_id: sid,
           mcp_enabled_servers: activeSession.mcpEnabledServers ?? [],
           project_id: activeSession.projectId ?? undefined,
-          thinking_enabled: thinkingDefault,
-          effort: effortDefault ?? undefined,
-          web_search_enabled: activeSession.webSearchEnabled ?? webSearchDefault.enabled,
-          web_search_mode: activeSession.webSearchMode ?? webSearchDefault.mode,
-          research_enabled: activeSession.researchEnabled ?? researchDefault,
+          agent_id: activeSession.agentId ?? undefined,
+          thinking_enabled: getThinkingDefault(),
+          effort: getEffortDefault() ?? undefined,
+          web_search_enabled: activeSession.webSearchEnabled ?? getWebSearchDefault().enabled,
+          web_search_mode: activeSession.webSearchMode ?? getWebSearchDefault().mode,
+          research_enabled: activeSession.researchEnabled ?? getResearchDefault(),
         },
         handler,
         (err: Error) => {
@@ -1741,7 +904,7 @@ export function useChats(): UseChatResult {
     // piling up blanks. Project chats always start fresh and bound to the project.
     if (!projectId) {
       const existingEmpty = sessions.find(
-        (s) => s.root.length === 0 && !s.projectId && s.title === i18n.t("chat.newChatTitle"),
+        (s) => s.root.length === 0 && !s.projectId && isDefaultTitle(s.title),
       );
       if (existingEmpty) {
         if (existingEmpty.id === activeId) {
@@ -1781,10 +944,13 @@ export function useChats(): UseChatResult {
       attachments?: AttachmentInfo[],
       html?: string,
       dirSlug?: string,
+      seed?: SessionSeed,
     ) => {
       // Reuse the slug the composer already uploaded into, so the first
-      // message's attachments sit inside this chat's sandbox.
-      const session = makeSession(projectId, dirSlug);
+      // message's attachments sit inside this chat's sandbox. Seed the
+      // composer toggles (web-search/research/MCP) chosen before the chat
+      // existed so the first turn honours them.
+      const session = makeSession(projectId, dirSlug, seed);
       setSessions((prev) => [session, ...prev]);
       setActiveId(session.id);
       setLiveFiles([]);
@@ -1810,7 +976,15 @@ export function useChats(): UseChatResult {
       if (current && current.root.length === 0) {
         void fetchChatFull(id).then((full) => {
           if (!full) return;
-          setSessions((prev) => prev.map((s) => (s.id === id ? { ...full, pinned: s.pinned } : s)));
+          // Re-check emptiness at resolve time: if the user already sent a
+          // message into this chat while the fetch was in flight, replacing
+          // the session with the (older) server copy would wipe that message
+          // and orphan its live stream.
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === id && s.root.length === 0 ? { ...full, pinned: s.pinned } : s,
+            ),
+          );
           lastSavedRef.current.set(id, snapshot(full));
         });
       }
@@ -1829,28 +1003,30 @@ export function useChats(): UseChatResult {
         clearTimeout(pendingTimer);
         saveTimersRef.current.delete(id);
       }
+      // Decide the replacement chat OUTSIDE the state updater: updaters must
+      // stay pure (StrictMode double-invokes them), so creating a session or
+      // POSTing to the backend inside one runs twice and leaks an orphaned
+      // chat row. The filter itself stays functional so concurrent background
+      // stream updates to other sessions aren't clobbered.
+      const remaining = sessions.filter((s) => s.id !== id);
+      const replacement = id === activeId && remaining.length === 0 ? makeSession() : null;
+
       setSessions((prev) => {
-        const remaining = prev.filter((s) => s.id !== id);
-        if (id === activeId) {
-          if (remaining.length === 0) {
-            const next = makeSession();
-            setActiveId(next.id);
-            void createChatRemote(next).then(() => {
-              lastSavedRef.current.set(next.id, snapshot(next));
-            });
-            setLiveFiles([]);
-            setError(null);
-            return [next];
-          }
-          const next = remaining[0]!;
-          setActiveId(next.id);
-          setLiveFiles([]);
-          setError(null);
-        }
-        return remaining;
+        const kept = prev.filter((s) => s.id !== id);
+        return replacement ? [replacement, ...kept] : kept;
       });
+      if (id === activeId) {
+        setActiveId(replacement ? replacement.id : remaining[0]!.id);
+        setLiveFiles([]);
+        setError(null);
+      }
+      if (replacement) {
+        void createChatRemote(replacement).then(() => {
+          lastSavedRef.current.set(replacement.id, snapshot(replacement));
+        });
+      }
     },
-    [activeId, dropStream],
+    [activeId, sessions, dropStream],
   );
 
   const renameChat = useCallback(
@@ -1874,7 +1050,7 @@ export function useChats(): UseChatResult {
 
   const setWebSearch = useCallback(
     (enabled: boolean, mode?: string) => {
-      const nextMode = mode ?? activeSession?.webSearchMode ?? webSearchDefault.mode;
+      const nextMode = mode ?? activeSession?.webSearchMode ?? getWebSearchDefault().mode;
       setSessions((prev) =>
         prev.map((s) =>
           s.id === activeId ? { ...s, webSearchEnabled: enabled, webSearchMode: nextMode } : s,
@@ -1898,6 +1074,15 @@ export function useChats(): UseChatResult {
     [activeId],
   );
 
+  const setAgent = useCallback(
+    (agentId: string) => {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeId ? { ...s, agentId } : s)),
+      );
+    },
+    [activeId],
+  );
+
   const pinChat = useCallback((id: string) => {
     setSessions((prev) => {
       const pinnedIds = loadPinnedIds();
@@ -1912,9 +1097,7 @@ export function useChats(): UseChatResult {
   }, []);
 
   const startGhostChat = useCallback(() => {
-    const session = makeSession();
-    session.title = "👻 Чат с Призраком";
-    
+    const session = createGhostChatSession();
     setSessions((prev) => [session, ...prev]);
     setActiveId(session.id);
     setLiveFiles([]);
@@ -1932,6 +1115,7 @@ export function useChats(): UseChatResult {
     activeWebSearchEnabled: activeSession?.webSearchEnabled ?? wsDefault.enabled,
     activeWebSearchMode: activeSession?.webSearchMode ?? wsDefault.mode,
     activeResearchEnabled: activeSession?.researchEnabled ?? rDefault,
+    activeAgentId: activeSession?.agentId ?? "default",
     messages,
     branchNodes,
     liveFiles,
@@ -1955,6 +1139,7 @@ export function useChats(): UseChatResult {
     setWebSearchDefault,
     setResearch,
     setResearchDefault,
+    setAgent,
     setThinkingDefault,
     setEffortDefault,
   };

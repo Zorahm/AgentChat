@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChats, type AgentChatState } from "./hooks/useChats";
+import { useAgents } from "./hooks/useAgents";
 import { Sidebar } from "./components/Sidebar";
 import { useAvatar } from "./hooks/useAvatar";
 import { useAppUpdate } from "./hooks/useAppUpdate";
@@ -11,16 +12,19 @@ import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
 import { ResearchPanel } from "./components/Chat/ResearchPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
-import { AllChatsPage } from "./components/AllChatsPage";
-import { FilesGalleryPage } from "./components/FilesGalleryPage";
+import { LibraryPage } from "./components/LibraryPage";
 import { ProjectsView } from "./components/Projects/ProjectsView";
+import { UsageDashboardPage } from "./components/Usage/UsageDashboardPage";
 import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
+import { MobileConnect } from "./components/Mobile/MobileConnect";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
-import { API_BASE } from "./utils/apiBase";
+import { API_BASE, getBackendOverride, onBackendDisconnected, resetBackendDisconnected } from "./utils/apiBase";
+import { isAndroidTauri } from "./utils/tauri";
 import { setNotifySoundEnabled, setNotifySound, playNotificationSound } from "./utils/notify";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
+import { useViewportHeight } from "./hooks/useViewportHeight";
 import { resolveBindings } from "./shortcuts/registry";
 import { i18n } from "./i18n";
 import { useTranslation } from "react-i18next";
@@ -31,11 +35,15 @@ const PANEL_DEFAULT = 600;
 
 export function App() {
   const { t } = useTranslation();
+  // Keep --app-height pinned to the real visible viewport (mobile dvh/100vh can
+  // overshoot and clip the bottom-pinned composer).
+  useViewportHeight();
   const chats = useChats();
+  const agents = useAgents();
   // Stable identity (useCallback([]) in the hook) — safe to use inside
   // fetchSettings without re-triggering the settings-fetch effect each render.
   const { setWebSearchDefault, setResearchDefault, setThinkingDefault, setEffortDefault } = chats;
-  const [view, setView] = useState<"chat" | "skills" | "settings" | "allchats" | "projects" | "files">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "settings" | "library" | "projects" | "usage">("chat");
   const [settingsTab, setSettingsTab] = useState<NavTab>("profile");
   const [model, setModel] = useState("openai/gpt-4o");
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -57,7 +65,16 @@ export function App() {
   const [wslWarning, setWslWarning] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [shortcuts, setShortcuts] = useState<Record<string, string>>({});
+  const [backendDisconnected, setBackendDisconnected] = useState(false);
   const panelWidthRef = useRef(panelWidth);
+
+  // Remote/APK client: offer a reconnect prompt when the configured backend
+  // stops answering (expired token, network loss, server restarted, …)
+  // instead of letting every API call fail silently in the background.
+  useEffect(() => {
+    if (!getBackendOverride()) return;
+    return onBackendDisconnected(() => setBackendDisconnected(true));
+  }, []);
 
   const panelOpen = generalPanelOpen || openFilePath !== null || openResearchId !== null;
 
@@ -259,6 +276,15 @@ export function App() {
     [chats, updateSettings],
   );
 
+  // Agent selection is per-chat only (unlike web search/research) — no
+  // global sticky default to persist, just update the active session.
+  const handleAgentChange = useCallback(
+    (agentId: string) => {
+      chats.setAgent(agentId);
+    },
+    [chats],
+  );
+
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   // Chime when ANY chat's reply finishes (the streaming set shrinks) — including
@@ -307,7 +333,7 @@ export function App() {
     }
   }, [language]);
 
-  const handleNavigate = (v: "chat" | "skills" | "settings" | "allchats" | "projects" | "files") => {
+  const handleNavigate = (v: "chat" | "skills" | "settings" | "library" | "projects" | "usage") => {
     setMobileNavOpen(false);
     if (v === "skills") {
       setSettingsTab("skills");
@@ -341,7 +367,7 @@ export function App() {
         setTimeout(fetchSettings, 300);
         return;
       }
-      if (v === "settings" || v === "skills" || v === "chat" || v === "allchats" || v === "projects" || v === "files") handleNavigate(v);
+      if (v === "settings" || v === "skills" || v === "chat" || v === "library" || v === "projects" || v === "usage") handleNavigate(v);
     };
     window.addEventListener("navigate", handler);
     return () => window.removeEventListener("navigate", handler);
@@ -478,12 +504,25 @@ export function App() {
   const gridCols = isMobile ? "1fr" : `${sideW}px 1fr ${rightW}px`;
   const effectiveCollapsed = isMobile ? false : sidebarCollapsed;
 
+  // Android APK first run: no local backend exists on the phone, so gate the
+  // whole app behind a "connect to a remote backend" screen until a backend URL
+  // is configured. Placed after all hooks above to satisfy the rules of hooks.
+  if (isAndroidTauri() && !getBackendOverride()) {
+    return <MobileConnect />;
+  }
+
   return (
     <SettingsContext.Provider value={settingsCtx}>
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <GlobalDropZone enabled={view === "chat"} />
       {onboardingDone === false && (
         <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
+      )}
+      {backendDisconnected && (
+        <MobileConnect
+          variant="reconnect"
+          onDismiss={() => { resetBackendDisconnected(); setBackendDisconnected(false); }}
+        />
       )}
       <div
         className={`app-body${effectiveCollapsed ? " sidebar-collapsed" : ""}`}
@@ -514,7 +553,9 @@ export function App() {
           update={appUpdate}
         />
 
-        {view === "projects" ? (
+        {view === "usage" ? (
+          <UsageDashboardPage onGotoChat={gotoChatFromGallery} />
+        ) : view === "projects" ? (
           <ProjectsView
             sessions={chats.sessions}
             models={visibleModels}
@@ -526,8 +567,8 @@ export function App() {
             onEffortChange={setEffortLevel}
             onClose={() => handleNavigate("chat")}
             onOpenChat={(id) => { chats.switchChat(id); handleNavigate("chat"); }}
-            onStartChat={(pid, text, atts, html, dirSlug) => {
-              chats.startProjectChat(pid, text, model, atts, html, dirSlug);
+            onStartChat={(pid, text, atts, html, dirSlug, seed) => {
+              chats.startProjectChat(pid, text, model, atts, html, dirSlug, seed);
               handleNavigate("chat");
             }}
             onDeleteChat={chats.deleteChat}
@@ -560,6 +601,9 @@ export function App() {
             onWebSearchChange={handleWebSearchChange}
             researchEnabled={chats.activeResearchEnabled}
             onResearchChange={handleResearchChange}
+            agents={agents.agents}
+            agentId={chats.activeAgentId}
+            onAgentChange={handleAgentChange}
           />
         )}
         {view === "chat" && generalPanelOpen && !openFilePath && !openResearchId && (
@@ -592,31 +636,19 @@ export function App() {
         )}
       </div>
 
-      {view === "allchats" && (
-        <div className="ac-modal-overlay" onClick={() => handleNavigate("chat")}>
-          <div className="ac-modal-content" onClick={e => e.stopPropagation()}>
-            <AllChatsPage
-              sessions={chats.sessions}
-              activeId={chats.activeId}
-              onSwitch={chats.switchChat}
-              onDelete={chats.deleteChat}
-              onRename={chats.renameChat}
-              onPin={chats.pinChat}
-              onBack={() => handleNavigate("chat")}
-            />
-          </div>
-        </div>
-      )}
-      {view === "files" && (
-        <div className="ac-modal-overlay" onClick={() => handleNavigate("chat")}>
-          <div className="ac-modal-content" onClick={e => e.stopPropagation()}>
-            <FilesGalleryPage
-              sessions={chats.sessions}
-              onOpenFile={openFileFromGallery}
-              onGotoChat={gotoChatFromGallery}
-              onBack={() => handleNavigate("chat")}
-            />
-          </div>
+      {view === "library" && (
+        <div className="page-overlay">
+          <LibraryPage
+            sessions={chats.sessions}
+            activeId={chats.activeId}
+            onSwitch={chats.switchChat}
+            onDelete={chats.deleteChat}
+            onRename={chats.renameChat}
+            onPin={chats.pinChat}
+            onOpenFile={openFileFromGallery}
+            onGotoChat={gotoChatFromGallery}
+            onBack={() => handleNavigate("chat")}
+          />
         </div>
       )}
       {view === "settings" && (

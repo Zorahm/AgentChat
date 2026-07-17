@@ -7,7 +7,7 @@
  * upstream in App, which updates `openFilePath`; here we stay a pure view. */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code } from "@phosphor-icons/react";
+import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code, Sparkle } from "@phosphor-icons/react";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
@@ -158,6 +158,16 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   const [dropOpen, setDropOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
+  // ── Install-skill action (only when the opened file is a SKILL.md) ──────
+  const [installState, setInstallState] = useState<"idle" | "installing" | "done" | "error">("idle");
+  const [installErr, setInstallErr] = useState("");
+
+  // Reset the install affordance whenever a different file is opened.
+  useEffect(() => {
+    setInstallState("idle");
+    setInstallErr("");
+  }, [openFilePath]);
+
   useEffect(() => {
     if (!dropOpen) return;
     const handler = (e: MouseEvent) => {
@@ -179,6 +189,38 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
   const fileName = basename(filePath);
   const ext = filePath.split(".").pop()?.toUpperCase() ?? "";
   const extLower = ext.toLowerCase();
+  const isSkillMd = fileName.toLowerCase() === "skill.md";
+  const isSkillArchive = extLower === "skill" || extLower === "zip";
+  const canInstall = isSkillMd || isSkillArchive;
+
+  const installSkill = async () => {
+    if (installState === "installing" || installState === "done") return;
+    setInstallState("installing");
+    setInstallErr("");
+    try {
+      const res = await fetch(`${API_BASE}/skills/install-local`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      setInstallState("done");
+      // Let the Skills tab / manifest refresh if it's listening.
+      window.dispatchEvent(new CustomEvent("skills-changed"));
+    } catch (e) {
+      setInstallState("error");
+      setInstallErr(e instanceof Error ? e.message : "");
+    }
+  };
+
+  const installLabel =
+    installState === "installing" ? t("skills.installing")
+    : installState === "done" ? t("skills.skillInstalled")
+    : installState === "error" ? t("skills.installFailed")
+    : t("skills.installSkill");
 
   const canRender = isRenderable(extLower);
   const canCode = isCodeViewable(extLower);
@@ -271,6 +313,17 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
         </div>
 
         <div className="ap-head-right">
+          {canInstall && (
+            <button
+              className={`ap-skill-btn${installState === "done" ? " ap-skill-btn--done" : ""}${installState === "error" ? " ap-skill-btn--error" : ""}`}
+              onClick={installSkill}
+              disabled={installState === "installing" || installState === "done"}
+              title={installState === "error" ? installErr : t("skills.installSkillTitle")}
+            >
+              <Sparkle size={14} weight={installState === "done" ? "fill" : "regular"} />
+              <span>{installLabel}</span>
+            </button>
+          )}
           <div className="ap-drop-wrap" ref={dropRef}>
             <div className="ap-split-btn">
               <button

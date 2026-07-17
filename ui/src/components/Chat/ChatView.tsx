@@ -6,9 +6,54 @@ import { FolderOpen, List } from "@phosphor-icons/react";
 import type { AgentChatState } from "../../hooks/useChats";
 import { ChatInput } from "./ChatInput";
 import { MessageBubble } from "./MessageBubble";
+import { UserQuestionCard } from "../ToolCalls/UserQuestionCard";
 import type { ChatMessage, AttachmentInfo, ChatNode } from "../../types/chat";
+import type { UserQuestionData } from "../../types/tool-call";
+import type { Agent } from "../../types/agent";
 import { API_BASE } from "../../utils/apiBase";
 import { pickGreeting } from "../../utils/greetings";
+
+/** Derive the pending ask_user prompt from the last assistant turn, if any.
+ *
+ * Reads the questions straight off the ask_user tool call's input so it works
+ * even if the separate user_question SSE event was missed. Returns null while
+ * streaming or once the user has replied (a newer message exists). */
+function pendingQuestion(
+  messages: ChatMessage[],
+  branchNodes: ChatNode[],
+  isStreaming: boolean,
+): { callId: string; data: UserQuestionData } | null {
+  if (isStreaming) return null;
+  const lastNode = branchNodes[branchNodes.length - 1];
+  const lastMsg = messages[messages.length - 1];
+  if (!lastMsg || lastNode?.role !== "assistant") return null;
+
+  const askCall = [...(lastMsg.toolCalls ?? [])].reverse().find((c) => c.name === "ask_user");
+  if (!askCall) return null;
+
+  const input = askCall.input as { questions?: unknown; selection_type?: unknown };
+  const raw = askCall.userQuestion?.questions ?? input.questions;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+
+  const asSel = (v: unknown): "single" | "multiple" | undefined =>
+    v === "multiple" ? "multiple" : v === "single" ? "single" : undefined;
+
+  const questions = raw
+    .filter((q): q is { question: string; options: unknown; selection_type?: unknown } =>
+      typeof q === "object" && q !== null &&
+      typeof (q as { question?: unknown }).question === "string" &&
+      Array.isArray((q as { options?: unknown }).options))
+    .map((q) => ({
+      question: q.question,
+      options: (q.options as unknown[]).map((o) => String(o)),
+      selectionType: asSel(q.selection_type),
+    }));
+  if (questions.length === 0) return null;
+
+  const selectionType = asSel(input.selection_type) ?? "single";
+
+  return { callId: askCall.id, data: { chatId: "", questions, selectionType } };
+}
 
 export interface ModelItem {
   id: string;
@@ -46,6 +91,9 @@ interface ChatViewProps {
   onWebSearchChange: (enabled: boolean, mode?: string) => void;
   researchEnabled: boolean;
   onResearchChange: (enabled: boolean) => void;
+  agents: Agent[];
+  agentId: string;
+  onAgentChange: (agentId: string) => void;
 }
 
 /** Animates `text` character-by-character. `done` derives from displayed
@@ -91,6 +139,7 @@ export function ChatView({
   mcpEnabled, onToggleMcpServer,
   webSearchEnabled, webSearchMode, onWebSearchChange,
   researchEnabled, onResearchChange,
+  agents, agentId, onAgentChange,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -131,6 +180,11 @@ export function ChatView({
   );
 
   const isEmpty = state.messages.length === 0 && !state.isStreaming;
+
+  const pending = useMemo(
+    () => pendingQuestion(state.messages, branchNodes, state.isStreaming),
+    [state.messages, branchNodes, state.isStreaming],
+  );
 
   return (
     <div className={`chat${isEmpty ? " chat--welcome" : ""}`}>
@@ -176,7 +230,8 @@ export function ChatView({
           )}
           <div className="chat-welcome-hgroup">
             <div className="chat-welcome-logo" onClick={() => setRevealed(true)}>
-              <img src="/ghost.svg" alt="" />
+              {/* Non-draggable: grabbing the ghost used to drop it into the composer. */}
+              <img src="/ghost.svg" alt="" draggable={false} onDragStart={(e) => e.preventDefault()} />
             </div>
             <div className="chat-welcome-title">
               {displayed}
@@ -205,6 +260,9 @@ export function ChatView({
               onWebSearchChange={onWebSearchChange}
               researchEnabled={researchEnabled}
               onResearchChange={onResearchChange}
+              agents={agents}
+              agentId={agentId}
+              onAgentChange={onAgentChange}
             />
           </div>
         </div>
@@ -250,6 +308,16 @@ export function ChatView({
             )}
           </div>
 
+          {pending && (
+            <div className="uq-dock">
+              <UserQuestionCard
+                key={pending.callId}
+                data={pending.data}
+                onSubmit={(text) => onSend(text, [])}
+              />
+            </div>
+          )}
+
           <ChatInput
             onSend={onSend}
             onStop={onStop}
@@ -270,6 +338,9 @@ export function ChatView({
             onWebSearchChange={onWebSearchChange}
             researchEnabled={researchEnabled}
             onResearchChange={onResearchChange}
+            agents={agents}
+            agentId={agentId}
+            onAgentChange={onAgentChange}
           />
         </>
       )}

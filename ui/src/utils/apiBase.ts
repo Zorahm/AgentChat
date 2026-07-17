@@ -24,6 +24,14 @@ function detectApiBase(): string {
 
 export const API_BASE = detectApiBase();
 
+/** The persisted backend-URL override ("" when none). The mobile APK gates its
+ *  first run on this: with no override there's no backend to talk to, so the
+ *  connect screen is shown before any API call. */
+export function getBackendOverride(): string {
+  if (typeof localStorage === "undefined") return "";
+  return localStorage.getItem("agentchat.backendUrl") ?? "";
+}
+
 /** Call after changing the localStorage key to reload with the new base. */
 export function setBackendUrl(url: string) {
   if (url) {
@@ -50,6 +58,19 @@ export function setToken(token: string) {
   } else {
     localStorage.removeItem(TOKEN_KEY);
   }
+}
+
+/** Append the remote-access token as a `?token=` query param. For URLs handed
+ *  straight to the browser (<img>/<iframe> src) — those requests are issued by
+ *  the browser itself, so installApiAuth's fetch wrapper never sees them and
+ *  can't attach the Authorization header. No-op without a token (desktop
+ *  loopback, which doesn't need one). Only the backend's file-serving/preview
+ *  routes accept this fallback (see _QUERY_TOKEN_PATHS in main.py). */
+export function withToken(url: string): string {
+  const token = getToken();
+  if (!token) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
 }
 
 /** Pull a `?token=…` out of the pairing link, persist it, and scrub the address
@@ -86,16 +107,60 @@ function isApiRequest(input: RequestInfo | URL): boolean {
 export function installApiAuth(): void {
   if (typeof window === "undefined") return;
   const original = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const token = getToken();
-    if (!token || !isApiRequest(input)) return original(input, init);
-    if (input instanceof Request) {
-      const headers = new Headers(input.headers);
-      if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
-      return original(new Request(input, { headers }));
+    const isApi = isApiRequest(input);
+    let req: RequestInfo | URL = input;
+    let reqInit = init;
+    if (token && isApi) {
+      if (input instanceof Request) {
+        const headers = new Headers(input.headers);
+        if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+        req = new Request(input, { headers });
+      } else {
+        const headers = new Headers(init?.headers);
+        if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+        reqInit = { ...init, headers };
+      }
     }
-    const headers = new Headers(init?.headers);
-    if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
-    return original(input, { ...init, headers });
+    try {
+      const resp = await original(req, reqInit);
+      if (isApi && resp.status === 401) reportBackendDisconnected("token");
+      return resp;
+    } catch (err) {
+      if (isApi) reportBackendDisconnected("network");
+      throw err;
+    }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Backend-disconnect signaling — lets the remote/APK client (which talks to a
+// backend over a token instead of loopback) offer a "reconnect" prompt
+// instead of silently failing requests when the token expires or the network
+// drops. Desktop loopback never has a backend override, so this is inert there.
+// ---------------------------------------------------------------------------
+
+const DISCONNECT_EVENT = "agentchat:backend-disconnected";
+export type BackendDisconnectReason = "token" | "network";
+
+let disconnectReported = false;
+
+function reportBackendDisconnected(reason: BackendDisconnectReason): void {
+  if (disconnectReported) return;
+  if (!getBackendOverride()) return; // desktop loopback — not a remote client
+  disconnectReported = true;
+  window.dispatchEvent(new CustomEvent<BackendDisconnectReason>(DISCONNECT_EVENT, { detail: reason }));
+}
+
+/** Subscribe to backend-disconnect events. Returns an unsubscribe function. */
+export function onBackendDisconnected(handler: (reason: BackendDisconnectReason) => void): () => void {
+  const listener = (e: Event) => handler((e as CustomEvent<BackendDisconnectReason>).detail);
+  window.addEventListener(DISCONNECT_EVENT, listener);
+  return () => window.removeEventListener(DISCONNECT_EVENT, listener);
+}
+
+/** Allow reporting again after the user dismisses the reconnect prompt. */
+export function resetBackendDisconnected(): void {
+  disconnectReported = false;
 }

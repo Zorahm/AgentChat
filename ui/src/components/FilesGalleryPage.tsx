@@ -5,7 +5,7 @@ import { MagnifyingGlass, X, ArrowSquareOut, ChatCircle, Images } from "@phospho
 import type { ChatSession } from "../hooks/useChats";
 import { collectAllFiles, type GalleryFile } from "../utils/collectAllFiles";
 import { fileExtIcon } from "../utils/toolIcons";
-import { API_BASE } from "../utils/apiBase";
+import { API_BASE, withToken } from "../utils/apiBase";
 import { useTranslation } from "react-i18next";
 
 interface FilesGalleryPageProps {
@@ -13,19 +13,27 @@ interface FilesGalleryPageProps {
   onOpenFile: (sessionId: string, path: string) => void;
   onGotoChat: (sessionId: string) => void;
   onBack: () => void;
+  /** When embedded in the Library page, the standalone header/search is hidden
+   *  and the query is controlled from the parent's shared search box. */
+  embedded?: boolean;
+  query?: string;
 }
 
 type Filter = "all" | "attachment" | "artifact";
 
 function imageSrc(f: GalleryFile): string | null {
   if (f.dataUrl) return f.dataUrl;
-  if (f.path) return `${API_BASE}/files/serve?path=${encodeURIComponent(f.path)}`;
+  if (f.path) return withToken(`${API_BASE}/files/serve?path=${encodeURIComponent(f.path)}`);
   return null;
 }
 
-export function FilesGalleryPage({ sessions, onOpenFile, onGotoChat, onBack }: FilesGalleryPageProps) {
+export function FilesGalleryPage({
+  sessions, onOpenFile, onGotoChat, onBack,
+  embedded = false, query: extQuery,
+}: FilesGalleryPageProps) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
+  const query = extQuery !== undefined ? extQuery : internalQuery;
   const [filter, setFilter] = useState<Filter>("all");
 
   const all = useMemo(() => collectAllFiles(sessions), [sessions]);
@@ -48,24 +56,28 @@ export function FilesGalleryPage({ sessions, onOpenFile, onGotoChat, onBack }: F
   );
 
   return (
-    <div className="fg-page">
-      <div className="fg-head">
-        <div className="fg-head-title"><Images size={20} weight="duotone" /> {t("filesGallery.title")}</div>
-        <button className="fg-close" onClick={onBack} title={t("filesGallery.close")}>
-          <X size={16} weight="bold" />
-        </button>
-      </div>
+    <div className={`fg-page${embedded ? " fg-page--embedded" : ""}`}>
+      {!embedded && (
+        <div className="fg-head">
+          <div className="fg-head-title"><Images size={20} weight="duotone" /> {t("filesGallery.title")}</div>
+          <button className="fg-close" onClick={onBack} title={t("filesGallery.close")}>
+            <X size={16} weight="bold" />
+          </button>
+        </div>
+      )}
 
       <div className="fg-toolbar">
-        <div className="fg-search">
-          <MagnifyingGlass size={15} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("filesGallery.search")}
-            autoFocus
-          />
-        </div>
+        {!embedded && (
+          <div className="fg-search">
+            <MagnifyingGlass size={15} />
+            <input
+              value={internalQuery}
+              onChange={(e) => setInternalQuery(e.target.value)}
+              placeholder={t("filesGallery.search")}
+              autoFocus
+            />
+          </div>
+        )}
         <div className="fg-filters">
           {(["all", "attachment", "artifact"] as Filter[]).map((f) => (
             <button

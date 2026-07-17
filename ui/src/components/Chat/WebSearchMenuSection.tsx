@@ -46,7 +46,7 @@ export function WebSearchMenuSection({ enabled, mode, onChange }: WebSearchMenuS
     <div className="cpm-section">
       <div className="cpm-ws-row">
         <button
-          className={`cpm-item${enabled ? " cpm-item--on" : ""}`}
+          className={`cpm-item cpm-item--toggle${enabled ? " cpm-item--on" : ""}`}
           onClick={() => onChange(!enabled, mode)}
         >
           <Globe />

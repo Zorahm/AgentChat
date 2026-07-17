@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-downloads",
+  "description": "Write artifact files into the user's Downloads folder so 'Download and open' (ArtifactCard) can hand them to the OS default app. Desktop only — the Android/PWA fallback uses a plain browser download instead.",
+  "platforms": ["windows", "macOS", "linux"],
+  "windows": ["main"],
+  "permissions": [
+    "fs:allow-download-write"
+  ]
+}

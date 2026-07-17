@@ -81,6 +81,10 @@ class SettingsData(BaseModel):
     # Empty/missing entries fall back to the frontend's built-in defaults.
     shortcuts: dict[str, str] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
+    # When true, tool schemas expose an optional `activity` field and the
+    # system prompt asks the model to narrate each call in its own words —
+    # the UI shows that instead of the generic system-written status line.
+    describe_actions: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -108,6 +112,7 @@ class SettingsUpdate(BaseModel):
     research_model: str | None = None
     # Full replacement of the keyboard-shortcut map (action id → combo).
     shortcuts: dict[str, str] | None = None
+    describe_actions: bool | None = None
 
 
 class ProviderUpdate(BaseModel):

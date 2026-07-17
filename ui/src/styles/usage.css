@@ -1,0 +1,298 @@
+/* Usage/cost dashboard. Uses global design tokens (see projects.css for the
+   same page-in-grid pattern this mirrors). */
+
+.usage-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
+  height: 100%;
+  overflow-y: auto;
+  color: var(--ink);
+}
+
+.usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.usage-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-sub {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.usage-period {
+  display: flex;
+  gap: 4px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.usage-period-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.usage-period-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.usage-error {
+  color: var(--err);
+  font-size: 13px;
+  padding: 12px;
+  border: 1px solid var(--err-soft);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.usage-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.usage-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.usage-summary-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.usage-summary-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.usage-section {
+  margin-bottom: 32px;
+}
+
+.usage-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.usage-section-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.usage-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 16px 0;
+}
+
+/* ── token-source breakdown bar ───────────────────────────────────── */
+
+.usage-breakdown-bar {
+  display: flex;
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.usage-breakdown-seg {
+  height: 100%;
+}
+
+/* ── by-model horizontal bars ─────────────────────────────────────── */
+
+.usage-model-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.usage-model-bar-row {
+  display: grid;
+  grid-template-columns: 190px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-model-name {
+  position: relative;
+  font-size: 12px;
+  overflow: hidden;
+  cursor: default;
+}
+
+.usage-model-name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom tooltip (native `title` is unreliable in the Tauri webview) — shows
+   the full "provider/model" string below the name, never over the sidebar. */
+.usage-model-name::after {
+  content: attr(data-full);
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  white-space: nowrap;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .1s;
+  z-index: 20;
+}
+
+.usage-model-name:hover::after {
+  opacity: 1;
+}
+
+.usage-model-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.usage-model-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.usage-model-bar-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── daily stacked bar chart ──────────────────────────────────────── */
+
+.usage-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+
+.usage-chart-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-width: 4px;
+}
+
+.usage-chart-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+}
+
+.usage-chart-seg {
+  width: 100%;
+}
+
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.usage-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.usage-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ── top chats ─────────────────────────────────────────────────────── */
+
+.usage-top-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.usage-top-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.usage-top-chat-row:hover:not(:disabled) {
+  background: var(--paper);
+}
+
+.usage-top-chat-row:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+
+.usage-top-chat-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-top-chat-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}

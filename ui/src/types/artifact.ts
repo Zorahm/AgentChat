@@ -27,6 +27,8 @@ export const RENDERABLE_EXTS: ReadonlySet<string> = new Set([
   "md", "html", "svg", "png", "jpg", "jpeg", "gif", "webp", "pdf", "json", "csv",
   // Office formats — previewed by converting to PDF on the backend (LibreOffice).
   "docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf",
+  // Archives — rendered as a file tree (Claude-style skill viewer).
+  "skill", "zip",
 ]);
 
 /** Binary / office formats whose raw bytes are useless as source code.
@@ -34,7 +36,7 @@ export const RENDERABLE_EXTS: ReadonlySet<string> = new Set([
 export const BINARY_EXTS: ReadonlySet<string> = new Set([
   "pdf", "docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf",
   "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico",
-  "zip", "tar", "gz", "7z", "rar",
+  "skill", "zip", "tar", "gz", "7z", "rar",
   "mp3", "mp4", "wav", "avi", "mov", "webm",
   "ttf", "otf", "woff", "woff2",
 ]);

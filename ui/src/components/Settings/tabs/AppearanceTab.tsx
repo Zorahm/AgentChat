@@ -1,6 +1,6 @@
 /** Settings → Appearance: language, theme, notification sound. */
 
-import { Globe, Palette, Sun, Moon, Monitor, Bell, MusicNote, Play, UploadSimple, Trash } from "@phosphor-icons/react";
+import { Globe, Palette, Sun, Moon, Monitor, Bell, MusicNote, Play, UploadSimple, Trash, ChatCircleDots } from "@phosphor-icons/react";
 import { useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { SUPPORTED_LANGUAGES } from "../../../i18n/languages";
@@ -210,6 +210,21 @@ export function AppearanceTab({ settings, onUpdate }: {
                 {soundError && <p className="d st2-err st2-notify-err">{soundError}</p>}
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="st2-mrow">
+          <div className="st2-mlab">
+            <p className="t"><ChatCircleDots size={16} /> {t("settings.general.describeActions")}</p>
+            <p className="d">{t("settings.general.describeActionsHint")}</p>
+          </div>
+          <div className="st2-mctl">
+            <div
+              className={`st2-switch st2-switch--lg${settings.describe_actions ? " on" : ""}`}
+              role="switch"
+              aria-checked={settings.describe_actions ?? false}
+              onClick={() => onUpdate({ describe_actions: !settings.describe_actions })}
+            />
           </div>
         </div>
       </div>

@@ -8,7 +8,7 @@ import os
 import platform
 import re
 import shutil
-import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -16,14 +16,21 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agent.wsl_exec import decode_loose
+from agent.wsl_exec import run_capture
+from shell import resolve_active_shell
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wsl", tags=["wsl"])
 
-# Suppress the Windows console flash for wsl/probe subprocesses.
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+def _os_platform() -> str:
+    """Coarse host OS for the UI: windows | darwin | linux."""
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
 
 # In-process background install task — single concurrent install at most.
 # install-deps used to block the HTTP request for 5–30 minutes, leaving the
@@ -64,10 +71,24 @@ class WSLStatus(BaseModel):
     mirrored_supported: bool  # Windows build + WSL version support mirrored networking
     mirrored_active: bool  # .wslconfig already has networkingMode=mirrored
     powershell_available: bool
-    # Resolved shell the next chat will use: "wsl" or "powershell".
+    # Whether a zsh binary is on PATH (native Linux/macOS only). Lets the UI
+    # offer the bash⇄zsh picker and flag a missing zsh.
+    zsh_available: bool = False
+    # Resolved shell the next chat will use: "wsl" | "powershell" | "posix" | "zsh".
     active_shell: str
-    # Raw preference from settings ("auto" | "wsl" | "powershell").
+    # Raw preference from settings ("auto" | "wsl" | "powershell" | "zsh").
     shell_preference: str
+    # Host OS: "windows" | "linux" | "darwin". On non-Windows the UI hides the
+    # WSL/PowerShell picker and offers the native bash⇄zsh one instead.
+    os_platform: str
+    # Native hosts only. Distro name from /etc/os-release and the package
+    # manager we recognised; both None on Windows or an unrecognised distro.
+    distro_name: str | None = None
+    package_manager: str | None = None
+    # A ready-to-run command installing whatever the checklist reports missing.
+    # None when nothing is missing, or when we can't name packages for this
+    # distro — the UI then just lists the missing tools.
+    install_command: str | None = None
 
 
 class InstallResult(BaseModel):
@@ -89,27 +110,7 @@ async def _run(
     merge in ``os.environ`` themselves (used to forward credentials into WSL
     via WSLENV without putting them on the command line).
     """
-    try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            args,
-            capture_output=True,
-            timeout=timeout,
-            creationflags=_NO_WINDOW,
-            env=env,
-        )
-    except FileNotFoundError:
-        return 127, "", f"{args[0]}: not found"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timed out after {timeout}s"
-    except OSError as exc:
-        return 1, "", str(exc)
-    # wsl.exe writes Unicode in UTF-16LE on some Windows builds; try utf-8 then utf-16.
-    raw_out = result.stdout
-    raw_err = result.stderr
-    out = decode_loose(raw_out)
-    err = decode_loose(raw_err)
-    return result.returncode, out, err
+    return await run_capture(args, timeout=timeout, env=env)
 
 
 async def _wsl_default_distro() -> str | None:
@@ -152,6 +153,79 @@ async def _has_global_npm_pkg(pkg: str) -> bool:
         timeout=20,
     )
     return code == 0
+
+
+async def _native_has_global_npm_pkg(pkg: str) -> bool:
+    """Same probe as {@link _has_global_npm_pkg}, on the host's own shell."""
+    code, _, _ = await _run(
+        ["bash", "-lc", f"npm ls -g --depth=0 {pkg} 2>/dev/null | grep -q ' {pkg}@'"],
+        timeout=20,
+    )
+    return code == 0
+
+
+def _native_distro_name() -> str | None:
+    """PRETTY_NAME from /etc/os-release, e.g. "Arch Linux"."""
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if line.startswith("PRETTY_NAME="):
+                return line.split("=", 1)[1].strip().strip('"') or None
+    except OSError:
+        pass
+    return None
+
+
+# How to install the tools the agent shells out to, per package manager. Only
+# managers whose package names we can state confidently are listed; on anything
+# else the UI falls back to naming the missing binaries and letting the user
+# install them their own way.
+_NATIVE_INSTALL_PREFIX: dict[str, str] = {
+    "pacman": "sudo pacman -S --needed",
+    "apt-get": "sudo apt-get install -y",
+    "dnf": "sudo dnf install -y",
+    "zypper": "sudo zypper install -y",
+}
+
+_NATIVE_PACKAGES: dict[str, dict[str, str]] = {
+    "pacman": {
+        "node": "nodejs", "npm": "npm", "python": "python",
+        "pandoc": "pandoc-cli", "libreoffice": "libreoffice-fresh", "poppler": "poppler",
+    },
+    "apt-get": {
+        "node": "nodejs", "npm": "npm", "python": "python3",
+        "pandoc": "pandoc", "libreoffice": "libreoffice", "poppler": "poppler-utils",
+    },
+    "dnf": {
+        "node": "nodejs", "npm": "npm", "python": "python3",
+        "pandoc": "pandoc", "libreoffice": "libreoffice", "poppler": "poppler-utils",
+    },
+    "zypper": {
+        "node": "nodejs", "npm": "npm", "python": "python3",
+        "pandoc": "pandoc", "libreoffice": "libreoffice", "poppler": "poppler-tools",
+    },
+}
+
+
+def _native_install_plan(missing: list[str]) -> tuple[str | None, str | None]:
+    """Return (package manager, install command) for the missing tool keys.
+
+    `docx` is a global npm package rather than a distro one, so it gets its own
+    line appended. The command is a suggestion — package names drift between
+    releases, and the user stays in charge of running it."""
+    manager = next((m for m in _NATIVE_INSTALL_PREFIX if shutil.which(m)), None)
+    if manager is None:
+        return None, None
+
+    lines: list[str] = []
+    packages = sorted({_NATIVE_PACKAGES[manager][k] for k in missing if k in _NATIVE_PACKAGES[manager]})
+    if packages:
+        lines.append(f"{_NATIVE_INSTALL_PREFIX[manager]} {' '.join(packages)}")
+    if "docx" in missing:
+        lines.append("npm install -g docx")
+
+    # Report the manager under its familiar name, not the binary we probed for.
+    label = "apt" if manager == "apt-get" else manager
+    return label, "\n".join(lines) or None
 
 
 async def _wsl_dns_works() -> bool:
@@ -570,10 +644,57 @@ async def _run_install_distro(username: str, password: str) -> None:
 async def status(request: Request) -> WSLStatus:
     """Probe WSL and required tooling state, plus PowerShell availability and
     the resolved active shell for the next chat."""
-    from shell import resolve_active_shell
 
     settings_store = request.app.state.settings_store
     preference = settings_store.shell_preference
+
+    # Native POSIX host: no WSL/PowerShell split — report a native status for the
+    # onboarding checklist and the bash⇄zsh picker. Tool presence comes from PATH
+    # (cheap); only the global-npm probe needs a subprocess.
+    if sys.platform != "win32":
+        node = shutil.which("node")
+        npm = shutil.which("npm")
+        python = shutil.which("python3") or shutil.which("python")
+        pandoc = shutil.which("pandoc")
+        libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
+        poppler = shutil.which("pdftotext") is not None
+        docx = await _native_has_global_npm_pkg("docx") if npm else False
+
+        missing = [
+            key
+            for key, present in (
+                ("node", node), ("npm", npm), ("python", python), ("pandoc", pandoc),
+                ("libreoffice", libreoffice), ("poppler", poppler), ("docx", docx),
+            )
+            if not present
+        ]
+        package_manager, install_command = _native_install_plan(missing)
+
+        return WSLStatus(
+            wsl_installed=False,
+            default_distro=None,
+            distro_running=False,
+            node=node,
+            python=python,
+            npm=npm,
+            pandoc=pandoc,
+            libreoffice=libreoffice,
+            poppler=poppler,
+            docx=docx,
+            dns_ok=True,
+            internet_ok=True,
+            mirrored_supported=False,
+            mirrored_active=False,
+            powershell_available=False,
+            zsh_available=shutil.which("zsh") is not None,
+            active_shell=resolve_active_shell(preference),
+            shell_preference=preference,
+            os_platform=_os_platform(),
+            distro_name=_native_distro_name(),
+            package_manager=package_manager,
+            install_command=install_command,
+        )
+
     ps_available = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
     wsl_installed = shutil.which("wsl") is not None
 
@@ -596,6 +717,7 @@ async def status(request: Request) -> WSLStatus:
             powershell_available=ps_available,
             active_shell=resolve_active_shell(preference),
             shell_preference=preference,
+            os_platform=_os_platform(),
         )
 
     distro = await _wsl_default_distro()
@@ -646,6 +768,7 @@ async def status(request: Request) -> WSLStatus:
         powershell_available=ps_available,
         active_shell=resolve_active_shell(preference),
         shell_preference=preference,
+        os_platform=_os_platform(),
     )
 
 

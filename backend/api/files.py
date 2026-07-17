@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import mimetypes
 import os
 import re
@@ -10,13 +11,15 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel
 
-from agent.wsl_exec import wsl_run, wsl_write_bytes
+from agent.wsl_exec import run_blocking, wsl_run, wsl_write_bytes
+from shell import resolve_active_shell
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -25,7 +28,6 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 # Office formats we can render by converting to PDF with LibreOffice.
 _OFFICE_EXTS = frozenset({"docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "odp", "ods", "rtf"})
 _PREVIEW_DIR = Path(tempfile.gettempdir()) / "agentchat-preview"
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 async def _wsl_read_bytes(path: str) -> bytes:
@@ -102,6 +104,164 @@ async def serve_file(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ── Archive tree (.skill / .zip) ───────────────────────────────────────
+
+_MAX_ARCHIVE_ENTRIES = 600
+
+
+class ArchiveEntry(BaseModel):
+    path: str
+    name: str
+    depth: int
+    is_dir: bool
+    size: int = 0
+
+
+async def _read_archive_bytes(path: str) -> bytes:
+    """Read a .skill/.zip archive's bytes from WSL or the Windows filesystem."""
+    if path.startswith("/"):
+        return await _wsl_read_bytes(path)
+    return Path(path).resolve().read_bytes()
+
+
+def _build_zip_meta(infos: list[zipfile.ZipInfo]) -> dict[str, dict[str, object]]:
+    """path → {is_dir, size} for every entry plus inferred ancestor dirs."""
+    meta: dict[str, dict[str, object]] = {}
+    for info in infos:
+        raw = info.filename.replace("\\", "/")
+        is_dir = raw.endswith("/")
+        p = raw.strip("/")
+        if not p or ".." in p.split("/"):
+            continue
+        parts = p.split("/")
+        for i in range(len(parts) - 1):
+            meta.setdefault("/".join(parts[: i + 1]), {"is_dir": True, "size": 0})
+        if is_dir:
+            meta.setdefault(p, {"is_dir": True, "size": 0})
+        else:
+            meta[p] = {"is_dir": False, "size": info.file_size}
+    return meta
+
+
+def _zip_strip(meta: dict[str, dict[str, object]]) -> str:
+    """The lone wrapping top-level dir to drop (e.g. 'minecraft-spatial/'), or ''."""
+    tops = {p.split("/")[0] for p in meta}
+    if len(tops) == 1:
+        only = next(iter(tops))
+        if meta.get(only, {}).get("is_dir"):
+            return only + "/"
+    return ""
+
+
+def _zip_tree(data: bytes) -> list[ArchiveEntry]:
+    """Turn a zip's namelist into a flat, depth-tagged tree (dirs-first per level).
+
+    A single wrapping top-level dir is stripped so the tree reads like the
+    reference skill viewer (examples/, scripts/, SKILL.md at the root).
+    """
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        infos = zf.infolist()
+
+    meta = _build_zip_meta(infos)
+    strip = _zip_strip(meta)
+
+    children: dict[str, list[tuple[str, dict[str, object]]]] = {}
+    for p, m in meta.items():
+        if strip:
+            if p == strip.rstrip("/") or not p.startswith(strip):
+                continue
+            rel = p[len(strip):]
+        else:
+            rel = p
+        if not rel:
+            continue
+        parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
+        children.setdefault(parent, []).append((rel, m))
+    for kids in children.values():
+        kids.sort(key=lambda t: (not t[1]["is_dir"], t[0].split("/")[-1].lower()))
+
+    out: list[ArchiveEntry] = []
+
+    def walk(parent: str, depth: int) -> None:
+        for rel, m in children.get(parent, []):
+            if len(out) >= _MAX_ARCHIVE_ENTRIES:
+                return
+            name = rel.split("/")[-1]
+            if m["is_dir"]:
+                out.append(ArchiveEntry(
+                    path=rel, name=name, depth=depth, is_dir=True,
+                    size=len(children.get(rel, [])),
+                ))
+                walk(rel, depth + 1)
+            else:
+                out.append(ArchiveEntry(
+                    path=rel, name=name, depth=depth, is_dir=False,
+                    size=int(m["size"]),  # type: ignore[arg-type]
+                ))
+
+    walk("", 0)
+    return out
+
+
+@router.get("/archive-tree", response_model=list[ArchiveEntry])
+async def archive_tree(
+    path: str = Query(..., description="Absolute path to a .skill / .zip archive"),
+) -> list[ArchiveEntry]:
+    """List the contents of a .skill / .zip archive as a flat tree."""
+    try:
+        data = await _read_archive_bytes(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    try:
+        return _zip_tree(data)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Not a valid archive")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+_MAX_MEMBER_BYTES = 2 * 1024 * 1024  # 2 MB cap on a single previewed member
+
+
+@router.get("/archive-file")
+async def archive_file(
+    path: str = Query(..., description="Absolute path to a .skill / .zip archive"),
+    member: str = Query(..., description="Tree-relative path of the member to read"),
+) -> PlainTextResponse:
+    """Return the UTF-8 text of one member inside a .skill / .zip archive.
+
+    ``member`` is the tree-relative path the UI shows (wrapper dir already
+    stripped); we re-add the wrapper prefix to locate the real zip entry.
+    """
+    if ".." in member.replace("\\", "/").split("/"):
+        raise HTTPException(status_code=400, detail="Invalid member path")
+    try:
+        data = await _read_archive_bytes(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            strip = _zip_strip(_build_zip_meta(zf.infolist()))
+            for candidate in ((strip + member) if strip else member, member):
+                try:
+                    info = zf.getinfo(candidate)
+                except KeyError:
+                    continue
+                if info.file_size > _MAX_MEMBER_BYTES:
+                    raise HTTPException(status_code=413, detail="File too large to preview")
+                raw = zf.read(info)
+                return PlainTextResponse(raw.decode("utf-8", errors="replace"))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Not a valid archive")
+    raise HTTPException(status_code=404, detail="Member not found")
+
+
 # ── Office preview (LibreOffice → PDF) ─────────────────────────────────
 
 
@@ -121,9 +281,7 @@ def _find_soffice() -> str | None:
 async def _run_local(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
     """Run a local subprocess off the event loop; return (code, stdout, stderr)."""
     try:
-        result = await asyncio.to_thread(
-            subprocess.run, args, capture_output=True, timeout=timeout, creationflags=_NO_WINDOW,
-        )
+        result = await run_blocking(args, timeout=timeout)
     except FileNotFoundError:
         return 127, "", f"{args[0]}: not found"
     except subprocess.TimeoutExpired:
@@ -249,23 +407,29 @@ async def _wsl_home() -> str:
             return home
     except Exception:
         pass
-    _cached_wsl_home = "/tmp"
-    return _cached_wsl_home
+    # WSL not reachable (yet) — fall back for this call only. Never cache the
+    # failure: caching "/tmp" here made every upload land in /tmp until the
+    # backend restarted, even after WSL came up.
+    return "/tmp"
+
+
+def _require_slug(chat_dir_slug: str | None) -> str:
+    """Validate the per-chat sandbox slug all file I/O must be scoped to.
+
+    Every current client sends one (each session allocates its dirSlug up
+    front). A missing/malformed slug means the file would land outside the
+    chat sandbox where the model can't read it — fail loudly instead.
+    """
+    if not chat_dir_slug or not _SLUG_RE.match(chat_dir_slug):
+        raise HTTPException(status_code=400, detail="chat_dir_slug is required")
+    return chat_dir_slug
 
 
 async def _wsl_upload_dir(chat_dir_slug: str | None) -> str:
-    """Resolve where uploads land inside WSL for this request.
-
-    Per-chat folder when a valid slug is provided — keeps uploads inside the
-    sandbox so the model can read them. Falls back to the legacy date-bucketed
-    cache directory if no slug is supplied (rare; pre-sandbox clients).
-    """
+    """Resolve the per-chat uploads folder inside WSL — keeps uploads inside
+    the sandbox so the model can read them."""
     home = await _wsl_home()
-    if chat_dir_slug and _SLUG_RE.match(chat_dir_slug):
-        return f"{home}/AgentChat/chats/{chat_dir_slug}/uploads"
-    base = f"{home}/.aicache/uploads" if home != "/tmp" else "/tmp/aicache-uploads"
-    day = datetime.now().strftime("%Y-%m-%d")
-    return f"{base}/{day}"
+    return f"{home}/AgentChat/chats/{_require_slug(chat_dir_slug)}/uploads"
 
 
 def _win_upload_dir(chat_dir_slug: str | None, user_home: str) -> Path:
@@ -276,10 +440,7 @@ def _win_upload_dir(chat_dir_slug: str | None, user_home: str) -> Path:
     read_file / bash_tool. Without this, PowerShell-mode uploads were written
     through WSL (absent on these machines) and pointed at a non-existent path.
     """
-    if chat_dir_slug and _SLUG_RE.match(chat_dir_slug):
-        return Path(user_home) / "AgentChat" / "chats" / chat_dir_slug / "uploads"
-    day = datetime.now().strftime("%Y-%m-%d")
-    return Path(user_home) / ".aicache" / "uploads" / day
+    return Path(user_home) / "AgentChat" / "chats" / _require_slug(chat_dir_slug) / "uploads"
 
 
 def _safe_filename(name: str) -> str:
@@ -313,7 +474,6 @@ async def upload_files(
     # (Previously WSL-only: in PowerShell mode the file was never written to
     # Windows and the model got a Unix path that resolved to nothing.)
     from paths import USER_HOME
-    from shell import resolve_active_shell
 
     preference = getattr(request.app.state.settings_store, "shell_preference", "auto")
     shell = resolve_active_shell(preference)
@@ -371,7 +531,6 @@ async def delete_upload(
     target (no traversal, no escaping the sandbox). Missing files are a no-op.
     """
     from paths import USER_HOME
-    from shell import resolve_active_shell
 
     name = _safe_filename(Path(path).name)
     if name in ("", ".", "..") or "/" in name or "\\" in name:

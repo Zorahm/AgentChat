@@ -14,6 +14,7 @@ from agent.sandbox import SandboxPolicy
 from agent.types import ToolCall, ToolResult
 from agent.write_file_stream import emit_tool_call_progress
 from llm.client import LLMClient
+from llm.token_breakdown import estimate_prompt_breakdown
 from tools.registry import ToolRegistry
 from tools.write_file import _resolve_write_path
 
@@ -43,6 +44,13 @@ _VISION_NEGATION_MARKERS: tuple[str, ...] = (
     "text only",
     "not allowed",
     "not multimodal",
+    # Some providers (DeepSeek, other text-only OpenAI-compatible APIs) reject
+    # images not with a prose "no vision" message but a JSON-schema deserialize
+    # error, e.g. "unknown variant `image_url`, expected `text`". Paired with the
+    # hard `image_url` subject marker these stay specific to image rejections.
+    "unknown variant",
+    "expected `text`",
+    "deserialize",
 )
 
 
@@ -52,6 +60,21 @@ def _is_vision_rejection(message: str) -> bool:
     return any(k in s for k in _VISION_SUBJECT_MARKERS) and any(
         k in s for k in _VISION_NEGATION_MARKERS
     )
+
+
+def _is_bad_request(exc: Exception) -> bool:
+    """True when the provider rejected the request itself (a 4xx), as opposed to a
+    network/stream/5xx failure.
+
+    Used as a provider-agnostic backstop for image rejection: models reached
+    through an Anthropic-compatible (or any other) gateway phrase "no vision" in
+    wording we can't enumerate, but they all answer a non-vision model's image
+    with a 4xx. litellm/openai errors carry a numeric ``status_code``; fall back
+    to the class name for wrappers that don't expose one."""
+    code = getattr(exc, "status_code", None)
+    if isinstance(code, int) and 400 <= code < 500:
+        return True
+    return "badrequest" in type(exc).__name__.lower()
 
 
 def _strip_image_blocks(messages: list[dict[str, Any]], error: str) -> bool:
@@ -111,6 +134,8 @@ class AgentLoop:
         llm: LLMClient,
         policy: SandboxPolicy | None = None,
         extra_tools: list[dict[str, Any]] | None = None,
+        chat_id: str = "",
+        usage_metadata: dict[str, Any] | None = None,
     ) -> None:
         self.config = config
         self.tools = tools
@@ -123,6 +148,13 @@ class AgentLoop:
         self.messages: list[dict[str, Any]] = []
         self.steps: list[dict[str, Any]] = []
         self._manifest_text: str = ""
+        self._project_context_text: str = ""
+        self._chat_id: str = chat_id
+        # Forwarded to every LiteLLM call as `metadata=` so the usage/cost
+        # logging callback (llm/usage_logging.py) can attribute the call to a
+        # chat + message + context without parsing the response. See
+        # docs/agentchat-usage-tracking-design.md.
+        self._usage_metadata: dict[str, Any] | None = usage_metadata
 
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
@@ -160,7 +192,7 @@ class AgentLoop:
         """Streaming agent loop — yields token / tool_start / tool_chunk / tool_end / done events."""
         self.messages.append({"role": "user", "content": user_input})
 
-        tool_defs = self.tools.to_openai_schema()
+        tool_defs = self.tools.to_openai_schema(describe_actions=self.config.describe_actions)
         if self._extra_tools:
             tool_defs = tool_defs + self._extra_tools
         tool_defs_or_none = tool_defs if tool_defs else None
@@ -182,11 +214,33 @@ class AgentLoop:
             tool_call_state: dict[int, dict[str, Any]] = {}
             progress_state: dict[str, dict[str, Any]] = {}
 
+            built_messages = self._build_messages()
+            call_metadata = self._usage_metadata
+            if call_metadata is not None:
+                cwd_line = (
+                    f"Current working directory: {self._policy.chat_dir}"
+                    if self._policy.chat_dir else ""
+                )
+                breakdown = estimate_prompt_breakdown(
+                    model=self.config.model,
+                    system_prompt=(
+                        f"{self.config.system_prompt}\n\n{cwd_line}"
+                        if cwd_line else self.config.system_prompt
+                    ),
+                    project_context=self._project_context_text,
+                    skills_manifest=self._manifest_text,
+                    tools=tool_defs_or_none,
+                    history=self.messages,
+                    new_user_message=(iteration_idx == 0),
+                )
+                call_metadata = {**call_metadata, "breakdown": breakdown}
+
             stream = self.llm.completion_stream(
                 model=self.config.model,
-                messages=self._build_messages(),
+                messages=built_messages,
                 tools=tool_defs_or_none,
                 extra_body=self.config.extra_body,
+                metadata=call_metadata,
             )
             try:
                 async for chunk in stream:
@@ -211,11 +265,17 @@ class AgentLoop:
                         for event in emit_tool_call_progress(tool_call_state, progress_state):
                             yield event
             except Exception as exc:
-                # Model without vision rejected an image block. Swap the pixels
-                # for the provider's error and retry the pass in text, so the
-                # model can keep going instead of failing the whole request.
-                if _is_vision_rejection(str(exc)) and _strip_image_blocks(
-                    self.messages, str(exc)
+                # Model without vision rejected an image block. Either the error
+                # text reads like a vision rejection, or — for providers whose
+                # wording we can't predict (Anthropic-compatible gateways, other
+                # labs) — it's a 4xx while the request still carries image blocks.
+                # Swap the pixels for the provider's error and retry the pass in
+                # text so the model can keep going instead of failing the request.
+                # _strip_image_blocks only fires when images are present, so this
+                # is one-shot: a second failure has no images left to strip and
+                # propagates normally (no masking of unrelated 4xx errors).
+                if (_is_vision_rejection(str(exc)) or _is_bad_request(exc)) and (
+                    _strip_image_blocks(self.messages, str(exc))
                 ):
                     retrying_vision = True
                     continue
@@ -256,6 +316,10 @@ class AgentLoop:
             if accumulated_reasoning:
                 assistant_msg["reasoning_content"] = accumulated_reasoning
             self.messages.append(assistant_msg)
+
+            # Set if a tool in this batch ends the turn to wait for the user
+            # (e.g. ask_user). We still run every tool in the batch, then stop.
+            pause_for_user = False
 
             for tc in tool_calls:
                 name: str = tc["function"]["name"]
@@ -302,6 +366,22 @@ class AgentLoop:
 
                 t0 = time.perf_counter()
                 tool_obj = self.tools.get(name)
+
+                # Tools that wait for user input (e.g. ask_user) end the turn:
+                # emit a user_question event so the UI can render the question
+                # card, and flag the turn to stop after this batch. The tool
+                # itself returns instantly; the user's answers come back as a
+                # brand-new user message that starts the next turn.
+                if getattr(tool_obj, "waits_for_input", False):
+                    pause_for_user = True
+                    yield {
+                        "type": "user_question",
+                        "id": call_id,
+                        "chat_id": self._chat_id,
+                        "questions": args.get("questions", []),
+                        "selection_type": args.get("selection_type", "single"),
+                    }
+
                 if getattr(tool_obj, "streams_progress", False):
                     # The tool publishes structured progress events while it runs
                     # (e.g. the research tool's plan/search/sources/done). Run it
@@ -376,6 +456,13 @@ class AgentLoop:
                     ),
                 })
 
+            # A waits_for_input tool ran this batch — end the turn and wait for
+            # the user's answer (delivered as their next message), instead of
+            # looping back to the model.
+            if pause_for_user:
+                yield {"type": "done"}
+                return
+
         yield {"type": "iterations_exhausted", "count": self.config.max_iterations}
         yield {"type": "done"}
 
@@ -391,19 +478,32 @@ class AgentLoop:
         """
         self._manifest_text = text
 
+    def set_project_context(self, text: str) -> None:
+        """Update the project instructions + extracted-file block.
+
+        Kept separate from ``config.system_prompt`` (rather than folded in by
+        the caller) so the usage breakdown can attribute it to its own
+        "memory files" bucket — the AgentChat analogue of Claude Code's
+        CLAUDE.md context. Call before ``run()``.
+        """
+        self._project_context_text = text
+
     # ------------------------------------------------------------------
     # internal helpers
     # ------------------------------------------------------------------
 
     def _build_messages(self) -> list[dict[str, Any]]:
-        """Prepend the system prompt (+ skills manifest + cwd) to the history.
+        """Prepend the system prompt (+ project context + skills manifest +
+        cwd) to the history.
 
         The full prompt body now lives in ``build_system_prompt``; here we only
-        append the two per-request dynamic tails: the installed-skills manifest
-        and the chat's working directory.
+        append the per-request dynamic tails: project instructions, the
+        installed-skills manifest, and the chat's working directory.
         """
         result: list[dict[str, Any]] = []
         prompt = self.config.system_prompt
+        if self._project_context_text:
+            prompt = f"{prompt}\n\n{self._project_context_text}"
         if self._manifest_text:
             prompt = f"{prompt}\n\n{self._manifest_text}"
         if self._policy.chat_dir:

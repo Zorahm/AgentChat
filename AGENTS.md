@@ -29,16 +29,17 @@
 ```
 AgentChat/
 ├── backend/                    # Python — FastAPI + agent loop
-│   ├── main.py                 # App factory — composition root
+│   ├── main.py                 # App factory — composition root; remote-access guard middleware
 │   ├── run.py                  # Uvicorn entry point
 │   ├── paths.py                # Path resolution (data dir, chat dirs)
 │   ├── shell.py                # Shell abstraction (WSL/PowerShell/posix)
 │   ├── extraction.py           # Content/text extraction utilities
+│   ├── _buildstamp.py          # Version stamped in by build-backend.ps1/.sh
 │   ├── api/                    # FastAPI route handlers
 │   │   ├── chat.py             # POST /api/chat — SSE streaming (core)
 │   │   ├── chats.py            # CRUD /api/chats — session persistence
-│   │   ├── config_routes.py    # GET/PUT /api/settings
-│   │   ├── files.py            # File upload/download
+│   │   ├── settings.py         # GET/PUT /api/settings
+│   │   ├── files.py            # File upload/download/serve/preview (Office→PDF)
 │   │   ├── skills.py           # Skills install/list/delete
 │   │   ├── wsl.py              # WSL detection & management
 │   │   ├── health.py           # GET /api/system-status
@@ -61,7 +62,10 @@ AgentChat/
 │   │   ├── types.py            # Agent event/message types
 │   │   ├── sandbox.py          # SandboxPolicy — path access control
 │   │   ├── write_file_stream.py # write_file streaming chunk emitter
-│   │   └── wsl_exec.py         # WSL command execution helpers
+│   │   ├── wsl_exec.py         # WSL/posix/PowerShell command execution hub
+│   │   ├── reasoning_split.py  # Splits model output into thinking/text
+│   │   ├── research_prompt.py  # System prompt for the research sub-agent
+│   │   └── research_runner.py  # Drives a nested AgentLoop for the research tool
 │   ├── tools/                  # Tool implementations (agent-callable)
 │   │   ├── base.py             # BaseTool ABC
 │   │   ├── registry.py         # ToolRegistry — register/execute tools
@@ -73,10 +77,14 @@ AgentChat/
 │   │   ├── present_files.py    # PresentFilesTool — surfaces files as cards
 │   │   ├── read_skill.py       # ReadSkillTool — reads SKILL.md
 │   │   ├── read_photo.py       # ReadPhotoTool — image content extraction
+│   │   ├── ask_user.py         # AskUserTool — pauses the turn for user input
+│   │   ├── research_tool.py    # ResearchTool — wraps research_runner
+│   │   ├── show_widget.py      # ShowWidgetTool — inline HTML/SVG visualizations
 │   │   ├── web_search_tool.py  # WebSearchTool
 │   │   └── web_fetch_tool.py   # WebFetchTool
 │   ├── llm/                    # LLM client layer
 │   │   ├── client.py           # LLMClient — wraps LiteLLM
+│   │   ├── model_tag.py        # Re-tags custom/OpenAI-compatible model ids
 │   │   └── models_fetcher.py   # Fetches available models from providers
 │   ├── mcp_integration/        # Model Context Protocol
 │   │   ├── client.py           # MCP client (stdio/HTTP)
@@ -93,20 +101,28 @@ AgentChat/
 │   │   └── service.py          # WebSearchService — routes to active provider
 │   └── skills/                 # Skills system
 │       ├── reader.py           # AgentSkillsReader — scans SKILL.md files
-│       └── installer.py        # GitHub/archive skill installer
+│       ├── installer.py        # GitHub/archive skill installer
+│       └── catalog.py          # Curated Anthropic skill catalog (docx/xlsx/pptx/pdf/...)
 │
 ├── ui/                         # React + TypeScript frontend
 │   └── src/
 │       ├── main.tsx            # React entry point
 │       ├── App.tsx             # Root component, settings context, layout
 │       ├── hooks/
-│       │   ├── useChats.ts         # Multi-session chat manager (THE main hook)
+│       │   ├── useChats/           # Multi-session chat manager (THE main hook)
+│       │   │   ├── index.ts        # useChats() — composes the pieces below
+│       │   │   ├── api.ts          # backend chat CRUD + localStorage→backend migration
+│       │   │   ├── tree.ts         # pure chat-tree helpers (branches, variants)
+│       │   │   ├── persistence.ts  # localStorage load/save + legacy-tree migration
+│       │   │   └── easterEgg.ts    # Ghost Chat easter-egg lore injection
 │       │   ├── useSSE.ts           # SSE connection helper (sseConnect)
 │       │   ├── useAvatar.ts        # Avatar URL management
 │       │   ├── useProjects.ts      # Projects data hook
 │       │   ├── useShortcuts.ts     # Keyboard shortcut registration
 │       │   ├── useAppUpdate.ts     # Auto-update check
 │       │   ├── useFileDrop.ts      # File drop handling
+│       │   ├── useIsMobile.ts      # matchMedia-backed mobile breakpoint hook
+│       │   ├── useDarkMode.ts      # System dark-mode detection
 │       │   ├── useLongPress.ts     # Long-press gesture
 │       │   └── useWindowFileDrag.ts # Window-level drag detection
 │       ├── contexts/
@@ -120,17 +136,27 @@ AgentChat/
 │       │   │   ├── MessageBubble.tsx    # Single message renderer
 │       │   │   ├── ModelSelector.tsx    # Model dropdown
 │       │   │   ├── CodeBlockView.tsx    # Syntax-highlighted code blocks
-│       │   │   ├── MCPChip.tsx          # MCP server indicator chip
+│       │   │   ├── MCPChip.tsx          # MCP indicator chip + composer "Connectors" row
 │       │   │   ├── MentionNodeView.tsx  # @mention node
 │       │   │   ├── MentionPopup.tsx     # @mention autocomplete
 │       │   │   ├── WebSearchControl.tsx # Web search toggle
-│       │   │   ├── WebSearchMenuSection.tsx
+│       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
+│       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
+│       │   │   ├── ResearchCard.tsx     # Research tool-call summary card
+│       │   │   ├── ResearchPanel.tsx    # Research report side panel
+│       │   │   ├── SourcesBox.tsx       # Web-search/research source list
 │       │   │   └── SupportCard.tsx
+│       │   ├── Mobile/
+│       │   │   └── MobileConnect.tsx    # Backend connect/reconnect screen (APK + PWA)
+│       │   ├── BottomSheet.tsx      # Generic mobile bottom-sheet primitive (drag handle)
 │       │   ├── Settings/
 │       │   │   ├── SettingsPanel.tsx    # Shell — nav, tab routing, state
 │       │   │   ├── RestartBackendButton.tsx
 │       │   │   └── tabs/
-│       │   │       ├── MainTab.tsx
+│       │   │       ├── ProfileTab.tsx
+│       │   │       ├── AppearanceTab.tsx
+│       │   │       ├── TerminalTab.tsx
+│       │   │       ├── SandboxTab.tsx
 │       │   │       ├── ProvidersTab.tsx
 │       │   │       ├── ModelsTab.tsx
 │       │   │       ├── PathsTab.tsx
@@ -141,17 +167,20 @@ AgentChat/
 │       │   │   ├── ProjectsView.tsx     # Projects list
 │       │   │   └── ProjectDetail.tsx    # Project detail + chat list
 │       │   ├── Artifacts/
-│       │   │   ├── ArtifactCard.tsx
+│       │   │   ├── ArtifactCard.tsx     # present_files card — icon/kind + "Download and open"
 │       │   │   ├── ArtifactsSidePanel.tsx
-│       │   │   ├── ArtifactViews.tsx
-│       │   │   ├── FilePreviewPanel.tsx
-│       │   │   └── FilesPanel.tsx
+│       │   │   ├── ArtifactViews.tsx    # Render/Code views incl. Office→PDF preview iframe
+│       │   │   ├── FilesPanel.tsx
+│       │   │   └── WidgetView.tsx       # show_widget HTML/SVG renderer (sandboxed iframe)
 │       │   ├── Skills/
-│       │   │   └── SkillsManager.tsx
+│       │   │   └── SkillsManager.tsx    # Master-detail; mobile swaps list↔detail full-screen
 │       │   ├── ToolCalls/
-│       │   │   └── ToolCallBlock.tsx
+│       │   │   ├── ToolCallBlock.tsx
+│       │   │   └── UserQuestionCard.tsx # ask_user tool — inline question UI
 │       │   ├── Onboarding/
-│       │   │   └── OnboardingWizard.tsx
+│       │   │   ├── OnboardingWizard.tsx
+│       │   │   ├── EnvironmentStep.tsx
+│       │   │   └── DependencyCard.tsx
 │       │   ├── Markdown/
 │       │   │   └── Markdown.tsx
 │       │   ├── Sidebar.tsx          # Left nav — chat list + navigation
@@ -170,34 +199,42 @@ AgentChat/
 │       │   ├── languages.ts
 │       │   └── locales/en/ ru/
 │       └── utils/
-│           ├── apiBase.ts          # API_BASE detection (Tauri vs dev proxy)
-│           ├── tauri.ts            # isTauri() detection
+│           ├── apiBase.ts          # API_BASE/token, installApiAuth(), withToken(), disconnect events
+│           ├── tauri.ts            # isTauri()/isAndroidTauri() detection
+│           ├── downloadAndOpen.ts  # Desktop: fs write + OS "open with"; else: blob <a download>
 │           ├── formatTime.ts       # Locale-aware time formatting
 │           ├── parseArtifacts.ts   # Artifact extraction (support path)
 │           ├── presentedFiles.ts   # Files surfaced via present_files tool
 │           ├── collectAllFiles.ts  # Aggregate file cards from tool calls
-│           ├── toolIcons.tsx       # Icon map for tool calls
+│           ├── toolIcons.tsx       # Icon map for tool calls + file-ext icon/kind
 │           ├── safeJson.ts         # Safe JSON parse/stringify
 │           ├── notify.ts           # Desktop notifications
 │           ├── openExternal.ts     # Open URLs in OS browser
 │           ├── mentions.ts         # @mention parsing
+│           ├── mcpName.ts          # MCP server display-name helpers
+│           ├── research.ts         # Research report/event helpers
+│           ├── zoom.ts             # UI zoom level handling
+│           ├── greetings.ts        # Welcome-screen greeting copy
+│           ├── frontmatter.ts      # Markdown frontmatter parsing
+│           ├── getLang.ts          # Syntax-highlighter language detection
+│           ├── basename.ts         # Path basename helper
 │           ├── parseCodeBlocks.ts  # Code block extraction
 │           ├── parseMath.ts        # Math expression parsing
 │           ├── renderMath.ts       # Math rendering
 │           └── updater.ts          # Tauri auto-updater
 │
 ├── src-tauri/                  # Tauri shell — Rust
-│   └── src/main.rs             # Window, sidecar spawn, auto-update
-├── skills/                     # Installed skills directory
+│   ├── src/
+│   │   ├── main.rs             # Desktop entry point — calls lib::run()
+│   │   ├── lib.rs              # Shared run() — plugin registration, shared by desktop+mobile
+│   │   └── desktop_backend.rs  # Sidecar spawn/supervise/restart (desktop only)
+│   └── capabilities/
+│       ├── default.json            # Core permissions, all platforms
+│       ├── desktop-downloads.json  # fs:allow-download-write — desktop only
+│       └── mobile.json             # Barcode-scanner permissions — android/iOS only
+├── skills/                     # Bundled skills shipped in the repo (office four + agentchat)
 ├── tests/                      # All tests
-│   └── backend/
-│       ├── test_agent_loop.py
-│       ├── test_chat_history.py
-│       ├── test_chat_purge.py
-│       ├── test_remote_access.py
-│       ├── test_sandbox_policy.py
-│       ├── test_tool_call_streaming.py
-│       └── test_tools.py
+│   └── backend/                # pytest — agent loop, tools, sandbox, streaming, research, ...
 └── docs/                       # Analysis reports
 ```
 
@@ -247,6 +284,67 @@ App.handleModelChange → updateSettings({ default_model }) → context syncs al
 - [ ] Single responsibility per module
 - [ ] No commented-out code
 - [ ] No hardcoded secrets or keys
+
+---
+
+## Local builds (offline, no CI)
+
+The UI is **bundled at build time** into both the desktop app and the APK — neither
+fetches its design at runtime. So **any UI change requires rebuilding `ui/dist`
+first** (`npm run build --prefix ui`), then rebuilding whichever app you want.
+There is no `beforeBuildCommand`, so `tauri build` will NOT rebuild the UI for you.
+
+### Desktop (Windows: exe + msi + nsis)
+
+Run **all three** steps in order — skipping the backend step ships a *stale*
+sidecar:
+
+```powershell
+npm run build --prefix ui            # 1. UI → ui/dist
+.\scripts\build-backend.ps1          # 2. Python backend → src-tauri/binaries/agentchat-backend-*.exe (PyInstaller)
+cd src-tauri ; cargo tauri build     # 3. desktop app (bundles ui/dist + whatever sidecar is in binaries/)
+```
+
+- **Don't forget step 2.** `cargo tauri build` only bundles the sidecar already
+  sitting in `src-tauri/binaries/`; it does not rebuild the Python backend.
+  Shipping an old sidecar causes silent runtime bugs (e.g. the UI reading a
+  status response that predates a new field). `build-backend.ps1` also bundles
+  `ui/dist` (for remote/phone serving) and stamps the version from
+  `tauri.conf.json` into `_buildstamp.py`.
+- Linux desktop is the same shape with `scripts/build-backend.sh` + `cargo tauri build`.
+- Signing/updater secrets are only needed for auto-update artifacts — an offline
+  test build doesn't need them.
+
+### Android (APK)
+
+The backend is **not** bundled — the APK is a thin client that connects to a
+remote backend (URL + token / QR). So no backend step; just UI + the app:
+
+```powershell
+npm run build --prefix ui                                  # 1. UI → ui/dist (the APK's design)
+cd src-tauri
+cargo tauri android build --apk --debug --target aarch64   # 2. arm64 debug APK (auto-signed, sideloadable)
+```
+
+Output: `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`.
+
+- **To change the phone's design you must rebuild `ui/dist` (step 1) then the
+  APK (step 2).** The APK does not pull the UI from the PC; the PC app and the
+  APK each carry their own copy. Rebuilding the PC app is not required for the
+  phone, and vice versa.
+- First-time toolchain (Windows): Android SDK + NDK r26b, `JAVA_HOME`/`ANDROID_HOME`/
+  `NDK_HOME` set, the 4 Rust android targets, and **Windows Developer Mode ON**
+  (Tauri symlinks the `.so` into `jniLibs`, which Windows blocks otherwise).
+- cargo-tauri **ignores `NDK_HOME`** — it scans `ANDROID_HOME\ndk\` and picks the
+  highest version. Delete any incomplete NDK version folder (no `source.properties`)
+  or it shadows the good one and the build errors / hangs on an "install NDK?" prompt.
+- Adding a **new mobile plugin**: put its crate in plain `[dependencies]`, NOT
+  `[target.'cfg(mobile)'.dependencies]` — `tauri-build` only discovers plugin
+  ACL/permissions from the regular dependency graph, so a target-gated dep makes
+  its permissions unresolvable (`Permission <plugin>:allow-… not found`). Keep it
+  desktop-safe by registering it only on mobile (`#[cfg(not(desktop))]` in
+  lib.rs) and `platforms`-gating its capability. Then run `cargo tauri android
+  init` once to regenerate `gen/android` plugin wiring + manifest permissions.
 
 ---
 

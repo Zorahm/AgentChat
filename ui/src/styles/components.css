@@ -7,8 +7,11 @@
 @import "./components/components-process-blocks.css";
 @import "./components/components-artifacts.css";
 @import "./components/components-model-selector.css";
+@import "./components/components-agent-avatar.css";
 @import "./components/components-code-block.css";
 @import "./components/components-dialogs.css";
 @import "./components/components-files-gallery.css";
+@import "./components/components-library.css";
 @import "./components/components-ghost-chat.css";
 @import "./components/components-research.css";
+@import "./components/components-bottom-sheet.css";

@@ -33,16 +33,19 @@ else:
 SETTINGS_FILE = AGENTS_DIR / "settings.json"
 CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
 PROJECT_DB_FILE = AGENTS_DIR / "projects.db"
+USAGE_DB_FILE = AGENTS_DIR / "usage.db"
 # Cross-agent shared locations per the Agent Skills convention.
 USER_AGENTS_DIR = Path.home() / ".agents"
 USER_AGENTS_SKILLS_DIR = USER_AGENTS_DIR / "skills"
-# Backwards-compatible name used by older code paths; always points at the
-# canonical user-global skills directory, never at app-local/AppData storage.
-AGENTS_SKILLS_DIR = USER_AGENTS_SKILLS_DIR
 
 USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
 USER_HOME = os.path.expanduser("~")
 WSL_USER_HOME = f"/home/{USER_NAME.lower()}" if USER_NAME else "/home/user"
+# Default $HOME for the outer bash_tool envelope. On Windows the agent's bash
+# lives inside WSL (synthetic /home/<user>); on a native POSIX host it's the
+# real home. The per-chat bwrap cage overrides HOME to the chat dir regardless,
+# so this only matters for the uncaged outer shell.
+DEFAULT_BASH_HOME = WSL_USER_HOME if sys.platform == "win32" else USER_HOME
 
 # Web search backends. Tavily key enables the "litellm" local backend; the
 # SearXNG URL (env or settings) enables the self-hosted backend.

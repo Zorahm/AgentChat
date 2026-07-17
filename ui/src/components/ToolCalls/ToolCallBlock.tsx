@@ -1,8 +1,10 @@
 /** Collapsible tool call block — three states, Input/Output tabs. */
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ToolCall } from "../../types/tool-call";
 import { TOOL_ICONS } from "../../types/tool-call";
+import { toolActivity } from "../../utils/toolActivity";
 
 interface ToolCallBlockProps {
   call: ToolCall;
@@ -27,7 +29,14 @@ function previewArg(call: ToolCall): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
+/** Turn a raw tool name into a readable label ("read_file" → "Read file"). */
+function friendlyName(name: string): string {
+  const spaced = name.replace(/^mcp__/, "").replace(/_/g, " ").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export function ToolCallBlock({ call, inline = false }: ToolCallBlockProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<"input" | "output">("input");
 
@@ -38,11 +47,13 @@ export function ToolCallBlock({ call, inline = false }: ToolCallBlockProps) {
     : call.status === "cancelled" ? "tc--cancelled"
     : "tc--success";
 
+  const dur = call.durationMs != null ? (call.durationMs / 1000).toFixed(1) : null;
+
   const statusLabel =
-    call.status === "running" ? "⟳ running"
-    : call.status === "error" ? `✗ error${call.durationMs != null ? ` · ${(call.durationMs / 1000).toFixed(1)}s` : ""}`
-    : call.status === "cancelled" ? "⏹ cancelled"
-    : `✓ ${call.durationMs != null ? (call.durationMs / 1000).toFixed(1) + "s" : ""}`;
+    call.status === "running" ? t("chat.toolCall.running")
+    : call.status === "error" ? t("chat.toolCall.error") + (dur != null ? t("chat.toolCall.duration", { duration: dur }) : "")
+    : call.status === "cancelled" ? t("chat.toolCall.cancelled")
+    : t("chat.toolCall.success") + (dur != null ? t("chat.toolCall.duration", { duration: dur }) : "");
 
   const inputStr =
     call.input != null ? JSON.stringify(call.input, null, 2) : "";
@@ -61,7 +72,7 @@ export function ToolCallBlock({ call, inline = false }: ToolCallBlockProps) {
         onClick={() => setExpanded((v) => !v)}
       >
         {!inline && <span className="tc-icn">{icon}</span>}
-        <span className="tc-name">{call.name}</span>
+        <span className="tc-name">{inline ? (toolActivity(call) || friendlyName(call.name)) : call.name}</span>
         <span className="tc-status">{statusLabel}</span>
         <span className="tc-chev">{expanded ? "▴" : "▾"}</span>
       </div>
@@ -80,21 +91,21 @@ export function ToolCallBlock({ call, inline = false }: ToolCallBlockProps) {
               className={`tc-tab${tab === "input" ? " active" : ""}`}
               onClick={() => setTab("input")}
             >
-              Input
+              {t("chat.toolCall.input")}
             </button>
             {call.status !== "running" && (
               <button
                 className={`tc-tab${tab === "output" ? " active" : ""}`}
                 onClick={() => setTab("output")}
               >
-                Output
+                {t("chat.toolCall.output")}
               </button>
             )}
           </div>
           <pre className="tc-pre">
             {tab === "input"
-              ? inputStr || "(empty)"
-              : call.output || "(no output)"}
+              ? inputStr || t("chat.toolCall.emptyInput")
+              : call.output || t("chat.toolCall.emptyOutput")}
           </pre>
         </div>
       )}

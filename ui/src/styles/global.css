@@ -148,6 +148,14 @@ html, body {
 
 #root { height: 100%; }
 
+/* WebKitGTK (Linux) draws the <select> popup natively: it inherits `color`
+   from the control but not its background, so themed selects render as
+   light-on-light. Both must be stated on the option itself. */
+option {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; margin: 2px; }
 ::-webkit-scrollbar-thumb {

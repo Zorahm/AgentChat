@@ -6,6 +6,13 @@ authors = ["Zorahm"]
 edition = "2021"
 rust-version = "1.77"
 
+# Tauri v2 mobile (Android/iOS) builds the app as a library and calls run()
+# from the platform's native entry point, so we expose a lib target alongside
+# the desktop binary. The desktop build keeps using src/main.rs.
+[lib]
+name = "agentchat_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -13,8 +20,17 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", features = ["blocking"], default-features = false, package = "reqwest" }
+# Native QR/barcode scanner for the phone pairing screen. Kept in plain
+# [dependencies] (not target-gated) because tauri-build only discovers plugin
+# ACL/permissions from the regular dependency graph — a `[target.'cfg(mobile)']`
+# dep makes `barcode-scanner:allow-scan` unresolvable at build time. It's only
+# *registered* on mobile (lib.rs, #[cfg(not(desktop))]) and its capability is
+# `platforms`-gated to android/iOS, so desktop never loads it; the desktop crate
+# compiles to an inert stub.
+tauri-plugin-barcode-scanner = "2"

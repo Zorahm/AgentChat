@@ -44,3 +44,8 @@ class AgentConfig(BaseModel):
         default=None,
         description="Extra HTTP headers added to every LiteLLM request for this provider.",
     )
+    describe_actions: bool = Field(
+        default=False,
+        description="When true, tool schemas expose an optional 'activity' field and the "
+        "system prompt asks the model to narrate each call in its own words.",
+    )

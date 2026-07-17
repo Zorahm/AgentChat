@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import io
+import re
+import shlex
 import shutil
+import tarfile
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
+from agent.wsl_exec import wsl_read_bytes, wsl_read_text, wsl_run
 from api.schemas.skills import (
     CatalogInstallRequest,
+    InstallLocalRequest,
     InstallRequest,
     SkillContent,
     SkillFile,
@@ -17,7 +24,7 @@ from api.schemas.skills import (
 )
 from paths import resolve_bundled_skills
 from skills.catalog import CURATED_BY_KEY
-from skills.reader import SkillEntry
+from skills.reader import SkillEntry, _parse_frontmatter
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -84,6 +91,119 @@ async def install_catalog_skill(request: Request, body: CatalogInstallRequest) -
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    return [_to_skill_info(e) for e in entries]
+
+
+def _slugify_skill_name(raw: str) -> str:
+    """Turn a frontmatter name into a safe install folder slug."""
+    s = re.sub(r"[^a-z0-9_\-]+", "-", raw.strip().lower()).strip("-")
+    return s[:64]
+
+
+async def _materialize_wsl_skill_dir(root: str) -> Path:
+    """Copy a skill folder out of WSL into a local temp dir via a single tar pipe.
+
+    The model writes skills inside the WSL chat sandbox ('/home/.../AgentChat/
+    chats/...'), which Python on Windows can't read directly — so we stream the
+    folder as a tar and extract it locally, then hand that to install_local.
+    """
+    res = await wsl_run(f"cd {shlex.quote(root)} && tar -cf - .")
+    if res.returncode != 0:
+        err = res.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(err or "Could not read the skill folder from WSL")
+
+    tmp = Path(tempfile.mkdtemp(prefix="agentchat-skill-"))
+    try:
+        with tarfile.open(fileobj=io.BytesIO(res.stdout), mode="r:") as tf:
+            members = tf.getmembers()
+            if len(members) > 2000:
+                raise ValueError("Skill folder has too many files")
+            for m in members:
+                name = m.name.replace("\\", "/").lstrip("./")
+                if name.startswith("/") or ".." in Path(name).parts:
+                    raise ValueError(f"Unsafe path in skill folder: {m.name}")
+            tf.extractall(tmp)
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return tmp
+
+
+@router.post("/install-local", response_model=list[SkillInfo])
+async def install_local_skill(request: Request, body: InstallLocalRequest) -> list[SkillInfo]:
+    """Install a skill the model authored in a chat sandbox.
+
+    Accepts either a SKILL.md (the whole containing folder is copied) or a
+    .skill / .zip archive (unpacked). Only paths inside a chat sandbox
+    ('/AgentChat/chats/') are accepted.
+    """
+    installer = request.app.state.skill_installer
+    raw_path = body.path.strip()
+    norm = raw_path.replace("\\", "/")
+    base = Path(norm).name
+    ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
+
+    if "/AgentChat/chats/" not in norm:
+        raise HTTPException(
+            status_code=400,
+            detail="Only a skill created inside a chat can be installed from here",
+        )
+
+    is_wsl = raw_path.startswith("/")
+
+    # ── .skill / .zip archive → unpack it ──────────────────────────────
+    if ext in ("skill", "zip"):
+        try:
+            data = await wsl_read_bytes(raw_path) if is_wsl else Path(raw_path).read_bytes()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Archive not found")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        try:
+            entries = installer.install_from_archive(data, base)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        return [_to_skill_info(e) for e in entries]
+
+    # ── SKILL.md → copy the containing folder ──────────────────────────
+    if base.lower() != "skill.md":
+        raise HTTPException(
+            status_code=400, detail="Path must point to a SKILL.md or a .skill/.zip archive"
+        )
+
+    try:
+        md_text = await wsl_read_text(raw_path) if is_wsl else Path(raw_path).read_text(
+            "utf-8", errors="replace"
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="SKILL.md not found")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    meta, _ = _parse_frontmatter(md_text)
+    parent = norm.rsplit("/", 1)[0]
+    name = _slugify_skill_name(meta.get("name", "") or parent.rsplit("/", 1)[-1])
+    if not name:
+        raise HTTPException(status_code=400, detail="Could not determine a valid skill name")
+
+    tmp: Path | None = None
+    try:
+        if is_wsl:
+            tmp = await _materialize_wsl_skill_dir(parent)
+            source_dir = tmp
+        else:
+            source_dir = Path(raw_path).parent
+        entries = installer.install_local(source_dir, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     return [_to_skill_info(e) for e in entries]
 
 

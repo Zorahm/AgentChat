@@ -39,6 +39,24 @@ export interface ToolCall {
   filePath?: string;
   /** Present only on `research` tool calls — the timeline of the research run. */
   research?: ResearchData;
+  /** Present only on `ask_user` tool calls — the questions shown to the user. */
+  userQuestion?: UserQuestionData;
+}
+
+/** Data for an ask_user tool call — questions + the user's selections. */
+export interface UserQuestionData {
+  chatId: string;
+  questions: UserQuestion[];
+  /** Default selection type for questions that don't set their own. */
+  selectionType: "single" | "multiple";
+  answers?: string[][];
+}
+
+export interface UserQuestion {
+  question: string;
+  options: string[];
+  /** Per-question override of the card's default selection type. */
+  selectionType?: "single" | "multiple";
 }
 
 export const TOOL_ICONS: Record<string, string> = {
@@ -51,4 +69,5 @@ export const TOOL_ICONS: Record<string, string> = {
   edit_file: "📄",
   present_files: "📎",
   read_skill: "📚",
+  ask_user: "❓",
 };

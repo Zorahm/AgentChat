@@ -131,7 +131,7 @@
 /* top row */
 .sb-top {
   display: flex; align-items: center; gap: 8px;
-  padding: 12px 10px 10px; flex-shrink: 0;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 10px 10px; flex-shrink: 0;
 }
 .sb-hamburger { flex-shrink: 0; }
 
@@ -292,6 +292,73 @@
 .sb-body {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
   padding: 0 10px 8px;
+}
+
+/* ── Unified navigation (New chat / Search / Projects / Skills) ──────────── */
+.sb-nav {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 0 8px; flex-shrink: 0;
+}
+.sb-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 10px;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  font-family: var(--font-body); font-size: 13px; font-weight: 500;
+  color: var(--ink-2); cursor: pointer; text-align: left;
+  transition: background .12s, color .12s;
+}
+.sb-nav-item svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--muted); transition: color .12s; }
+.sb-nav-item:hover { background: var(--hover); color: var(--ink); }
+.sb-nav-item:hover svg { color: var(--ink-2); }
+.sb-nav-item.active { background: var(--hover); color: var(--ink); }
+.sb-nav-item.active svg { color: var(--accent); }
+
+/* New chat — the one accented action, same row geometry as the rest */
+.sb-nav-item--primary {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.sb-nav-item--primary svg { color: var(--accent); }
+.sb-nav-item--primary:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface-2));
+  color: var(--ink);
+}
+
+/* ── Collapsible groups (Pinned / Recents) ──────────────────────────────── */
+.sb-groups {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+  margin: 0 -4px; padding: 0 4px;
+}
+.sb-group { display: flex; flex-direction: column; }
+.sb-group-head {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 10px 2px 5px;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1.2px; font-weight: 500;
+  color: var(--faint); text-align: left;
+  transition: color .12s;
+}
+.sb-group-head:hover { color: var(--muted); }
+.sb-group-caret {
+  flex-shrink: 0; color: var(--faint);
+  transition: transform .18s ease;
+}
+.sb-group.is-open .sb-group-caret { transform: rotate(90deg); }
+.sb-group-label { flex: 1; }
+.sb-group-count {
+  font-size: 9.5px; color: var(--faint);
+  background: var(--hover); padding: 1px 6px; border-radius: 20px;
+  letter-spacing: .3px;
+}
+.sb-group-body {
+  display: flex; flex-direction: column;
+  animation: sb-section-in .2s ease both;
+}
+.sb-group-empty {
+  padding: 4px 6px 8px; margin: 0;
+  font-size: 11.5px; color: var(--faint); font-style: italic;
 }
 
 /* section header — used for both Pinned and Recent */

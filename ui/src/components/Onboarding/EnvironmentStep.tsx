@@ -1,8 +1,13 @@
 /** Onboarding step 3 — pick the shell and install its dependencies.
  *
- * Both shells render the same {@link DependencyCard}; this component owns the
+ * Every shell renders the same {@link DependencyCard}; this component owns the
  * status probes and the install/poll flows (apt for WSL, winget for PowerShell)
- * and reports its busy state up so the wizard can lock navigation during a run. */
+ * and reports its busy state up so the wizard can lock navigation during a run.
+ *
+ * On a native Linux/macOS host there is no WSL/PowerShell split: the choice is
+ * bash⇄zsh and the checklist is read-only, since the package manager varies by
+ * distro and installing needs a root password we must not ask for. The backend
+ * names the missing packages instead ({@link WSLStatus.install_command}). */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,6 +29,11 @@ interface WSLStatus {
   internet_ok: boolean;
   mirrored_supported: boolean;
   mirrored_active: boolean;
+  zsh_available: boolean;
+  shell_preference: "auto" | "wsl" | "powershell" | "zsh";
+  distro_name: string | null;
+  package_manager: string | null;
+  install_command: string | null;
 }
 
 interface WinDepsStatus {
@@ -38,9 +48,12 @@ interface WinDepsStatus {
 }
 
 type ShellChoice = "wsl" | "powershell";
+type NativeShell = "bash" | "zsh";
 type Busy = null | "all" | "network" | "win";
 
 interface EnvironmentStepProps {
+  /** Host OS from /api/system-status — "windows" picks the WSL/PowerShell flow. */
+  osPlatform: string;
   onBusyChange: (busy: boolean) => void;
   onError: (msg: string | null) => void;
 }
@@ -75,8 +88,9 @@ async function pollInstall(url: string, onLog: (log: string) => void): Promise<v
   }
 }
 
-export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps) {
+export function EnvironmentStep({ osPlatform, onBusyChange, onError }: EnvironmentStepProps) {
   const { t } = useTranslation();
+  const isWindows = osPlatform === "windows";
   const [shell, setShell] = useState<ShellChoice | null>(null);
   const [wsl, setWsl] = useState<WSLStatus | null>(null);
   const [win, setWin] = useState<WinDepsStatus | null>(null);
@@ -110,8 +124,13 @@ export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps)
   // Probe both shells once on mount, then pre-select the recommended one so the
   // dependency card is visible without an extra click. WSL when it's present,
   // otherwise PowerShell. The persisted preference only changes on a real click.
+  // A native host has no PowerShell to probe — /wsl/status alone describes it.
   useEffect(() => {
     void (async () => {
+      if (!isWindows) {
+        await refreshWsl();
+        return;
+      }
       const [w, p] = await Promise.allSettled([
         fetch(`${API_BASE}/wsl/status`).then((r) => (r.ok ? r.json() : null)),
         fetch(`${API_BASE}/win/status`).then((r) => (r.ok ? r.json() : null)),
@@ -125,7 +144,7 @@ export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps)
         setShell(wslData?.wsl_installed ? "wsl" : "powershell");
       }
     })();
-  }, []);
+  }, [isWindows, refreshWsl]);
 
   const chooseShell = useCallback(
     async (choice: ShellChoice) => {
@@ -149,12 +168,34 @@ export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps)
   const recheck = useCallback(async () => {
     setRechecking(true);
     try {
-      if (shell === "wsl") await refreshWsl();
+      if (!isWindows || shell === "wsl") await refreshWsl();
       else await refreshWin();
     } finally {
       setRechecking(false);
     }
-  }, [shell, refreshWsl, refreshWin]);
+  }, [isWindows, shell, refreshWsl, refreshWin]);
+
+  // Native hosts: bash is the default, zsh is opt-in. The choice is derived from
+  // the persisted preference rather than mirrored into local state, so a recheck
+  // can never disagree with what the backend will actually spawn.
+  const nativeShell: NativeShell = wsl?.shell_preference === "zsh" ? "zsh" : "bash";
+
+  const chooseNativeShell = useCallback(
+    async (choice: NativeShell) => {
+      onError(null);
+      try {
+        await fetch(`${API_BASE}/settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shell_preference: choice === "zsh" ? "zsh" : "auto" }),
+        });
+      } catch {
+        /* non-critical — the selection still drives the UI */
+      }
+      await refreshWsl();
+    },
+    [onError, refreshWsl],
+  );
 
   const appendLog = (line: string) => setLog((prev) => (prev ? prev + "\n" + line : line));
 
@@ -260,6 +301,15 @@ export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps)
     },
   ];
 
+  const nativeItems = (s: WSLStatus): DepItem[] => [
+    { key: "node", label: t("onboarding.wslNode"), ok: !!s.node, value: s.node ?? "—" },
+    { key: "python", label: t("onboarding.wslPython"), ok: !!s.python, value: s.python ?? "—" },
+    { key: "pandoc", label: t("onboarding.wslPandoc"), ok: !!s.pandoc, value: s.pandoc ?? "—" },
+    { key: "libre", label: t("onboarding.wslLibreOffice"), ok: !!s.libreoffice, value: s.libreoffice ?? "—" },
+    { key: "poppler", label: t("onboarding.wslPoppler"), ok: s.poppler, value: s.poppler ? "✓" : "—" },
+    { key: "docx", label: t("onboarding.wslDocx"), ok: s.docx, value: s.docx ? "✓" : "—" },
+  ];
+
   const winItems = (s: WinDepsStatus): DepItem[] => [
     { key: "node", label: t("onboarding.wslNode"), ok: !!s.node, value: s.node ?? "—" },
     { key: "python", label: t("onboarding.wslPython"), ok: !!s.python, value: s.python ?? "—" },
@@ -268,6 +318,63 @@ export function EnvironmentStep({ onBusyChange, onError }: EnvironmentStepProps)
     { key: "poppler", label: t("onboarding.wslPoppler"), ok: s.poppler, value: s.poppler ? "✓" : "—" },
     { key: "docx", label: t("onboarding.wslDocx"), ok: s.docx, value: s.docx ? "✓" : "—" },
   ];
+
+  if (!isWindows) {
+    return (
+      <div className="ob-body">
+        <h3>{t("onboarding.step3Title")}</h3>
+        <p className="ob-sub">
+          {t("onboarding.step3DescriptionNative", { distro: wsl?.distro_name ?? t("onboarding.nativeThisSystem") })}
+        </p>
+
+        <div className="ob-shell-choice">
+          <button
+            type="button"
+            className={`ob-shell-card${nativeShell === "bash" ? " selected" : ""}`}
+            onClick={() => chooseNativeShell("bash")}
+          >
+            <span className="ob-shell-name">{t("onboarding.shellBash")}</span>
+            <span className="ob-shell-desc">{t("onboarding.shellBashDesc")}</span>
+          </button>
+          <button
+            type="button"
+            className={`ob-shell-card${nativeShell === "zsh" ? " selected" : ""}`}
+            onClick={() => chooseNativeShell("zsh")}
+          >
+            <span className="ob-shell-name">{t("onboarding.shellZsh")}</span>
+            <span className="ob-shell-desc">{t("onboarding.shellZshDesc")}</span>
+          </button>
+        </div>
+
+        {wsl === null ? (
+          <p className="ob-sub2">{t("onboarding.checkingWsl")}</p>
+        ) : (
+          <>
+            {nativeShell === "zsh" && !wsl.zsh_available && (
+              <p className="ob-warn">{t("onboarding.zshMissing")}</p>
+            )}
+            <DependencyCard
+              title={t("onboarding.depsTitle")}
+              items={nativeItems(wsl)}
+              allOk={!!wsl.node && !!wsl.python && !!wsl.pandoc && !!wsl.libreoffice && wsl.poppler && wsl.docx}
+              rechecking={rechecking}
+              onRecheck={recheck}
+              beforeActions={
+                wsl.install_command ? (
+                  <div className="ob-native-install">
+                    <p className="ob-sub2">
+                      {t("onboarding.nativeInstallHint", { manager: wsl.package_manager ?? "" })}
+                    </p>
+                    <pre className="ob-native-cmd">{wsl.install_command}</pre>
+                  </div>
+                ) : null
+              }
+            />
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="ob-body">

@@ -24,7 +24,8 @@ import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agent.wsl_exec import decode_loose, wsl_read_text, wsl_run, wsl_write_bytes
+from agent.wsl_exec import decode_loose, run_capture, wsl_read_text, wsl_run, wsl_write_bytes
+from shell import NO_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,6 @@ _docker_task: asyncio.Task[None] | None = None
 _docker_log: list[str] = []
 _docker_error: str | None = None
 
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _DOCKER_DOWNLOAD_URL = "https://www.docker.com/products/docker-desktop/"
 
 
@@ -230,21 +230,7 @@ async def _wait_for_health(attempts: int = 20, delay: float = 2.0) -> bool:
 
 async def _win_run(args: list[str], timeout: int = 60) -> tuple[int, str, str]:
     """Run a Windows-side command in a thread; return (returncode, out, err)."""
-    try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            args,
-            capture_output=True,
-            timeout=timeout,
-            creationflags=_NO_WINDOW,
-        )
-    except FileNotFoundError:
-        return 127, "", f"{args[0]}: not found"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timed out after {timeout}s"
-    except OSError as exc:
-        return 1, "", str(exc)
-    return result.returncode, decode_loose(result.stdout), decode_loose(result.stderr)
+    return await run_capture(args, timeout=timeout)
 
 
 def _docker_desktop_exe() -> str | None:
@@ -345,7 +331,7 @@ def _start_docker_desktop() -> bool:
     if not exe:
         return False
     try:
-        subprocess.Popen([exe], creationflags=_NO_WINDOW)
+        subprocess.Popen([exe], creationflags=NO_WINDOW)
         return True
     except OSError:
         return False

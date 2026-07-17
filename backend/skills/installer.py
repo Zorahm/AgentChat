@@ -17,13 +17,43 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from skills.catalog import ANTHROPIC_ALLOWED_DIR_NAMES, ANTHROPIC_SOURCE
-from skills.reader import AgentSkillsReader, SkillEntry
+from skills.catalog import ANTHROPIC_ALLOWED_DIR_NAMES, ANTHROPIC_DISPLAY_NAME, ANTHROPIC_SOURCE
+from skills.reader import AgentSkillsReader, SkillEntry, _parse_frontmatter
 
 
 _SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_\-\.]*$", re.IGNORECASE)
 
 MARKER_NAME = ".agentchat-installed"
+
+
+def _ensure_author_field(skill_md: Path, author: str) -> None:
+    """Add ``author: <author>`` to a SKILL.md's frontmatter if it has none.
+
+    Anthropic's own skills (fetched unmodified via install_subdir) don't
+    self-attribute in frontmatter, unlike our bundled/adapted copies — so the
+    Skills UI would otherwise show no author line at all for them, while every
+    other curated skill shows one.
+    """
+    try:
+        text = skill_md.read_text("utf-8")
+    except OSError:
+        return
+    meta, _ = _parse_frontmatter(text)
+    if meta.get("author"):
+        return
+
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.strip() == "---":
+            lines.insert(i + 1, f"author: {author}\n")
+            break
+    else:
+        return  # no frontmatter block — leave the file alone
+
+    try:
+        skill_md.write_text("".join(lines), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _is_subpath(child: Path, parent: Path) -> bool:
@@ -71,13 +101,9 @@ class GitHubSkillInstaller:
         self,
         skills_dir: Path,
         reader: AgentSkillsReader,
-        legacy_dirs: list[Path] | None = None,
     ) -> None:
         self.skills_dir = skills_dir
         self._reader = reader
-        # Older versions installed under APPDATA; we still let users uninstall
-        # those via the UI. New installs all go to ``skills_dir`` (user-global).
-        self.legacy_dirs: list[Path] = list(legacy_dirs or [])
 
     @staticmethod
     def _write_marker(dest: Path, source: str) -> None:
@@ -89,26 +115,11 @@ class GitHubSkillInstaller:
             pass  # marker is best-effort; install itself already succeeded
 
     def is_installed_by_us(self, skill_path: Path) -> bool:
-        """True iff *skill_path* lives under one of our install roots AND has
-        a marker file at or above it. Lets the API tell our installs apart
-        from sibling skills planted by Claude Code et al.
+        """True iff *skill_path* lives under our install root AND has a marker
+        file at or above it. Lets the API tell our installs apart from sibling
+        skills planted by Claude Code et al.
         """
-        roots = [self.skills_dir, *self.legacy_dirs]
-        return any(_has_marker_above(skill_path, r) for r in roots)
-
-    def backfill_legacy_markers(self) -> None:
-        """Mark every top-level dir under ``legacy_dirs`` as ours.
-
-        Pre-marker builds wrote into APPDATA, which nothing else touches —
-        so everything already there must be ours. Stamp markers so the new
-        DELETE check accepts them.
-        """
-        for root in self.legacy_dirs:
-            if not root.is_dir():
-                continue
-            for child in root.iterdir():
-                if child.is_dir() and not (child / MARKER_NAME).is_file():
-                    self._write_marker(child, source=f"legacy:{child.name}")
+        return _has_marker_above(skill_path, self.skills_dir)
 
     def install(self, source: str) -> list[SkillEntry]:
         """Install one or more skills from a GitHub 'owner/repo' string.
@@ -170,6 +181,8 @@ class GitHubSkillInstaller:
             if not skill_md_files:
                 shutil.rmtree(dest, ignore_errors=True)
                 raise ValueError(f"'{source}' yielded no curated skills after filtering")
+            for md in skill_md_files:
+                _ensure_author_field(md, ANTHROPIC_DISPLAY_NAME)
 
         self._write_marker(dest, source=source)
         self._reader.rebuild()
@@ -226,9 +239,14 @@ class GitHubSkillInstaller:
         if not downloaded:
             raise ValueError(f"Repository '{repo_source}' not found on GitHub")
 
-        if not list(dest.rglob("SKILL.md")):
+        skill_md_files = list(dest.rglob("SKILL.md"))
+        if not skill_md_files:
             shutil.rmtree(dest, ignore_errors=True)
             raise ValueError(f"'{subdir}' in '{repo_source}' has no SKILL.md")
+
+        if repo_source.lower() == ANTHROPIC_SOURCE:
+            for md in skill_md_files:
+                _ensure_author_field(md, ANTHROPIC_DISPLAY_NAME)
 
         self._write_marker(dest, source=f"{repo_source}/{subdir}")
         self._reader.rebuild()

@@ -11,7 +11,8 @@ import { useFileDrop } from "../../hooks/useFileDrop";
 import { useWindowFileDrag } from "../../hooks/useWindowFileDrag";
 import type { ModelItem } from "../Chat/ChatView";
 import type { UseProjectsResult } from "../../hooks/useProjects";
-import { makeDirSlug } from "../../hooks/useChats";
+import { makeDirSlug, getWebSearchDefault, getResearchDefault } from "../../hooks/useChats";
+import type { SessionSeed } from "../../hooks/useChats";
 import type { ProjectFull, ProjectFileInfo, ProjectFileText } from "../../types/project";
 import type { ChatSession, AttachmentInfo } from "../../types/chat";
 import { formatRelative } from "../../utils/formatTime";
@@ -35,6 +36,7 @@ interface ProjectDetailProps {
     attachments: AttachmentInfo[],
     html?: string,
     dirSlug?: string,
+    seed?: SessionSeed,
   ) => void;
   onDeleteChat: (id: string) => void;
 }
@@ -61,6 +63,26 @@ export function ProjectDetail({
   // uploads/) instead of the out-of-sandbox cache dir — otherwise the model
   // can't read the first message's attachments. Regenerated after each send.
   const [composeSlug, setComposeSlug] = useState(() => makeDirSlug());
+
+  // Composer toggles for the chat this project is about to spawn. There's no
+  // session yet, so they live here (seeded from the same sticky defaults as a
+  // normal new chat) and are threaded into the new session on send — without
+  // them the project composer's "+" menu would be missing the web-search,
+  // research and MCP sections that the main composer shows.
+  const [webSearchEnabled, setWebSearchEnabled] = useState(() => getWebSearchDefault().enabled);
+  const [webSearchMode, setWebSearchMode] = useState(() => getWebSearchDefault().mode);
+  const [researchEnabled, setResearchEnabled] = useState(() => getResearchDefault());
+  const [mcpEnabled, setMcpEnabled] = useState<string[]>([]);
+
+  const handleWebSearchChange = useCallback((enabled: boolean, mode?: string) => {
+    setWebSearchEnabled(enabled);
+    if (mode) setWebSearchMode(mode);
+  }, []);
+  const handleToggleMcpServer = useCallback((serverId: string) => {
+    setMcpEnabled((prev) =>
+      prev.includes(serverId) ? prev.filter((id) => id !== serverId) : [...prev, serverId],
+    );
+  }, []);
 
   const reload = useCallback(async () => {
     const full = await api.getProject(projectId);
@@ -184,7 +206,12 @@ export function ProjectDetail({
 
         <ChatInput
           onSend={(text, attachments, html) => {
-            onStartChat(projectId, text, attachments, html, composeSlug);
+            onStartChat(projectId, text, attachments, html, composeSlug, {
+              webSearchEnabled,
+              webSearchMode,
+              researchEnabled,
+              mcpEnabledServers: mcpEnabled,
+            });
             setComposeSlug(makeDirSlug()); // fresh sandbox for the next message
           }}
           onStop={() => {}}
@@ -199,6 +226,13 @@ export function ProjectDetail({
           placeholder={t("projects.chatPlaceholder")}
           dirSlug={composeSlug}
           externalDragActive={windowDragging}
+          webSearchEnabled={webSearchEnabled}
+          webSearchMode={webSearchMode}
+          onWebSearchChange={handleWebSearchChange}
+          researchEnabled={researchEnabled}
+          onResearchChange={setResearchEnabled}
+          mcpEnabled={mcpEnabled}
+          onToggleMcpServer={handleToggleMcpServer}
         />
 
         <div className="proj-chats-head">{t("projects.chatSectionTitle")}</div>

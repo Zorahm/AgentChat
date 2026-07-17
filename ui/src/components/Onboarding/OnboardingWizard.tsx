@@ -30,8 +30,6 @@ interface OnboardingWizardProps {
 
 type Step = 1 | 2 | 3 | 4;
 
-const ANTHROPIC_SKILLS_SOURCE = "anthropics/skills";
-
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
@@ -45,8 +43,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [envBusy, setEnvBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [skillsInstalling, setSkillsInstalling] = useState(false);
-  const [skillsInstalled, setSkillsInstalled] = useState<number | null>(null);
+  // Host OS — decides which face the environment step wears: the WSL/PowerShell
+  // setup on Windows, the bash⇄zsh picker plus a read-only checklist elsewhere.
+  const [osPlatform, setOsPlatform] = useState<string>("windows");
 
   const go = (n: Step) => {
     setStep(n);
@@ -65,6 +64,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         }
       })
       .catch(() => setError(t("onboarding.connectionError")));
+    // Cheap platform probe (no WSL spawning) so we know whether to show the
+    // WSL/environment setup step at all.
+    fetch(`${API_BASE}/system-status`)
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.os_platform === "string") setOsPlatform(d.os_platform); })
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshModels = async () => {
@@ -144,26 +149,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
-  const installAnthropicSkills = async () => {
-    setSkillsInstalling(true);
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/skills/install`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: ANTHROPIC_SKILLS_SOURCE }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail ?? `HTTP ${r.status}`);
-      setSkillsInstalled(Array.isArray(d) ? d.length : 0);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.skillsError"));
-    } finally {
-      setSkillsInstalling(false);
-    }
-  };
-
-  const finish = async () => {
+  const finish = async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
     try {
@@ -174,9 +160,19 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       onComplete();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : t("onboarding.completeError"));
       setSaving(false);
+      return false;
+    }
+  };
+
+  // Finish onboarding, then jump straight to the Skills page in Settings, where
+  // skills are installed from the bundled repo catalog (not the old GitHub pull).
+  const finishAndOpenSkills = async () => {
+    if (await finish()) {
+      window.dispatchEvent(new CustomEvent("navigate", { detail: "skills" }));
     }
   };
 
@@ -315,7 +311,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             {step === 3 && (
               <>
-                <EnvironmentStep onBusyChange={setEnvBusy} onError={setError} />
+                <EnvironmentStep osPlatform={osPlatform} onBusyChange={setEnvBusy} onError={setError} />
                 <div className="ob-actions">
                   <button className="ob-btn ob-btn--ghost" onClick={() => go(2)} disabled={envBusy}>{t("onboarding.back")}</button>
                   <button className="ob-btn ob-btn--ghost" onClick={() => go(4)} disabled={envBusy}>{t("onboarding.skip")}</button>
@@ -337,28 +333,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </ul>
                 <p className="ob-sub2">{t("onboarding.skillsSource")}</p>
 
-                {skillsInstalled !== null && (
-                  <div className="ob-success">
-                    {t("onboarding.skillsInstalled", { count: skillsInstalled })}
-                  </div>
-                )}
-
                 <div className="ob-actions">
                   <button className="ob-btn ob-btn--ghost" onClick={() => go(3)}>{t("onboarding.back")}</button>
-                  {skillsInstalled === null ? (
-                    <>
-                      <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving || skillsInstalling}>
-                        {t("onboarding.skipSkills")}
-                      </button>
-                      <button className="ob-btn" onClick={installAnthropicSkills} disabled={skillsInstalling || saving}>
-                        {skillsInstalling ? t("onboarding.installingSkills") : t("onboarding.installSkills")}
-                      </button>
-                    </>
-                  ) : (
-                    <button className="ob-btn" onClick={finish} disabled={saving}>
-                      {saving ? t("onboarding.finishing") : t("onboarding.finish")}
-                    </button>
-                  )}
+                  <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving}>
+                    {saving ? t("onboarding.finishing") : t("onboarding.skipSkills")}
+                  </button>
+                  <button className="ob-btn" onClick={finishAndOpenSkills} disabled={saving}>
+                    {t("onboarding.openSkills")}
+                  </button>
                 </div>
               </div>
             )}

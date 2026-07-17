@@ -50,6 +50,7 @@ class ResearchTool(BaseTool):
         api_key: str | None,
         api_base: str | None,
         extra_headers: dict[str, str] | None,
+        usage_metadata: dict[str, object] | None = None,
     ) -> None:
         self._store = store
         self._service = web_search_service
@@ -59,6 +60,7 @@ class ResearchTool(BaseTool):
         self._api_key = api_key
         self._api_base = api_base
         self._extra_headers = extra_headers
+        self._usage_metadata = usage_metadata
         self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
         # Carries structured progress events (plan/search/sources/read/done)
         # that agent.loop forwards to the UI as tool_progress.
@@ -127,6 +129,9 @@ class ResearchTool(BaseTool):
             extra_headers=self._extra_headers,
             policy=self._policy,
             progress_queue=self.progress_queue,
+            usage_metadata=(
+                {**self._usage_metadata, "context": "research"} if self._usage_metadata else None
+            ),
         )
         result: ResearchResult = await runner.run(subject, depth_int, (language or "").strip())
         if not result.ok:

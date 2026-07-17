@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from api.agents import router as agents_router
 from api.chat import router as chat_router
 from api.chats import router as chats_router
 from api.config_routes import router as config_router
@@ -16,12 +17,14 @@ from api.remote import router as remote_router
 from api.searxng import router as searxng_router
 from api.settings import router as settings_router
 from api.skills import router as skills_router
+from api.usage import router as usage_router
 from api.win_deps import router as win_deps_router
 from api.wsl import router as wsl_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(chat_router)
 api_router.include_router(chats_router)
+api_router.include_router(agents_router)
 api_router.include_router(projects_router)
 api_router.include_router(files_router)
 api_router.include_router(skills_router)
@@ -34,3 +37,4 @@ api_router.include_router(wsl_router)
 api_router.include_router(win_deps_router)
 api_router.include_router(config_router)
 api_router.include_router(searxng_router)
+api_router.include_router(usage_router)

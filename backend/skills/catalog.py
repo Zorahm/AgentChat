@@ -27,6 +27,10 @@ class CuratedSkill:
 
 
 ANTHROPIC_SOURCE = "anthropics/skills"
+# Anthropic's own SKILL.md files don't self-attribute an `author` field (unlike
+# our bundled/adapted copies, which say "AgentChat") — see installer.py's
+# _ensure_author_field, used when a curated skill installs unmodified from GitHub.
+ANTHROPIC_DISPLAY_NAME = "Anthropic"
 
 # The office four + ``agentchat`` are our own bundled skills (repo ``skills/``),
 # so they install from the local copy. frontend-design is installed straight from

@@ -80,6 +80,7 @@ class ResearchRunner:
         extra_headers: dict[str, str] | None,
         policy: SandboxPolicy,
         progress_queue: "asyncio.Queue[dict[str, Any]] | None" = None,
+        usage_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._store = store
         self._service = web_search_service
@@ -91,6 +92,7 @@ class ResearchRunner:
         self._extra_headers = extra_headers
         self._policy = policy
         self._queue = progress_queue
+        self._usage_metadata = usage_metadata
 
     def _emit(self, event: dict[str, Any]) -> None:
         """Push a structured progress event to the queue for the UI timeline."""
@@ -142,6 +144,7 @@ class ResearchRunner:
             llm=llm,
             policy=self._policy,
             extra_tools=[native_tool] if native_tool else None,
+            usage_metadata=self._usage_metadata,
         )
 
         seed = self._build_seed(topic, depth, language)

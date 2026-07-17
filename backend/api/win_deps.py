@@ -17,7 +17,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -25,14 +24,12 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from agent.wsl_exec import decode_loose
+from agent.wsl_exec import run_capture
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/win", tags=["win"])
 
-# Suppress the Windows console flash for probe subprocesses.
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _IS_WINDOWS = platform.system() == "Windows"
 
 # In-process background install task — single concurrent install at most
@@ -98,22 +95,7 @@ async def _run(
     args: list[str], timeout: int = 30, env: dict[str, str] | None = None
 ) -> tuple[int, str, str]:
     """Run a command in a thread and return (returncode, stdout, stderr)."""
-    try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            args,
-            capture_output=True,
-            timeout=timeout,
-            creationflags=_NO_WINDOW,
-            env=env,
-        )
-    except FileNotFoundError:
-        return 127, "", f"{args[0]}: not found"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timed out after {timeout}s"
-    except OSError as exc:
-        return 1, "", str(exc)
-    return result.returncode, decode_loose(result.stdout), decode_loose(result.stderr)
+    return await run_capture(args, timeout=timeout, env=env)
 
 
 async def _probe_version(exe: str, arg: str = "--version") -> str | None:

@@ -1,6 +1,6 @@
-/* TipTap editor + mention chips + dropdown */
+/* Composer editor + mention chips + dropdown */
 
-.tiptap-editor {
+.composer-editor {
   min-height: 46px;
   max-height: 200px;
   overflow-y: auto;
@@ -18,14 +18,14 @@
 /* ProseMirror wraps content in <p> with default browser margins; strip them
  * so the cursor sits flush against the editor padding edge — otherwise the
  * caret would be offset by ~1em and miss the overlaid placeholder text. */
-.tiptap-editor p {
+.composer-editor p {
   margin: 0;
 }
 
-.tiptap-wrap {
+.composer-wrap {
   position: relative;
 }
-.tiptap-ph {
+.composer-ph {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   padding: 10px 12px 8px;
@@ -38,7 +38,7 @@
   white-space: nowrap;
 }
 
-.tiptap-editor:focus { outline: none; }
+.composer-editor:focus { outline: none; }
 
 /* ── Inline mention chip (React NodeView) ────────────────────────────── */
 

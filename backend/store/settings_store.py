@@ -14,6 +14,7 @@ import secrets
 import tempfile
 from pathlib import Path
 
+from api.schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
 from api.schemas.settings import (
     ModelConfig,
     ProviderConfig,
@@ -77,9 +78,6 @@ def _resolve_env_api_key(provider_id: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-SETTINGS_SCHEMA_VERSION = 1
-
-
 class SettingsStore:
     """Persistent settings store backed by a JSON file.
 
@@ -94,6 +92,9 @@ class SettingsStore:
     ) -> None:
         self._providers: dict[str, ProviderConfig] = {}
         self._mcp_servers: dict[str, MCPServerConfig] = {}
+        self._agents: dict[str, AgentConfig] = {
+            DEFAULT_AGENT_ID: AgentConfig(id=DEFAULT_AGENT_ID, name="AgentChat"),
+        }
         self._fetcher = fetcher
         self._settings_path = settings_path
         self._default_model = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
@@ -125,6 +126,9 @@ class SettingsStore:
         # Keyboard shortcuts: action id → normalized combo. Empty means the
         # frontend uses its built-in defaults for every action.
         self._shortcuts: dict[str, str] = {}
+        # Off by default: model writes its own one-line action descriptions
+        # instead of the system-computed status line.
+        self._describe_actions = False
 
         # 1. Seed every built-in provider with env-resolved API keys.
         for p in DEFAULT_PROVIDERS:
@@ -195,7 +199,7 @@ class SettingsStore:
             if isinstance(ur, bool):
                 self._unrestricted_mode = ur
             sp = global_block.get("shell_preference")
-            if isinstance(sp, str) and sp in ("auto", "wsl", "powershell"):
+            if isinstance(sp, str) and sp in ("auto", "wsl", "powershell", "zsh"):
                 self._shell_preference = sp
             ra = global_block.get("remote_access_enabled")
             if isinstance(ra, bool):
@@ -226,6 +230,9 @@ class SettingsStore:
                 self._shortcuts = {
                     str(k): str(v) for k, v in sc.items() if isinstance(v, str)
                 }
+            da = global_block.get("describe_actions")
+            if isinstance(da, bool):
+                self._describe_actions = da
 
         providers_block = data.get("providers", [])
         if isinstance(providers_block, list):
@@ -268,12 +275,23 @@ class SettingsStore:
                         continue
                     self._mcp_servers[server.id] = server
 
+        agents_block = data.get("agents", [])
+        if isinstance(agents_block, list):
+            for raw_a in agents_block:
+                if not isinstance(raw_a, dict) or "id" not in raw_a:
+                    continue
+                try:
+                    agent = AgentConfig.model_validate(raw_a)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[settings] skipping malformed agent {raw_a!r}: {exc}")
+                    continue
+                self._agents[agent.id] = agent
+
     def _save(self) -> None:
         """Atomically persist current state to settings.json."""
         if self._settings_path is None:
             return
         payload = {
-            "version": SETTINGS_SCHEMA_VERSION,
             "global": {
                 "default_model": self._default_model,
                 "temperature": self._temperature,
@@ -296,6 +314,7 @@ class SettingsStore:
                 "research_enabled": self._research_enabled,
                 "research_model": self._research_model,
                 "shortcuts": self._shortcuts,
+                "describe_actions": self._describe_actions,
             },
             "providers": [
                 p.model_dump() for p in sorted(self._providers.values(), key=lambda x: x.id)
@@ -306,6 +325,9 @@ class SettingsStore:
                     for s in sorted(self._mcp_servers.values(), key=lambda x: x.id)
                 ],
             },
+            "agents": [
+                a.model_dump() for a in sorted(self._agents.values(), key=lambda x: x.id)
+            ],
         }
         try:
             self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,6 +377,7 @@ class SettingsStore:
             research_model=self._research_model,
             shortcuts=dict(self._shortcuts),
             mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
+            describe_actions=self._describe_actions,
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -382,9 +405,9 @@ class SettingsStore:
         if patch.unrestricted_mode is not None:
             self._unrestricted_mode = patch.unrestricted_mode
         if patch.shell_preference is not None:
-            if patch.shell_preference not in ("auto", "wsl", "powershell"):
+            if patch.shell_preference not in ("auto", "wsl", "powershell", "zsh"):
                 raise ValueError(
-                    f"shell_preference must be one of auto|wsl|powershell, got {patch.shell_preference!r}"
+                    f"shell_preference must be one of auto|wsl|powershell|zsh, got {patch.shell_preference!r}"
                 )
             self._shell_preference = patch.shell_preference
         if patch.remote_access_enabled is not None:
@@ -415,6 +438,8 @@ class SettingsStore:
             self._shortcuts = {
                 str(k): v for k, v in patch.shortcuts.items() if isinstance(v, str) and v
             }
+        if patch.describe_actions is not None:
+            self._describe_actions = patch.describe_actions
         self._save()
         return self.get()
 
@@ -507,6 +532,56 @@ class SettingsStore:
         self._mcp_servers[cfg.id] = cfg.model_copy(deep=True)
         self._save()
 
+    # ------------------------------------------------------------------
+    # agents
+    # ------------------------------------------------------------------
+
+    def list_agents(self) -> list[AgentConfig]:
+        return [a.model_copy() for a in sorted(self._agents.values(), key=lambda a: a.id)]
+
+    def get_agent(self, agent_id: str) -> AgentConfig | None:
+        a = self._agents.get(agent_id)
+        return a.model_copy() if a is not None else None
+
+    def add_agent(self, body: AgentCreate) -> AgentConfig:
+        if body.id in self._agents:
+            raise ValueError(f"Agent '{body.id}' already exists")
+        agent = AgentConfig(
+            id=body.id,
+            name=body.name,
+            color_from=body.color_from,
+            color_to=body.color_to,
+            system_prompt=body.system_prompt,
+        )
+        self._agents[agent.id] = agent
+        self._save()
+        return agent.model_copy()
+
+    def update_agent(self, agent_id: str, patch: AgentUpdate) -> AgentConfig:
+        if agent_id == DEFAULT_AGENT_ID:
+            raise PermissionError("The default agent cannot be edited")
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        if patch.name is not None:
+            agent.name = patch.name
+        if patch.color_from is not None:
+            agent.color_from = patch.color_from
+        if patch.color_to is not None:
+            agent.color_to = patch.color_to
+        if patch.system_prompt is not None:
+            agent.system_prompt = patch.system_prompt
+        self._save()
+        return agent.model_copy()
+
+    def remove_agent(self, agent_id: str) -> None:
+        if agent_id == DEFAULT_AGENT_ID:
+            raise ValueError("The default agent cannot be deleted")
+        if agent_id not in self._agents:
+            raise ValueError(f"Unknown agent: {agent_id}")
+        del self._agents[agent_id]
+        self._save()
+
     def get_provider(self, model: str) -> ProviderConfig | None:
         """Resolve a provider by model string (prefix before /)."""
         if "/" in model:
@@ -588,6 +663,10 @@ class SettingsStore:
     @property
     def remote_token(self) -> str:
         return self._remote_token
+
+    @property
+    def describe_actions(self) -> bool:
+        return self._describe_actions
 
 
 def build_web_search_config(store: SettingsStore) -> WebSearchConfig:

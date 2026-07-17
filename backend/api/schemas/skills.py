@@ -23,6 +23,13 @@ class CatalogInstallRequest(BaseModel):
     key: str = Field(description="Curated catalog key (e.g. 'docx', 'frontend-design')")
 
 
+class InstallLocalRequest(BaseModel):
+    path: str = Field(
+        description="Absolute path to a SKILL.md inside a chat sandbox "
+        "(WSL '/home/.../AgentChat/chats/...' or a Windows path)."
+    )
+
+
 class SkillContent(BaseModel):
     name: str
     content: str

@@ -1,4 +1,4 @@
-/** @-mention suggestion for TipTap.
+/** @-mention suggestion for Composer.
  *
  * Two item kinds:
  *   - action  → file picker (no chip is inserted; calls onAttachFile)
@@ -135,7 +135,7 @@ function positionPopup(popup: HTMLElement, anchor: DOMRect | null) {
   popup.style.top = `${Math.round(top)}px`;
 }
 
-// ── TipTap Suggestion config ───────────────────────────────────────────────
+// ── Composer Suggestion config ─────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildMentionSuggestion(deps: MentionDeps): any {
@@ -237,7 +237,7 @@ export function buildMentionSuggestion(deps: MentionDeps): any {
   };
 }
 
-/** Extract plain text from TipTap editor JSON, mentions become @label. */
+/** Extract plain text from Composer JSON, mentions become @label. */
 export function extractText(json: Record<string, unknown>): string {
   if (json.type === "text") return String(json.text ?? "");
   if (json.type === "mention") {

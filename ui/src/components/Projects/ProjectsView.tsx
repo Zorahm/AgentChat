@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useProjects } from "../../hooks/useProjects";
 import type { ModelItem } from "../Chat/ChatView";
 import type { ChatSession, AttachmentInfo } from "../../types/chat";
+import type { SessionSeed } from "../../hooks/useChats";
 import { ProjectDetail } from "./ProjectDetail";
 
 interface ProjectsViewProps {
@@ -26,6 +27,7 @@ interface ProjectsViewProps {
     attachments: AttachmentInfo[],
     html?: string,
     dirSlug?: string,
+    seed?: SessionSeed,
   ) => void;
   onDeleteChat: (id: string) => void;
 }

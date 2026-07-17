@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, List } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, Robot, CaretLeft, CaretRight } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
@@ -15,7 +15,9 @@ import { ModelsTab } from "./tabs/ModelsTab";
 import { PathsTab } from "./tabs/PathsTab";
 import { AboutTab } from "./tabs/AboutTab";
 import { MCPTab } from "./tabs/MCPTab";
+import { AgentsTab } from "./tabs/AgentsTab";
 import { ShortcutsTab } from "./tabs/ShortcutsTab";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 export interface ProviderConfig {
   id: string; name: string; api_key: string | null;
@@ -57,19 +59,20 @@ export interface SettingsData {
   language?: string;
   onboarding_completed?: boolean;
   unrestricted_mode?: boolean;
-  shell_preference?: "auto" | "wsl" | "powershell";
+  shell_preference?: "auto" | "wsl" | "powershell" | "zsh";
   web_search_mode?: string;
   searxng_url?: string | null;
   tavily_api_key_set?: boolean;
   research_enabled?: boolean;
   research_model?: string;
   mcp_servers?: MCPServerConfig[];
+  describe_actions?: boolean;
 }
 
 export type NavTab =
   | "profile" | "appearance" | "shortcuts" | "about"
   | "providers" | "models" | "skills"
-  | "terminal" | "sandbox" | "paths" | "mcp";
+  | "terminal" | "sandbox" | "paths" | "mcp" | "agents";
 
 interface SettingsPanelProps {
   onClose?: () => void;
@@ -84,13 +87,14 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onOpenOnboarding, onStartGhostChat }: SettingsPanelProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<Array<{ id: string; status: string; count: number; error: string | null }>>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [tab, setTab] = useState<NavTab>(initialTab ?? "providers");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileShowList, setMobileShowList] = useState(!initialTab);
 
   const fetchModels = useCallback(async (refresh = false) => {
     setModelsLoading(true);
@@ -123,18 +127,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
 
   useEffect(() => { reload(); }, [reload]);
 
-  useEffect(() => {
-    if (!mobileNavOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMobileNavOpen(false); };
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [mobileNavOpen]);
-
-  const handleTabClick = (v: NavTab) => { setTab(v); setMobileNavOpen(false); };
+  const handleTabClick = (v: NavTab) => { setTab(v); setMobileShowList(false); };
 
   const updateProvider = async (id: string, p: Record<string, unknown>) => {
     setError(null);
@@ -183,10 +176,54 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
 
   if (!settings) return <Loading error={error} onRetry={reload} onClose={onClose} />;
 
+  const tabDefs: Array<{ id: NavTab; icon: React.ReactNode }> = [
+    { id: "profile", icon: <User size={20} /> },
+    { id: "appearance", icon: <Palette size={20} /> },
+    { id: "shortcuts", icon: <Keyboard size={20} /> },
+    { id: "about", icon: <Info size={20} /> },
+    { id: "providers", icon: <Cube size={20} /> },
+    { id: "models", icon: <Cpu size={20} /> },
+    { id: "skills", icon: <Books size={20} /> },
+    { id: "terminal", icon: <TerminalWindow size={20} /> },
+    { id: "sandbox", icon: <ShieldWarning size={20} /> },
+    { id: "paths", icon: <DeviceMobile size={20} /> },
+    { id: "mcp", icon: <Plugs size={20} /> },
+    { id: "agents", icon: <Robot size={20} /> },
+  ];
+
+  const mobileGroups: Array<{ group: string; items: Array<{ id: NavTab; icon: React.ReactNode }> }> = [
+    {
+      group: t("settings.nav.personal"),
+      items: [
+        { id: "profile", icon: <User size={18} /> },
+        { id: "appearance", icon: <Palette size={18} /> },
+        { id: "shortcuts", icon: <Keyboard size={18} /> },
+        { id: "about", icon: <Info size={18} /> },
+      ],
+    },
+    {
+      group: t("settings.nav.modelGroup"),
+      items: [
+        { id: "providers", icon: <Cube size={18} /> },
+        { id: "models", icon: <Cpu size={18} /> },
+        { id: "skills", icon: <Books size={18} /> },
+      ],
+    },
+    {
+      group: t("settings.nav.systemGroup"),
+      items: [
+        { id: "terminal", icon: <TerminalWindow size={18} /> },
+        { id: "sandbox", icon: <ShieldWarning size={18} /> },
+        { id: "paths", icon: <DeviceMobile size={18} /> },
+        { id: "mcp", icon: <Plugs size={18} /> },
+        { id: "agents", icon: <Robot size={18} /> },
+      ],
+    },
+  ];
+
   return (
     <div className="st2">
-      {mobileNavOpen && <div className="st2-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
-      <nav className={`st2-nav${mobileNavOpen ? " mobile-open" : ""}`}>
+      <nav className="st2-nav">
         <h2 className="st2-nav-h"><img className="st2-nav-mark" src="/dots.svg" alt="" /> {t("settings.nav.title")}</h2>
 
         {onClose && (
@@ -208,6 +245,7 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         <NavItem t="sandbox" cur={tab} label={t("settings.nav.sandbox")} ic={<ShieldWarning size={16} />} onClick={handleTabClick} />
         <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<DeviceMobile size={16} />} onClick={handleTabClick} />
         <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={handleTabClick} />
+        <NavItem t="agents" cur={tab} label={t("settings.nav.agents")} ic={<Robot size={16} />} onClick={handleTabClick} />
 
         <div className="st2-nav-pad" />
         <div className="st2-nav-foot">
@@ -215,26 +253,61 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         </div>
       </nav>
 
-      <div className="st2-body">
-        <div className="st2-mob-bar">
-          <button className="st2-mob-btn" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
-            <List size={22} />
-          </button>
-          <span className="st2-mob-title">{t(`settings.nav.${tab}`)}</span>
+      {isMobile && mobileShowList ? (
+        <div className="st2-body st2-mlist-body">
+          <div className="st2-mob-bar">
+            {onClose && (
+              <button className="st2-mob-btn" onClick={onClose} aria-label={t("settings.back")} title={t("settings.back")}>
+                <CaretLeft size={22} />
+              </button>
+            )}
+            <span className="st2-mob-title">{t("settings.nav.title")}</span>
+          </div>
+          {error && <div className="st2-error">{error}</div>}
+          {mobileGroups.map((g) => (
+            <div key={g.group} className="st2-mlist-group">
+              <div className="st2-group">{g.group}</div>
+              <div className="st2-mlist">
+                {g.items.map((d) => (
+                  <a
+                    key={d.id}
+                    className="st2-mlist-item"
+                    onClick={() => handleTabClick(d.id)}
+                  >
+                    <span className="st2-nav-ic">{d.icon}</span>
+                    <span className="st2-mlist-label">{t(`settings.nav.${d.id}`)}</span>
+                    <CaretRight size={16} className="st2-mlist-chev" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-        {error && <div className="st2-error">{error}</div>}
-        {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} onOpenOnboarding={onOpenOnboarding} />}
-        {tab === "appearance" && <AppearanceTab settings={settings} onUpdate={updateGlobal} />}
-        {tab === "terminal" && <TerminalTab settings={settings} onUpdate={updateGlobal} />}
-        {tab === "sandbox" && <SandboxTab settings={settings} onUpdate={updateGlobal} />}
-        {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} onUpdateGlobal={updateGlobal} />}
-        {tab === "models" && <ModelsTab settings={settings} loading={modelsLoading} onUpdate={updateGlobal} onRefresh={() => fetchModels(true)} />}
-        {tab === "paths" && <PathsTab />}
-        {tab === "skills" && <SkillsManager />}
-        {tab === "mcp" && <MCPTab />}
-        {tab === "shortcuts" && <ShortcutsTab />}
-        {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
-      </div>
+      ) : (
+        <div className="st2-body">
+          {isMobile && (
+            <div className="st2-mob-bar">
+              <button className="st2-mob-btn" onClick={() => setMobileShowList(true)} aria-label={t("settings.back")} title={t("settings.back")}>
+                <CaretLeft size={22} />
+              </button>
+              <span className="st2-mob-title">{t(`settings.nav.${tab}`)}</span>
+            </div>
+          )}
+          {error && <div className="st2-error">{error}</div>}
+          {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} onOpenOnboarding={onOpenOnboarding} />}
+          {tab === "appearance" && <AppearanceTab settings={settings} onUpdate={updateGlobal} />}
+          {tab === "terminal" && <TerminalTab settings={settings} onUpdate={updateGlobal} />}
+          {tab === "sandbox" && <SandboxTab settings={settings} onUpdate={updateGlobal} />}
+          {tab === "providers" && <ProvidersTab settings={settings} statuses={providerStatuses} loading={modelsLoading} expanded={expanded} setExpanded={setExpanded} onUpdate={updateProvider} onAdd={addProvider} onDelete={deleteProvider} onRefreshModels={() => fetchModels(true)} onUpdateGlobal={updateGlobal} />}
+          {tab === "models" && <ModelsTab settings={settings} loading={modelsLoading} onUpdate={updateGlobal} onRefresh={() => fetchModels(true)} />}
+          {tab === "paths" && <PathsTab />}
+          {tab === "skills" && <SkillsManager />}
+          {tab === "mcp" && <MCPTab />}
+          {tab === "agents" && <AgentsTab />}
+          {tab === "shortcuts" && <ShortcutsTab />}
+          {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
+        </div>
+      )}
     </div>
   );
 }

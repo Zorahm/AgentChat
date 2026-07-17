@@ -66,9 +66,20 @@
   white-space: pre-wrap; word-break: break-all;
 }
 
-/* Inline tool call (inside process block) */
-.tc--inline { border-radius: 8px; }
-.tc--inline .tc-head { padding: 7px 12px; }
+/* Inline tool call (inside process block) — flat row, expands on click */
+.tc--inline {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  margin: 0;
+  transition: border-color .15s, background .15s;
+}
+.tc--inline.expanded { border-color: var(--line-2); background: var(--surface); }
+.tc--inline .tc-head { padding: 6px 9px; border-radius: 7px; gap: 8px; }
+.tc--inline .tc-head:hover { background: var(--surface-2); }
+.tc--inline.expanded .tc-head { background: transparent; }
+.tc--inline .tc-name { font-weight: 500; }
+.tc--inline .tc-preview { padding: 2px 8px 4px; margin-top: -2px; }
 
 /* ── Thinking (process) block — chromeless ─────────────────────────────── */
 .thinking { margin-bottom: 8px; }
@@ -76,19 +87,19 @@
 
 /* ── Bash tool step — Claude-style two-card layout ──────────────────── */
 .bash-step {
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   overflow: hidden;
-  background: var(--surface);
-  transition: border-color .15s;
+  background: transparent;
+  transition: border-color .15s, background .15s;
 }
-.bash-step.expanded { border-color: rgba(20,20,18,.18); }
+.bash-step.expanded { border-color: var(--line-2); background: var(--surface); }
 
 .bash-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px 8px 12px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 9px;
   cursor: pointer; user-select: none;
-  font-size: 13px;
+  font-size: 13px; border-radius: 7px;
 }
 .bash-head:hover { background: var(--surface-2); }
 
@@ -170,20 +181,34 @@
 
 .thinking-body {
   margin: 4px 0 0 8px;
-  padding: 8px 0 4px 18px;
+  padding: 8px 0 6px 16px;
   border-left: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 11px;
 }
 .thinking-step {
-  display: flex; gap: 10px; align-items: flex-start; min-width: 0;
+  display: flex; gap: 9px; align-items: flex-start; min-width: 0;
 }
 .thinking-gic {
-  width: 22px; height: 22px; flex-shrink: 0;
+  width: 20px; height: 20px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 5px; font-family: var(--font-mono); font-size: 10.5px;
+  border-radius: 5px; font-family: var(--font-mono); font-size: 10px;
   color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line);
 }
-.thinking-gic svg { width: 14px; height: 14px; }
+.thinking-gic svg { width: 13px; height: 13px; }
+
+/* ── Done footer — closes the step list (Claude-inspired) ───────────── */
+.thinking-done {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 2px 2px;
+  font-size: 13px;
+}
+.thinking-done-ic {
+  width: 18px; height: 18px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ok, #4caf50);
+}
+.thinking-done-ic svg { width: 15px; height: 15px; }
+.thinking-done-lbl { color: var(--ink); font-weight: 600; }
 .thinking-step--thought .thinking-gic {
   background: transparent; border-color: transparent;
   color: var(--accent); width: 18px; height: 18px;
@@ -241,16 +266,16 @@
 /* ── Skill-read step (inside ProcessBlock) ────────────────────────── */
 .skill-read-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; flex-shrink: 0;
+  width: 20px; height: 20px; flex-shrink: 0;
   border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line);
   color: var(--ink-2);
 }
-.skill-read-icon svg { width: 14px; height: 14px; }
+.skill-read-icon svg { width: 13px; height: 13px; }
 
 .skill-read-label {
   background: none; border: none; padding: 0; cursor: default;
   font-size: 13px; color: var(--muted); font-family: var(--font-body);
-  line-height: 22px;
+  line-height: 20px;
 }
 .skill-read-label--link {
   cursor: pointer; color: var(--ink-2);
@@ -261,25 +286,26 @@
 
 .skill-read-duration {
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
-  margin-left: 6px; line-height: 22px;
+  margin-left: 6px; line-height: 20px;
 }
 
-.thinking-step--skill-read { margin-top: 4px; margin-bottom: 4px; }
+.thinking-step--skill-read { margin-top: 2px; margin-bottom: 2px; }
 
 /* ── MCP tool step (inside ProcessBlock) ──────────────────────────── */
 .mcp-step {
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   overflow: hidden;
-  background: var(--surface);
+  background: transparent;
+  transition: border-color .15s, background .15s;
 }
-.mcp-step.expanded { border-color: rgba(20,20,18,.18); }
+.mcp-step.expanded { border-color: var(--line-2); background: var(--surface); }
 
 .mcp-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px 8px 12px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 9px;
   cursor: pointer; user-select: none;
-  font-size: 13px;
+  font-size: 13px; border-radius: 7px;
 }
 .mcp-head:hover { background: var(--surface-2); }
 
@@ -365,3 +391,139 @@
 .fp-inline-code { padding: 10px 14px; line-height: 1.7; max-height: 180px; overflow-y: auto; }
 .fp-inline-ln { display: flex; gap: 14px; }
 .fp-inline-no { color: var(--faint); width: 22px; text-align: right; user-select: none; flex-shrink: 0; }
+
+/* ── ask_user prompt, docked above the composer (not inline, not modal) ── */
+.uq-dock {
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--bg);
+}
+.uq-dock .uq2 {
+  max-width: 720px;
+  margin: 0 auto 8px;
+  animation: uq-rise 0.18s ease-out;
+}
+@keyframes uq-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.uq2 {
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px -12px rgba(20, 20, 18, 0.35);
+  padding: 14px 14px 12px;
+  font-size: 13.5px;
+  outline: none;
+}
+
+.uq2-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 2px 4px 12px;
+}
+.uq2-q {
+  flex: 1;
+  font-weight: 600; color: var(--ink);
+  font-size: 14.5px; line-height: 1.35;
+}
+.uq2-meta {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0; padding-top: 2px;
+}
+.uq2-counter {
+  font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.uq2-hint {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 6px; padding: 3px 7px;
+}
+
+.uq2-options { display: flex; flex-direction: column; gap: 2px; }
+
+.uq2-opt {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 10px 10px;
+  border: none; background: transparent;
+  border-radius: 10px;
+  cursor: pointer; text-align: left;
+  color: var(--ink); font-size: 13.5px;
+  transition: background .12s;
+}
+.uq2-opt + .uq2-opt { border-top: 1px solid var(--line); border-radius: 0; }
+.uq2-options .uq2-opt:first-child { border-radius: 10px 10px 0 0; }
+.uq2-options .uq2-opt:last-child  { border-radius: 0 0 10px 10px; }
+.uq2-opt:hover { background: var(--surface-2); }
+.uq2-opt.sel { background: var(--surface-2); }
+
+.uq2-num {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted); font-size: 12px; font-weight: 600;
+  transition: background .12s, color .12s;
+}
+.uq2-opt.sel .uq2-num {
+  background: var(--ink);
+  color: var(--bg);
+}
+.uq2-opt-text { flex: 1; line-height: 1.3; }
+.uq2-enter {
+  flex-shrink: 0; width: 16px; height: 16px;
+  color: var(--muted);
+}
+
+.uq2-custom { cursor: text; }
+.uq2-custom .uq2-num { color: var(--muted); }
+.uq2-custom-input {
+  flex: 1; border: none; background: transparent;
+  color: var(--ink); font-size: 13.5px; font-family: inherit;
+  padding: 0; outline: none; min-width: 0;
+}
+.uq2-custom-input::placeholder { color: var(--faint); }
+
+.uq2-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 12px 2px 2px;
+}
+.uq2-foot-right { display: flex; align-items: center; gap: 8px; }
+
+.uq2-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, opacity .12s, border-color .12s;
+}
+.uq2-btn svg { width: 15px; height: 15px; }
+.uq2-btn:hover:not(:disabled) { background: var(--surface-2); }
+.uq2-btn:disabled { opacity: 0.4; cursor: default; }
+.uq2-skip { border-color: transparent; background: transparent; color: var(--muted); }
+.uq2-skip:hover:not(:disabled) { background: var(--surface-2); }
+.uq2-primary {
+  background: var(--ink); color: var(--bg);
+  border-color: var(--ink);
+}
+.uq2-primary:hover:not(:disabled) { background: var(--ink); opacity: 0.88; }
+
+.uq2--done {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  opacity: 0.75;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.uq2-done-line { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.uq2-done-q { color: var(--ink); font-weight: 500; }
+.uq2-done-a { color: var(--muted); }

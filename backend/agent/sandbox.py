@@ -6,12 +6,12 @@ Three rules:
      /etc). The model cannot read $HOME, /mnt, or anything outside the cage.
   2. read_file is restricted to ``chat_dir`` — i.e. files the user has
      attached via @-mention (which land under ``chat_dir/uploads/``) plus
-     anything the model itself created through <file>. Reading arbitrary
-     filesystem paths is forbidden so the model can't scan ``~/.ssh``,
-     ``/etc``, AppData, or the rest of the host. Explicit allowlist prefixes
-     can grant read-only access to shared agent resources such as ``~/.agents``.
-  3. write_file and the <file>/<edit> stream tags only accept paths inside
-     the chat directory.
+     anything the model itself created through write_file/edit_file.
+     Reading arbitrary filesystem paths is forbidden so the model can't scan
+     ``~/.ssh``, ``/etc``, AppData, or the rest of the host. Explicit
+     allowlist prefixes can grant read-only access to shared agent resources
+     such as ``~/.agents``.
+  3. write_file and edit_file only accept paths inside the chat directory.
 
 The ``unrestricted`` flag in SettingsData disables all three checks — that's
 the user-facing escape hatch for power users.
@@ -19,7 +19,7 @@ the user-facing escape hatch for power users.
 
 from __future__ import annotations
 
-import os
+import ntpath
 import posixpath
 import shlex
 from dataclasses import dataclass, field
@@ -230,15 +230,19 @@ class SandboxPolicy:
             "--share-net",
             "--die-with-parent",
             "--new-session",
-            "bash", "-c", inner_cmd,
+            # Inner interpreter matches the chosen shell: zsh when the user
+            # explicitly picked it, otherwise bash. The binary lives under the
+            # ro-bound /usr|/bin mounts, so it's reachable inside the cage.
+            "zsh" if self.shell == "zsh" else "bash", "-c", inner_cmd,
         ]
         bwrap_str = " ".join(shlex.quote(a) for a in bwrap_args)
         # If bwrap is not installed, fall through to a friendly error rather
         # than silently dropping the cage. `command -v` returns non-zero → we
         # print the install hint and exit 127.
         fallback = (
-            "echo '[sandbox] bubblewrap (bwrap) is not installed in WSL. "
-            "Install it with: sudo apt update && sudo apt install -y bubblewrap. "
+            "echo '[sandbox] bubblewrap (bwrap) is not installed. "
+            "Install it (Debian/Ubuntu: sudo apt install -y bubblewrap; "
+            "Arch: sudo pacman -S bubblewrap; Fedora: sudo dnf install bubblewrap). "
             "Or toggle Unrestricted mode in Settings.' >&2; exit 127"
         )
         return f"mkdir -p {chat_q}; if command -v bwrap >/dev/null 2>&1; then {bwrap_str}; else {fallback}; fi"
@@ -254,8 +258,20 @@ class SandboxPolicy:
         anything outside chat_dir, so writes stay contained. The user is told
         in Settings that PowerShell mode disables the kernel-level cage.
         """
+        # Force UTF-8 on the captured streams. Windows PowerShell 5.1 emits
+        # redirected output in the console's OEM codepage (e.g. cp866 on a
+        # Russian Windows), which bash_tool._format_result then mis-decodes as
+        # UTF-8 — Cyrillic file names turn into `������`. Setting the console
+        # encodings to UTF-8 at the top of every command makes the bytes match
+        # what we decode. Applied unconditionally (even with no chat_dir) so
+        # listings are always readable.
+        enc_prefix = (
+            "$OutputEncoding = "
+            "[Console]::OutputEncoding = [Console]::InputEncoding = "
+            "[System.Text.Encoding]::UTF8; "
+        )
         if not self.chat_dir:
-            return inner_cmd
+            return enc_prefix + inner_cmd
         # PowerShell single-quoted strings escape ' as ''. Avoid quoting the
         # entire inner command (it may already contain quotes); just guard the
         # path.
@@ -266,7 +282,7 @@ class SandboxPolicy:
             f"New-Item -ItemType Directory -Force -Path $d | Out-Null }}; "
             f"Set-Location -LiteralPath $d; "
         )
-        return prefix + inner_cmd
+        return enc_prefix + prefix + inner_cmd
 
 
 # ── helpers ───────────────────────────────────────────────────────────
@@ -280,17 +296,19 @@ def _normalize(path: str) -> str:
     ``/etc/passwd`` before the chat_dir prefix check runs. Without this,
     the sandbox is bypassable via a literal-prefix-but-traversed path.
 
-    Posix-style paths use ``posixpath.normpath``. Windows-style paths use
-    ``os.path.normpath`` (which on Windows collapses both ``..`` and
-    backslash variants) and are then lowercased — Windows is case-
-    insensitive. The two namespaces never overlap, so this is enough to
-    block lookups in both at once.
+    Posix-style paths use ``posixpath.normpath``; Windows-style paths use
+    ``ntpath.normpath`` and are then lowercased (Windows is case-insensitive).
+    The namespace is chosen by the path's own shape, never by the host OS —
+    ``os.path`` is ``posixpath`` on Linux, which leaves a Windows path's ``..``
+    segments and backslashes untouched and would silently turn the traversal
+    guard above into a no-op. The two namespaces never overlap, so this is
+    enough to block lookups in both at once.
     """
     if not path:
         return ""
     if path.startswith("/"):
         return posixpath.normpath(path)
-    return os.path.normpath(path).lower()
+    return ntpath.normpath(path).lower()
 
 
 def _is_under(child: str, parent: str) -> bool:
@@ -299,7 +317,9 @@ def _is_under(child: str, parent: str) -> bool:
         return False
     if child == parent:
         return True
-    sep = "/" if parent.startswith("/") else os.sep
+    # Separator follows the parent's namespace, not the host's: os.sep is "/"
+    # on Linux, which never matches a "\"-joined Windows child.
+    sep = "/" if parent.startswith("/") else "\\"
     if not parent.endswith(sep):
         parent_with_sep = parent + sep
     else:

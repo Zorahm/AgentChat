@@ -15,11 +15,16 @@ sys.path.insert(0, str(BACKEND_DIR))
 import agent.research_runner as rr
 from agent.sandbox import SandboxPolicy
 from mcp_integration.registry_view import MCPAwareRegistry
+from shell import resolve_active_shell
 from store.settings_store import SettingsStore
 from tools.registry import ToolRegistry
 from tools.research_tool import ResearchTool
 from web_search.config import SearchResult
 from web_search.service import ResolvedWebSearch
+
+# The shell whose path namespace matches this host — the runner writes report.md
+# into a real ``tmp_path``, so the policy's namespace has to match the host's.
+HOST_SHELL = resolve_active_shell("powershell")
 
 
 # ── scripted LLM that can emit a tool call then a final report ───────────────
@@ -49,6 +54,7 @@ class _ScriptedLLM:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         extra_body: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Any:
         turn = self._turns[self.call_count]
         self.call_count += 1
@@ -70,7 +76,7 @@ class _FakeService:
 
 
 def _policy(chat_dir: Path) -> SandboxPolicy:
-    return SandboxPolicy(chat_dir=str(chat_dir), shell="powershell")
+    return SandboxPolicy(chat_dir=str(chat_dir), shell=HOST_SHELL)
 
 
 def _tool(service: _FakeService, store: SettingsStore, chat_dir: Path) -> ResearchTool:

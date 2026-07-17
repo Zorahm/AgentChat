@@ -15,10 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.wsl_exec import decode_loose, wsl_run
-
-# On Windows, hide the CMD window when spawning npm in a new console.
-_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # 0x08000000
+from agent.wsl_exec import IS_POSIX, decode_loose, host_tool_env, run_blocking, wsl_run
+from shell import resolve_active_shell
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +105,12 @@ async def _purge_chat_dir(dir_slug: str) -> None:
 
     _purge_windows_chat_dir(dir_slug)
 
+    # On a native POSIX host chat folders live under the real home, which the
+    # call above (Path.home()) already removed — there's no separate WSL
+    # filesystem to clean, so skip the bash purge.
+    if IS_POSIX:
+        return
+
     cmd = _build_purge_chat_dir_command(dir_slug, _default_wsl_home())
     if not cmd:
         logger.warning("WSL purge skipped: empty command for dir_slug %r", dir_slug)
@@ -141,6 +145,7 @@ class ChatSummary(BaseModel):
     title: str
     dir_slug: str
     project_id: str = ""
+    agent_id: str = ""
     created_at: int
     updated_at: int
 
@@ -162,6 +167,7 @@ class ChatCreate(BaseModel):
     created_at: int | None = None
     mcp_enabled: list[str] = Field(default_factory=list)
     project_id: str = ""
+    agent_id: str = ""
 
 
 class ChatUpdate(BaseModel):
@@ -172,6 +178,7 @@ class ChatUpdate(BaseModel):
     root: list[Any] | None = None
     mcp_enabled: list[str] | None = None
     project_id: str | None = None
+    agent_id: str | None = None
 
 
 @router.get("", response_model=list[ChatSummary])
@@ -188,46 +195,43 @@ async def get_chat(request: Request, chat_id: str) -> ChatFull:
     return ChatFull(**row)
 
 
-async def _init_chat_dir_powershell(dir_slug: str) -> None:
-    """Initialise the chat directory: npm init -y + python3 -m venv .venv."""
+async def _init_chat_dir_native(dir_slug: str) -> None:
+    """Initialise the chat directory natively: npm init -y + python3 -m venv .venv.
+
+    Used for both Windows PowerShell mode and a native POSIX host — both create
+    the folder under the real OS home and shell out to npm/python3 directly
+    (no WSL). On Windows-WSL mode the chat folder lives inside the distro, so
+    ``_init_chat_dir_wsl`` is used instead.
+    """
     if not dir_slug or not _SAFE_SLUG_RE.match(dir_slug):
         return
     from paths import USER_HOME
     chat_dir = Path(USER_HOME) / "AgentChat" / "chats" / dir_slug
     try:
         chat_dir.mkdir(parents=True, exist_ok=True)
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["npm", "init", "-y"],
-            cwd=str(chat_dir),
-            capture_output=True,
-            timeout=30,
-            creationflags=_NO_WINDOW,
+        result = await run_blocking(
+            ["npm", "init", "-y"], timeout=30, cwd=str(chat_dir), env=host_tool_env()
         )
         logger.info(
-            "npm init -y (powershell) for %s: exit=%d, stdout=%s",
+            "npm init -y (native) for %s: exit=%d, stdout=%s",
             dir_slug, result.returncode,
             result.stdout.decode("utf-8", errors="replace").strip()[:200],
         )
     except FileNotFoundError:
-        logger.warning("npm not found on Windows for chat %s", dir_slug)
+        logger.warning("npm not found for chat %s", dir_slug)
     except Exception:
         logger.warning("npm init -y failed for chat %s", dir_slug, exc_info=True)
 
     try:
-        venv_result = await asyncio.to_thread(
-            subprocess.run,
-            ["python3", "-m", "venv", str(chat_dir / ".venv")],
-            capture_output=True,
-            timeout=60,
-            creationflags=_NO_WINDOW,
+        venv_result = await run_blocking(
+            ["python3", "-m", "venv", str(chat_dir / ".venv")], timeout=60, env=host_tool_env()
         )
         logger.info(
-            "python3 -m venv (powershell) for %s: exit=%d",
+            "python3 -m venv (native) for %s: exit=%d",
             dir_slug, venv_result.returncode,
         )
     except FileNotFoundError:
-        logger.warning("python3 not found on Windows for chat %s", dir_slug)
+        logger.warning("python3 not found for chat %s", dir_slug)
     except Exception:
         logger.warning("python3 -m venv failed for chat %s", dir_slug, exc_info=True)
 
@@ -270,16 +274,16 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
         created_at=body.created_at,
         mcp_enabled=body.mcp_enabled,
         project_id=body.project_id,
+        agent_id=body.agent_id,
     )
 
     # Fire-and-forget: init the chat dir + npm init -y.
-    from shell import resolve_active_shell
     settings = request.app.state.settings_store
     active_shell = resolve_active_shell(settings.shell_preference)
-    if active_shell == "powershell":
-        asyncio.ensure_future(_init_chat_dir_powershell(body.dir_slug))
-    else:
+    if active_shell == "wsl":
         asyncio.ensure_future(_init_chat_dir_wsl(body.dir_slug))
+    else:
+        asyncio.ensure_future(_init_chat_dir_native(body.dir_slug))
 
     return ChatFull(**row)
 
@@ -293,6 +297,7 @@ async def update_chat(request: Request, chat_id: str, body: ChatUpdate) -> ChatF
         root=body.root,
         mcp_enabled=body.mcp_enabled,
         project_id=body.project_id,
+        agent_id=body.agent_id,
     )
     if row is None:
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")

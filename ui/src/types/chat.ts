@@ -16,8 +16,52 @@ export interface ChatMessage {
   /** Rich-text HTML for user bubbles (tiptap getHTML). Display-only — `content`
    * stays plain text for title derivation, copy, retry, and backend history. */
   displayHtml?: string;
+  /** Explicitly plain-text user message (no rich editor involved). Disables
+   * the legacy "content starts with a tag → render as HTML" heuristic, so a
+   * pasted HTML snippet displays as text instead of being injected. Absent on
+   * messages from pre-displayHtml builds, where content may really be HTML. */
+  plainText?: boolean;
   /** Effective web-search backend for this assistant turn, when search ran. */
   webSearchMode?: string;
+  /** Token usage + cost for this assistant turn (backend `usage` SSE event). */
+  usage?: MessageUsage;
+}
+
+/** Aggregated token/cost totals for one assistant turn, across every LLM call
+ * it made (main loop + any research sub-calls). See
+ * docs/agentchat-usage-tracking-design.md. */
+export interface MessageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  /** null when the model isn't in LiteLLM's price map and has no manual
+   * `model_pricing` row — shown as "н/д" rather than $0. */
+  costUsd: number | null;
+  /** "estimated" when usage wasn't reported by the provider and was counted
+   * locally instead — shown with a leading "≈" in the UI. */
+  usageSource: "api" | "estimated";
+  /** Local, always-estimated split of prompt tokens by source — explains why
+   * a short message still billed thousands of tokens (system prompt + tool
+   * schemas + prior conversation, not the message itself). Never used for
+   * billing, only for the tooltip breakdown. */
+  breakdown?: TokenBreakdown;
+}
+
+/** Where prompt tokens went, mirroring Claude Code's context-window
+ * breakdown where AgentChat has a direct analogue. */
+export interface TokenBreakdown {
+  system: number;
+  /** Project instructions + extracted file text — AgentChat's CLAUDE.md
+   * equivalent ("Memory files" in Claude Code). */
+  memory: number;
+  /** Installed-skills manifest injected into the system prompt. */
+  skills: number;
+  /** Built-in tool schemas (bash_tool, write_file, ...). */
+  tools: number;
+  /** MCP server tool schemas. */
+  mcpTools: number;
+  history: number;
+  message: number;
 }
 
 export interface AttachmentInfo {
@@ -29,7 +73,7 @@ export interface AttachmentInfo {
   data_url: string | null;
 }
 
-// ── Tree types (Phase 2+) ──────────────────────────────────────────────────
+// ── Tree types ─────────────────────────────────────────────────────────────
 
 export type Role = "user" | "assistant" | "system";
 
@@ -44,6 +88,8 @@ export interface AssistantVariant {
   /** Effective web-search backend for this turn (native|litellm|searxng),
    * reported by the backend's web_search_status event. Drives the indicator. */
   webSearchMode?: string;
+  /** Token usage + cost for this assistant turn (backend `usage` SSE event). */
+  usage?: MessageUsage;
 }
 
 export interface UserVariant {
@@ -51,6 +97,8 @@ export interface UserVariant {
   content: string;
   /** Optional rich-text HTML (tiptap getHTML) preserved for display only. */
   displayHtml?: string;
+  /** See ChatMessage.plainText. */
+  plainText?: boolean;
   attachments?: AttachmentInfo[];
   createdAt: number;
   child?: AssistantNode;
@@ -95,4 +143,6 @@ export interface ChatSession {
   researchEnabled?: boolean;
   /** Project this chat belongs to. Empty/undefined = standalone chat. */
   projectId?: string;
+  /** Agent profile attached to this chat. Empty/undefined = the default agent. */
+  agentId?: string;
 }

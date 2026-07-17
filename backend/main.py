@@ -43,6 +43,7 @@ from paths import (
     CHAT_DB_FILE,
     PROJECT_DB_FILE,
     SETTINGS_FILE,
+    USAGE_DB_FILE,
     USER_AGENTS_SKILLS_DIR,
     resolve_ui_dist,
 )
@@ -52,10 +53,16 @@ from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
 from store.project_store import ProjectStore
 from store.settings_store import SettingsStore
+from store.usage_store import UsageStore
 from tools.factory import build_tool_registry
 from web_search.service import WebSearchService
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+# Endpoints loaded via a plain <img>/<iframe> src (image/PDF/Office preview) —
+# the browser issues that request itself, so there's no way to attach an
+# Authorization header to it. These two accept the token as ?token=… too.
+_QUERY_TOKEN_PATHS = {"/api/files/serve", "/api/files/preview"}
 
 
 def _is_loopback_client(request: Request) -> bool:
@@ -98,6 +105,15 @@ def create_app() -> FastAPI:
     settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
     chat_store = ChatStore(CHAT_DB_FILE)
     project_store = ProjectStore(PROJECT_DB_FILE)
+    usage_store = UsageStore(USAGE_DB_FILE)
+
+    # LiteLLM usage/cost logging — one callback covers every provider, streaming
+    # and non-streaming alike. See llm/usage_logging.py.
+    import litellm
+
+    from llm.usage_logging import UsageLogger
+
+    litellm.callbacks = [UsageLogger(usage_store)]
 
     # --- tools ---
     # Startup set is kept on app.state for introspection; /api/chat builds its
@@ -168,6 +184,8 @@ def create_app() -> FastAPI:
             expected = store.remote_token
             header = request.headers.get("authorization", "")
             token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+            if not token and path in _QUERY_TOKEN_PATHS:
+                token = request.query_params.get("token", "")
             if not expected or not token or not secrets.compare_digest(token, expected):
                 return JSONResponse(
                     {"detail": "Invalid or missing remote access token."},
@@ -181,6 +199,7 @@ def create_app() -> FastAPI:
     app.state.settings_store = settings_store
     app.state.chat_store = chat_store
     app.state.project_store = project_store
+    app.state.usage_store = usage_store
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
@@ -189,6 +208,7 @@ def create_app() -> FastAPI:
         user_name=settings_store.user_name,
         shell=resolve_active_shell(settings_store.shell_preference),
         model=model,
+        describe_actions=settings_store.describe_actions,
     )
 
     # --- routers ---

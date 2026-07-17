@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, CheckCircle, XCircle, Terminal } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../../utils/apiBase";
+import { isAndroidTauri } from "../../../utils/tauri";
 import { playNotificationSound } from "../../../utils/notify";
 import type { SettingsData } from "../SettingsPanel";
 
@@ -23,8 +24,10 @@ interface ShellStatus {
   mirrored_supported: boolean;
   mirrored_active: boolean;
   powershell_available: boolean;
-  active_shell: "wsl" | "powershell";
-  shell_preference: "auto" | "wsl" | "powershell";
+  zsh_available: boolean;
+  active_shell: "wsl" | "powershell" | "posix" | "zsh";
+  shell_preference: "auto" | "wsl" | "powershell" | "zsh";
+  os_platform: "windows" | "linux" | "darwin";
 }
 
 interface WinDepsStatus {
@@ -44,7 +47,7 @@ export function TerminalTab({ settings, onUpdate }: {
 }) {
   const { t } = useTranslation();
   const preference = settings.shell_preference ?? "auto";
-  const onChange = (v: "auto" | "wsl" | "powershell") => onUpdate({ shell_preference: v });
+  const onChange = (v: "auto" | "wsl" | "powershell" | "zsh") => onUpdate({ shell_preference: v });
 
   const [status, setStatus] = useState<ShellStatus | null>(null);
   const [winStatus, setWinStatus] = useState<WinDepsStatus | null>(null);
@@ -213,6 +216,93 @@ export function TerminalTab({ settings, onUpdate }: {
           ? "wsl"
           : "powershell";
 
+  // Native Linux/macOS host: no WSL/PowerShell split. Show a bash⇄zsh picker
+  // (zsh only when explicitly chosen) and hide the Windows install actions.
+  if (status && status.os_platform !== "windows") {
+    const zshActive = preference === "zsh";
+    const depsLine = [
+      status.node ? "node ✓" : "node ✗",
+      status.python ? "python3 ✓" : "python3 ✗",
+      status.npm ? "npm ✓" : "npm ✗",
+      status.pandoc ? "pandoc ✓" : "pandoc ✗",
+      status.libreoffice ? "libreoffice ✓" : "libreoffice ✗",
+      status.poppler ? "poppler ✓" : "poppler ✗",
+    ].join(" · ");
+    return (
+      <div className="st2-main">
+        <div className="st2-h-row">
+          <h3 className="st2-h">{t("settings.general.terminal")}</h3>
+          <button
+            className="st2-mh-refresh"
+            onClick={reload}
+            disabled={loading}
+            title={t("settings.general.checkAgain")}
+          >
+            <ArrowClockwise /> {loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
+          </button>
+        </div>
+        <p className="st2-sub">{t("settings.general.terminalNativeDescription")}</p>
+        <div className="st2-mrows">
+          <div className="st2-mrow stack">
+            <div className="st2-mctl">
+              <div className="st2-shell-grid">
+                <ShellStatusCard
+                  title={t("settings.general.nativeBash")}
+                  ok={true}
+                  lines={[t("settings.general.nativeBashActive"), depsLine]}
+                  active={!zshActive}
+                />
+                <ShellStatusCard
+                  title={t("settings.general.nativeZsh")}
+                  ok={status.zsh_available}
+                  lines={[
+                    status.zsh_available
+                      ? t("settings.general.nativeZshActive")
+                      : t("settings.general.nativeZshNotFound"),
+                    depsLine,
+                  ]}
+                  active={zshActive}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* bash ⇄ zsh picker — hidden in the mobile APK (the phone doesn't
+              choose the remote backend's shell). */}
+          {!isAndroidTauri() && (
+            <div className="st2-mrow">
+              <div className="st2-mlab">
+                <p className="t">{t("settings.general.shellPreference")}</p>
+                <p className="d">{t("settings.general.shellPreferenceNativeHint")}</p>
+              </div>
+              <div className="st2-mctl">
+                <div className="st2-theme">
+                  <button
+                    className={!zshActive ? "active" : ""}
+                    onClick={() => onChange("auto")}
+                  >
+                    <Terminal /> {t("settings.general.shellBash")}
+                  </button>
+                  <button
+                    className={zshActive ? "active" : ""}
+                    onClick={() => onChange("zsh")}
+                  >
+                    <Terminal /> {t("settings.general.shellZsh")}
+                  </button>
+                </div>
+                {zshActive && !status.zsh_available && (
+                  <div className="st2-risk-note" style={{ marginTop: 10 }}>
+                    <b>{t("settings.general.zshMissingWarning")}</b>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="st2-main">
       <div className="st2-h-row">
@@ -289,37 +379,40 @@ export function TerminalTab({ settings, onUpdate }: {
           </div>
         </div>
 
-        {/* Preference picker */}
-        <div className="st2-mrow">
-          <div className="st2-mlab">
-            <p className="t">{t("settings.general.shellPreference")}</p>
-            <p className="d">
-              {t("settings.general.shellPreferenceHint")}
-            </p>
-          </div>
-          <div className="st2-mctl">
-            <div className="st2-theme">
-              <button
-                className={preference === "auto" ? "active" : ""}
-                onClick={() => onChange("auto")}
-              >
-                <Terminal /> {t("settings.general.shellAuto")}
-              </button>
-              <button
-                className={preference === "wsl" ? "active" : ""}
-                onClick={() => onChange("wsl")}
-              >
-                <Terminal /> {t("settings.general.shellWsl")}
-              </button>
-              <button
-                className={preference === "powershell" ? "active" : ""}
-                onClick={() => onChange("powershell")}
-              >
-                <Terminal /> {t("settings.general.shellPowershell")}
-              </button>
+        {/* Preference picker — hidden in the mobile APK: the shell is whatever
+            the remote backend runs, the phone doesn't choose it. */}
+        {!isAndroidTauri() && (
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.general.shellPreference")}</p>
+              <p className="d">
+                {t("settings.general.shellPreferenceHint")}
+              </p>
+            </div>
+            <div className="st2-mctl">
+              <div className="st2-theme">
+                <button
+                  className={preference === "auto" ? "active" : ""}
+                  onClick={() => onChange("auto")}
+                >
+                  <Terminal /> {t("settings.general.shellAuto")}
+                </button>
+                <button
+                  className={preference === "wsl" ? "active" : ""}
+                  onClick={() => onChange("wsl")}
+                >
+                  <Terminal /> {t("settings.general.shellWsl")}
+                </button>
+                <button
+                  className={preference === "powershell" ? "active" : ""}
+                  onClick={() => onChange("powershell")}
+                >
+                  <Terminal /> {t("settings.general.shellPowershell")}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Action buttons — WSL-specific; hidden when PowerShell is forced */}
         <div className="st2-mrow stack">

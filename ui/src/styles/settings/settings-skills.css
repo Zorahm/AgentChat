@@ -94,6 +94,19 @@
 .sk2-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 .sk2-detail-scroll { flex: 1; overflow-y: auto; padding: 22px 26px 30px; }
 
+/* Mobile-only back bar — hidden on desktop, shown by the responsive rules below. */
+.sk2-detail-mobbar { display: none; }
+.sk2-mob-back {
+  background: none; border: none; cursor: pointer; color: var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  padding: 2px; flex-shrink: 0;
+}
+.sk2-mob-back:hover { color: var(--muted); }
+.sk2-detail-mobbar-title {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .sk2-detail-head { display: flex; align-items: flex-start; gap: 12px; }
 .sk2-detail-title {
   flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
@@ -184,6 +197,7 @@
 }
 .sk2-cat-body { flex: 1; min-width: 0; }
 .sk2-cat-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.sk2-cat-author { font-size: 10.5px; color: var(--faint); margin-top: 1px; }
 .sk2-cat-desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; margin-top: 1px; }
 .sk2-cat-req { font-size: 10.5px; color: var(--faint); line-height: 1.4; margin-top: 4px; }
 .sk2-cat-req-lbl { font-weight: 600; color: var(--muted); }
@@ -275,7 +289,26 @@
 /* ── Responsive ───────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
-  .sk2-root { flex-direction: column; min-height: 0; }
-  .sk2-list { width: 100%; max-height: 240px; border-right: none; border-bottom: 1px solid var(--line); }
   .sk2-cat-grid { grid-template-columns: 1fr; }
+}
+
+/* Phones: instead of stacking the list above the detail/add pane (cramped,
+ * and the preview ends up "open" the moment a skill is auto-selected), swap
+ * between a full-screen list and a full-screen detail, like the Settings
+ * master/detail shell does — driven by the `data-mview` attribute the
+ * component toggles on user action (row tap, Add tap, back tap). */
+@media (max-width: 768px) {
+  .sk2-root { flex-direction: column; min-height: 0; height: 100%; }
+
+  .sk2-list, .sk2-detail { width: 100%; flex: 1; min-height: 0; border-right: none; border-bottom: none; }
+
+  .sk2-root[data-mview="list"] .sk2-detail { display: none; }
+  .sk2-root[data-mview="detail"] .sk2-list { display: none; }
+
+  .sk2-detail-mobbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
 }

@@ -28,15 +28,12 @@
     border-right: 1.5px solid var(--ink);
     max-height: 100vh;
     overflow-y: auto;
-  }
-
-  .st2-nav.mobile-open {
-    display: flex;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 12px 18px;
   }
 
   /* Body takes full width */
   .st2-body {
-    padding: 20px 16px;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 20px;
   }
 
   /* Mobile bar */
@@ -70,12 +67,44 @@
     color: var(--ink);
   }
 
-  /* Backdrop behind slide-in nav */
-  .st2-nav-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    z-index: 99;
+  /* ── Master list (mobile settings home) ─────────────────────────────── */
+  .st2-mlist-body {
+    padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  }
+
+  .st2-mlist-group {
+    margin-bottom: 18px;
+  }
+
+  .st2-mlist {
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--paper-2);
+  }
+
+  .st2-mlist-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 14px;
+    font-family: var(--font-body);
+    font-size: 15px;
+    color: var(--ink);
+    text-decoration: none;
+    cursor: pointer;
+    border-bottom: 1px solid var(--line);
+    min-height: 48px;
+  }
+  .st2-mlist-item:last-child { border-bottom: none; }
+  .st2-mlist-item:active { background: var(--hover); }
+
+  .st2-mlist-label {
+    flex: 1;
+  }
+
+  .st2-mlist-chev {
+    color: var(--faint);
+    flex-shrink: 0;
   }
 
   /* ── Typography ───────────────────────────────────────────────────────── */
@@ -138,9 +167,8 @@
   /* ── Buttons & controls ───────────────────────────────────────────────── */
 
   .st2-btn {
-    padding: 8px 16px;
+    padding: 5px 14px;
     font-size: 13px;
-    min-height: 44px;
   }
 
   .st2-models-head {
@@ -433,7 +461,7 @@
 
 @media (max-width: 479px) {
   .st2-body {
-    padding: 16px 12px;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 12px 16px;
   }
 
   .st2-h {
@@ -550,18 +578,7 @@
 /* ── Touch device enhancements ────────────────────────────────────────── */
 
 @media (hover: none) and (pointer: coarse) {
-  /* Increase touch targets */
-  .st2-btn,
-  .st2-nav-item,
-  .st2-sk-install-btn,
-  .st2-update-btn,
-  button {
-    min-height: 48px;
-    min-width: 48px;
-    padding: 12px 16px;
-  }
-
-  /* Larger text for touch */
+  /* Larger text for touch (prevents iOS auto-zoom on focus) */
   input,
   textarea,
   select {
@@ -573,14 +590,5 @@
   .st2-nav-item:hover,
   .theme-card:hover {
     transform: none;
-  }
-
-  /* Increase spacing for touch */
-  .st2-nav-item {
-    padding: 12px 14px;
-  }
-
-  .st2-pv-row {
-    padding: 10px;
   }
 }

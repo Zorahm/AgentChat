@@ -1,4 +1,4 @@
-"""Settings API — providers, default model.  Phase 3 (multi-provider)."""
+"""Settings API — providers, default model."""
 
 from __future__ import annotations
 

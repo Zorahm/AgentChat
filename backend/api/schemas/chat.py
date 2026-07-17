@@ -54,6 +54,12 @@ class ChatRequest(BaseModel):
         description="Project this chat belongs to. The project's prompt + extracted "
         "file text is injected into the system prompt for this turn.",
     )
+    agent_id: str | None = Field(
+        default=None,
+        description="Agent profile attached to this chat. Falls back to the default "
+        "agent when None or unknown. A non-empty agent system_prompt REPLACES the "
+        "built-in dynamic system prompt entirely for this turn.",
+    )
     mcp_enabled_servers: list[str] | None = Field(
         default=None,
         description="IDs of MCP servers to wire in for this turn. Unknown / disabled IDs are skipped silently.",

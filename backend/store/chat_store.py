@@ -24,18 +24,23 @@ CREATE TABLE IF NOT EXISTS chats (
     created_at        INTEGER NOT NULL,
     updated_at        INTEGER NOT NULL,
     root_json         TEXT NOT NULL DEFAULT '[]',
-    mcp_enabled_json  TEXT NOT NULL DEFAULT '[]'
+    mcp_enabled_json  TEXT NOT NULL DEFAULT '[]',
+    project_id        TEXT NOT NULL DEFAULT '',
+    agent_id          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at DESC);
 """
 
-# Per-version ALTER statements for in-place migration on existing DBs.
-# Each entry is tried; SQLite errors with "duplicate column name" are
-# swallowed since they just mean the migration already ran.
+# ALTER statements for in-place migration of DBs created before a column was
+# added to SCHEMA above. Every new column must appear in BOTH places: SCHEMA
+# (fresh DBs) and here (existing DBs). Each entry is tried; SQLite errors with
+# "duplicate column name" are swallowed since they just mean the migration
+# already ran.
 _MIGRATIONS: tuple[str, ...] = (
     "ALTER TABLE chats ADD COLUMN mcp_enabled_json TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE chats ADD COLUMN project_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE chats ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''",
 )
 
 
@@ -82,7 +87,7 @@ class ChatStore:
         """Return chats ordered by updated_at desc, WITHOUT root_json (cheap)."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, title, dir_slug, project_id, created_at, updated_at "
+                "SELECT id, title, dir_slug, project_id, agent_id, created_at, updated_at "
                 "FROM chats ORDER BY updated_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
@@ -91,7 +96,7 @@ class ChatStore:
         """Return the full chat including parsed root tree."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, title, dir_slug, project_id, created_at, updated_at, root_json, mcp_enabled_json "
+                "SELECT id, title, dir_slug, project_id, agent_id, created_at, updated_at, root_json, mcp_enabled_json "
                 "FROM chats WHERE id = ?",
                 (chat_id,),
             ).fetchone()
@@ -117,8 +122,9 @@ class ChatStore:
         root: list[Any] | None = None,
         mcp_enabled: list[str] | None = None,
         project_id: str | None = None,
+        agent_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Patch any of title / dir_slug / root / mcp_enabled / project_id. Touch updated_at."""
+        """Patch any of title / dir_slug / root / mcp_enabled / project_id / agent_id. Touch updated_at."""
         sets: list[str] = []
         params: list[Any] = []
         if title is not None:
@@ -136,6 +142,9 @@ class ChatStore:
         if project_id is not None:
             sets.append("project_id = ?")
             params.append(project_id)
+        if agent_id is not None:
+            sets.append("agent_id = ?")
+            params.append(agent_id)
         if not sets:
             return self.get_chat(chat_id)
 
@@ -186,6 +195,7 @@ class ChatStore:
         created_at: int | None = None,
         mcp_enabled: list[str] | None = None,
         project_id: str = "",
+        agent_id: str = "",
     ) -> dict[str, Any]:
         """Insert or replace a chat — used by the migration path."""
         now = _now_ms()
@@ -194,14 +204,14 @@ class ChatStore:
         mcp_blob = json.dumps(list(mcp_enabled or []), ensure_ascii=False)
         with self._lock:
             self._conn.execute(
-                "INSERT INTO chats (id, title, dir_slug, project_id, created_at, updated_at, root_json, mcp_enabled_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO chats (id, title, dir_slug, project_id, agent_id, created_at, updated_at, root_json, mcp_enabled_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET "
                 "title=excluded.title, dir_slug=excluded.dir_slug, "
-                "project_id=excluded.project_id, "
+                "project_id=excluded.project_id, agent_id=excluded.agent_id, "
                 "updated_at=excluded.updated_at, root_json=excluded.root_json, "
                 "mcp_enabled_json=excluded.mcp_enabled_json",
-                (chat_id, title, dir_slug, project_id, ts, now, root_blob, mcp_blob),
+                (chat_id, title, dir_slug, project_id, agent_id, ts, now, root_blob, mcp_blob),
             )
         return self.get_chat(chat_id) or {}
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from llm.model_tag import retag_model_for_litellm
 from mcp_integration.manager import MCPManager
 from mcp_integration.registry_view import MCPAwareRegistry
 from mcp_integration.tool_proxy import MCPToolProxy
+from shell import resolve_active_shell
 from tools.base import BaseTool
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
@@ -422,7 +424,18 @@ async def chat(
     # Build fresh system prompt (includes current date + model identity +
     # artifact instructions). The model id goes in so the assistant knows
     # which LLM it is when asked.
-    system_prompt: str = app_state.system_prompt_factory(model)
+    #
+    # An attached agent whose system_prompt is non-empty REPLACES this
+    # entirely — the agent editor warns the user about the risk, and the
+    # skills manifest / project block are still appended after either way
+    # (see agent.loop._build_messages), so those keep working regardless.
+    from api.schemas.agents import DEFAULT_AGENT_ID
+
+    agent = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(DEFAULT_AGENT_ID)
+    if agent is not None and agent.system_prompt.strip():
+        system_prompt: str = agent.system_prompt
+    else:
+        system_prompt = app_state.system_prompt_factory(model)
 
     # Fresh tool set per request: each call stamps its sandbox policy onto the
     # filesystem tools, and multiple chats can now stream at once — sharing one
@@ -444,6 +457,18 @@ async def chat(
     native_web_tools: list[dict[str, Any]] = []
     web_search_effective = "none"
     provider_id = provider.id if provider else ""
+
+    # One id per user turn — ties every LLM call this turn makes (main loop +
+    # any research sub-calls) to a single usage_log aggregate. See
+    # docs/agentchat-usage-tracking-design.md.
+    message_id = str(uuid.uuid4())
+    usage_metadata: dict[str, Any] = {
+        "chat_id": body.chat_id or "",
+        "message_id": message_id,
+        "provider": provider_id or "unknown",
+        "canonical_model": model,
+        "context": "chat",
+    }
     if body.web_search_enabled:
         ws_service = app_state.web_search_service
         ws_config = build_web_search_config(store)
@@ -479,6 +504,11 @@ async def chat(
                 api_key=r_api_key,
                 api_base=r_api_base,
                 extra_headers=r_extra_headers,
+                usage_metadata={
+                    **usage_metadata,
+                    "provider": r_provider.id if r_provider else "unknown",
+                    "canonical_model": research_model,
+                },
             )
         )
         system_prompt = f"{system_prompt}\n\n{_RESEARCH_NUDGE}"
@@ -488,9 +518,8 @@ async def chat(
     )
 
     # Build the per-chat sandbox policy and push it into every tool that can
-    # touch the filesystem plus the agent loop (which handles <file>/<edit>
-    # stream tags). In restricted mode bash_tool is wrapped with bwrap and
-    # read/write tools refuse paths outside their allowed scope.
+    # touch the filesystem. In restricted mode bash_tool is wrapped with bwrap
+    # and read/write tools refuse paths outside their allowed scope.
     from paths import (
         USER_HOME,
         USER_NAME,
@@ -498,14 +527,19 @@ async def chat(
         get_allowed_read_prefixes,
         get_blocked_read_prefixes,
     )
-    from shell import resolve_active_shell
     active_shell = resolve_active_shell(store.shell_preference)
-    home = USER_HOME if active_shell == "powershell" else WSL_USER_HOME
+    # WSL has its own synthetic home (/home/<user>); PowerShell and native POSIX
+    # both use the real OS home.
+    home = WSL_USER_HOME if active_shell == "wsl" else USER_HOME
     chat_dir = _resolve_chat_cwd(body.chat_dir_slug, home, shell=active_shell)
 
-    # Project context: prepend the project's instructions + extracted file text
-    # to the system prompt, and copy any un-extracted files into the sandbox so
-    # the model can still open them by hand. Done after chat_dir is known.
+    # Project context: the project's instructions + extracted file text, kept
+    # OUT of system_prompt (unlike before) so the usage breakdown can report it
+    # as its own "memory files" bucket instead of folding it into "system
+    # prompt". Applied to the agent via set_project_context() below. Also
+    # copies any un-extracted files into the sandbox so the model can still
+    # open them by hand. Done after chat_dir is known.
+    project_block = ""
     if body.project_id:
         project_ctx = app_state.project_store.get_project_context(body.project_id)
         if project_ctx:
@@ -514,9 +548,7 @@ async def chat(
                 if f.get("extract_status") != "ok"
             ]
             await _sync_unextracted_to_sandbox(unextracted, chat_dir, active_shell)
-            block = _build_project_block(project_ctx, chat_dir, active_shell)
-            if block:
-                system_prompt = f"{system_prompt}\n\n{block}"
+            project_block = _build_project_block(project_ctx, chat_dir, active_shell)
 
     config = AgentConfig(
         model=lite_model,
@@ -527,6 +559,7 @@ async def chat(
         max_iterations=store.max_iterations,
         extra_body=extra_body,
         extra_headers=extra_headers,
+        describe_actions=store.describe_actions,
     )
 
     policy = SandboxPolicy(
@@ -567,9 +600,13 @@ async def chat(
         llm=llm,
         policy=policy,
         extra_tools=native_web_tools or None,
+        chat_id=body.chat_id or "",
+        usage_metadata=usage_metadata,
     )
     app_state.skill_reader.rebuild()
     agent.set_manifest(app_state.skill_reader.render_prompt())
+    if project_block:
+        agent.set_project_context(project_block)
 
     agent.messages.extend(build_agent_messages(history))
 
@@ -583,6 +620,17 @@ async def chat(
         try:
             async for event in agent.run_stream(user_content):
                 yield _sse_event(event["type"], event)
+            # The usage/cost logging callback (llm/usage_logging.py) writes
+            # asynchronously via LiteLLM's own logging task, so the row(s) for
+            # this turn may not be committed yet — poll briefly rather than
+            # block the whole response on it.
+            usage_store = app_state.usage_store
+            for attempt in range(6):
+                usage = usage_store.get_message_usage(message_id)
+                if usage is not None:
+                    yield _sse_event("usage", {**usage, "message_id": message_id})
+                    break
+                await asyncio.sleep(0.05 * (attempt + 1))
         except Exception as exc:
             # Native search is optimistic for some providers (e.g. OpenAI). If the
             # provider rejected the native tool, remember that so the next turn

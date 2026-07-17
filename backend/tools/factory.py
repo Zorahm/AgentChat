@@ -7,8 +7,9 @@ import cycle.
 
 from __future__ import annotations
 
-from paths import USER_NAME, WSL_USER_HOME
+from paths import DEFAULT_BASH_HOME, USER_NAME
 from skills.reader import AgentSkillsReader
+from tools.ask_user import AskUserTool
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
 from tools.present_files import PresentFilesTool
@@ -32,7 +33,7 @@ def build_tool_registry(reader: AgentSkillsReader) -> ToolRegistry:
     The skills *reader* is shared by design — it is read-only at execution time.
     """
     registry = ToolRegistry()
-    registry.register(BashTool(user_name=USER_NAME, user_home=WSL_USER_HOME))
+    registry.register(BashTool(user_name=USER_NAME, user_home=DEFAULT_BASH_HOME))
     registry.register(ReadFileTool())
     registry.register(ReadPhotoTool())
     registry.register(WriteFileTool())
@@ -41,4 +42,5 @@ def build_tool_registry(reader: AgentSkillsReader) -> ToolRegistry:
     registry.register(ShowWidgetTool())
     registry.register(ReadSkillTool(reader))
     registry.register(WebFetchTool())
+    registry.register(AskUserTool())
     return registry

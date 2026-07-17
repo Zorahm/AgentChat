@@ -12,10 +12,11 @@ import "./styles/markdown.css";
 import "./styles/chat.css";
 import "./styles/components.css";
 import "./styles/panels.css";
-import "./styles/tiptap.css";
+import "./styles/composer.css";
 import "./styles/settings.css";
 import "./styles/onboarding.css";
 import "./styles/projects.css";
+import "./styles/usage.css";
 import "./styles/responsive.css";
 
 // Pair a phone via ?token=…, then route the Bearer token onto every API call.

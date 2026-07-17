@@ -1,0 +1,92 @@
+/* Settings — Agents tab. Mirrors settings-mcp.css's card/add-form shell. */
+
+.ag-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+
+.ag-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); overflow: hidden; }
+.ag-card--open { border-color: var(--ink-soft); }
+.ag-card--locked { opacity: .92; }
+
+.ag-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer; user-select: none;
+}
+.ag-head:hover { background: var(--surface-2, var(--paper-2)); }
+.ag-head--static { cursor: default; }
+.ag-head--static:hover { background: transparent; }
+.ag-locked-hint { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+
+.ag-name { font-size: 13.5px; font-weight: 500; color: var(--ink); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-tag {
+  font-size: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 100px;
+  background: var(--surface-2, var(--paper-2)); color: var(--muted);
+  border: 1px solid var(--line); flex-shrink: 0;
+}
+.ag-tag--override { color: var(--accent); border-color: var(--accent-soft, var(--line)); }
+.ag-chevron { color: var(--muted); flex-shrink: 0; }
+
+.ag-body {
+  padding: 14px 16px 16px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.ag-field {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; font-weight: 500; color: var(--ink-soft);
+}
+.ag-field input, .ag-field textarea {
+  font-family: var(--font-mono); font-size: 12px;
+  border: 1px solid var(--line); background: var(--surface, var(--paper-2));
+  padding: 7px 10px; border-radius: 7px; color: var(--ink); outline: none;
+}
+.ag-field input:focus, .ag-field textarea:focus { border-color: var(--ink-soft); }
+.ag-prompt-textarea { resize: vertical; min-height: 140px; font-family: var(--font-mono); line-height: 1.5; }
+
+.ag-color-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ag-color-row input[type="color"] {
+  width: 30px; height: 30px; padding: 2px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--surface, var(--paper-2)); cursor: pointer;
+}
+.ag-swatches { display: flex; gap: 5px; flex-wrap: wrap; margin-left: 4px; }
+.ag-swatch {
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line);
+  cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.ag-swatch:hover { transform: scale(1.12); }
+
+.ag-warning {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; color: var(--muted);
+  padding: 9px 11px; border-radius: 8px;
+  background: var(--surface-2, var(--paper-2)); border: 1px solid var(--line);
+}
+.ag-warning svg { flex-shrink: 0; margin-top: 1px; color: var(--warn, #e0a030); }
+
+.ag-prompt-actions { display: flex; gap: 8px; }
+
+.ag-actions { display: flex; gap: 8px; align-items: center; }
+
+.ag-add-btn {
+  display: flex; align-items: center; gap: 7px; justify-content: center;
+  width: 100%; padding: 12px;
+  border: 1.5px dashed var(--line-2, var(--line)); border-radius: 10px;
+  background: transparent; color: var(--ink-soft);
+  font-size: 13.5px; font-weight: 500; cursor: pointer; margin-top: 4px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.ag-add-btn:hover { background: var(--surface-2, var(--paper-2)); border-color: var(--ink-soft); color: var(--ink); }
+
+.ag-add-form {
+  background: var(--surface, var(--paper-2));
+  border: 1.5px solid var(--ink); border-radius: 10px; padding: 16px; margin-top: 8px;
+}
+.ag-add-form-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 600; margin-bottom: 12px;
+}
+.ag-add-form-close {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  padding: 4px; border-radius: 4px; display: flex; align-items: center;
+}
+.ag-add-form-close:hover { color: var(--ink); background: var(--surface-2, var(--paper-2)); }
+.ag-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }

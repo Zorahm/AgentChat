@@ -8,9 +8,9 @@
 
 /* ── Chat header ───────────────────────────────────────────────────────── */
 .chat-head {
-  height: 52px; flex-shrink: 0;
+  height: calc(52px + env(safe-area-inset-top, 0px)); flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 28px;
+  padding: env(safe-area-inset-top, 0px) 28px 0;
   border-bottom: 1px solid var(--line);
   background: var(--surface-2);
 }
@@ -195,6 +195,15 @@
   color: var(--muted);
 }
 
+/* ── Per-message usage/cost line ──────────────────────────── */
+.msg-usage {
+  font-size: 11px;
+  opacity: .5;
+  color: var(--muted);
+  margin-top: 4px;
+  user-select: none;
+}
+
 /* ── User message expand/collapse ──────────────────────────── */
 .msg-expand-btn {
   display: inline-flex; align-items: center; gap: 4px;
@@ -345,14 +354,8 @@
 .chat:not(.chat--welcome) .composer { padding: 14px 16px 22px; }
 .chat:not(.chat--welcome) .composer-box { max-width: 720px; margin: 0 auto; }
 
-.composer-input {
-  padding: 14px 16px 8px;
-  min-height: 60px;
-  font-size: 16px; line-height: 1.55; color: var(--ink);
-  font-family: var(--font-body);
-  border: none; outline: none; width: 100%; background: transparent; resize: none;
-}
-.composer-input::placeholder { color: var(--faint); }
+/* Editor + overlay-placeholder base styling lives in composer.css
+ * (.composer-editor / .composer-wrap / .composer-ph). */
 
 .composer-bar {
   display: flex; align-items: center; justify-content: space-between;
@@ -532,6 +535,92 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 .mcp-chip-dot--error   { background: #f87171; }
 .mcp-chip-dot--stopped { background: var(--faint, #9ca3af); }
 
+/* ── Mobile "+" sheet — Claude-style (quick actions + card rows) ─────────
+ * Reuses the same WebSearchMenuSection/ResearchMenuSection/McpMenuSection
+ * components (and their .cpm-item/.cpm-flyout/etc markup) as the compact
+ * desktop dropdown above; everything in this block only kicks in inside
+ * .cpm-sheet--claude, so the desktop dropdown is untouched. */
+
+.cpm-sheet--claude { padding: 4px 16px 8px; }
+
+.cpm-sheet-head {
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  padding: 4px 0 18px;
+}
+.cpm-sheet-title { font-size: 16px; font-weight: 600; color: var(--ink); }
+.cpm-sheet-close {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: var(--surface-2); color: var(--ink-2);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.cpm-sheet-close:hover { background: var(--hover); color: var(--ink); }
+.cpm-sheet-close svg { width: 16px; height: 16px; }
+
+.cpm-quick-row { display: flex; gap: 10px; padding-bottom: 18px; }
+.cpm-quick {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: none; border: none; padding: 4px 2px; cursor: pointer; color: var(--ink);
+}
+.cpm-quick-ic {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--surface-2); color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.cpm-quick:hover .cpm-quick-ic { background: var(--hover); color: var(--ink); border-color: var(--line-2); }
+.cpm-quick-ic svg { width: 22px; height: 22px; }
+.cpm-quick-label { font-size: 12.5px; font-weight: 500; }
+
+.cpm-sheet--claude .cpm-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* Card-ify every row (toggle / connectors) shared from the desktop menu. */
+.cpm-sheet--claude .cpm-section { border-top: none; margin-top: 0; padding-top: 0; }
+.cpm-sheet--claude .cpm-item,
+.cpm-sheet--claude .cpm-ws-row {
+  background: var(--surface-2); border-radius: 12px;
+}
+.cpm-sheet--claude .cpm-item {
+  padding: 12px 14px; font-size: 14.5px; gap: 12px;
+}
+.cpm-sheet--claude .cpm-item:hover { background: var(--surface-2); }
+.cpm-sheet--claude .cpm-item svg:first-child {
+  width: 32px; height: 32px; padding: 8px; box-sizing: border-box;
+  background: var(--hover); border-radius: 50%; color: var(--ink-2);
+}
+.cpm-sheet--claude .cpm-item--on svg:first-child { color: var(--accent); }
+.cpm-sheet--claude .cpm-item-label { font-weight: 500; }
+
+/* Real on/off switch instead of a checkmark, for the two plain toggles. */
+.cpm-sheet--claude .cpm-item--toggle { position: relative; padding-right: 56px; }
+.cpm-sheet--claude .cpm-item--toggle .cpm-check { display: none; }
+.cpm-sheet--claude .cpm-item--toggle::after {
+  content: ""; position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 22px; border-radius: 11px; background: var(--switch-off);
+  transition: background .15s;
+}
+.cpm-sheet--claude .cpm-item--toggle::before {
+  content: ""; position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 50%; background: var(--switch-thumb);
+  transition: right .15s; z-index: 1;
+}
+.cpm-sheet--claude .cpm-item--toggle.cpm-item--on::after { background: var(--accent-2); }
+.cpm-sheet--claude .cpm-item--toggle.cpm-item--on::before { right: 14px; }
+
+.cpm-sheet--claude .cpm-ws-row { display: flex; }
+.cpm-sheet--claude .cpm-ws-row .cpm-item { background: none; border-radius: 0; }
+.cpm-sheet--claude .cpm-caret { margin-right: 4px; }
+.cpm-sheet--claude .cpm-sub { padding-left: 14px; }
+
+/* Connectors flyout: the desktop version pops out to the side, which has no
+ * room inside a full-width sheet — render it inline underneath instead. */
+.cpm-sheet--claude .cpm-flyout {
+  position: static; left: auto; top: auto;
+  margin-top: 6px; max-height: none;
+  box-shadow: none; border-color: var(--line);
+}
+
 .icon-btn {
   width: 32px; height: 32px; border-radius: 7px; border: none; background: transparent;
   color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
@@ -571,7 +660,8 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 }
 .chat-welcome {
   display: flex; flex-direction: column; align-items: center;
-  gap: 24px; padding: 40px 20px; max-width: 620px; width: 100%;
+  gap: 24px; padding: calc(40px + env(safe-area-inset-top, 0px)) 20px 40px;
+  max-width: 620px; width: 100%;
 }
 
 /* ghost + text side by side */
@@ -590,6 +680,10 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 .chat-welcome-logo img {
   width: 100%; height: 100%;
   display: block;
+  /* Can't be dragged out as an image (it used to land in the composer). */
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
 }
 
 /* title */
@@ -617,7 +711,7 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 20px -6px rgba(20,20,18,.10);
 }
-.chat--welcome .tiptap-editor {
+.chat--welcome .composer-editor {
   min-height: 100px;
   max-height: 280px;
   overflow-y: auto;
@@ -628,7 +722,7 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
  * mode, otherwise the absolutely-positioned overlay sits at the wrap's edge
  * (10px/16px base) while the caret sits at the welcome edge (20px/17px) and
  * they drift apart vertically. */
-.chat--welcome .tiptap-ph {
+.chat--welcome .composer-ph {
   padding: 20px 22px 16px;
   font-size: 17px;
 }
