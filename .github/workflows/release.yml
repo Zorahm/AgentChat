@@ -79,12 +79,14 @@ jobs:
       - name: Bump tauri.conf.json version from tag
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
+          $full = "${{ github.ref_name }}" -replace '^v',''
+          # MSI/NSIS require purely numeric versions — strip pre-release suffix
+          $version = $full -replace '-.*',''
           $conf = "src-tauri/tauri.conf.json"
           $json = Get-Content $conf -Raw | ConvertFrom-Json
           $json.version = $version
           $json | ConvertTo-Json -Depth 32 | Set-Content $conf -Encoding utf8
-          Write-Host "==> tauri.conf.json version -> $version"
+          Write-Host "==> tauri.conf.json version -> $version (from $full)"
 
       - name: Install Node dependencies
         run: npm ci --prefix ui
