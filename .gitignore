@@ -31,14 +31,11 @@ ui/dist/
 chats/
 
 # Generated docs / specs / plans
-docs/
+docs/superpowers/
 
 # Design mockups and reference files (not source)
 Design/
 *.log
-moonlit-chat-reference.html
-UI.md
-custom-ai-chat-plan.md
 
 # OS
 .DS_Store

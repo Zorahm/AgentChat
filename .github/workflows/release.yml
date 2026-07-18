@@ -84,7 +84,14 @@ jobs:
           $version = $full -replace '-.*',''
           $conf = "src-tauri/tauri.conf.json"
           $json = Get-Content $conf -Raw | ConvertFrom-Json
-          $json.version = $version
+          
+          # Support both root level and nested package.version structure in Tauri v2
+          if ($json.package -and $json.package.version) {
+              $json.package.version = $version
+          } else {
+              $json.version = $version
+          }
+          
           $json | ConvertTo-Json -Depth 32 | Set-Content $conf -Encoding utf8
           Write-Host "==> tauri.conf.json version -> $version (from $full)"
 
@@ -115,33 +122,61 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AgentChat ${{ github.ref_name }}"
-          # This body is also written verbatim into latest.json `notes`, which
-          # the in-app "About" update card displays — so it must be the real
-          # release text, not a link to CHANGELOG. tauri-action merges each
-          # matrix job's platforms into the single release + updater manifest.
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           projectPath: src-tauri
+          includeRelease: false # We will handle artifact renaming and uploading manually to avoid race conditions
 
-      - name: Package portable ZIP
-        if: runner.os == 'Windows'
+      - name: Rename, package and upload release artifacts
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
-          $staging = "portable-staging"
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag -replace '^v',''
+          $staging = "release-staging"
           New-Item -ItemType Directory -Force $staging | Out-Null
-          Copy-Item "src-tauri\target\release\AgentChat.exe" "$staging\"
-          Copy-Item "src-tauri\binaries\agentchat-backend-x86_64-pc-windows-msvc.exe" "$staging\"
-          $zip = "AgentChat_${version}_x64_portable.zip"
-          Compress-Archive -Path "$staging\*" -DestinationPath $zip
-          Write-Host "Portable: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
 
-      - name: Upload portable to release
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
-          gh release upload "${{ github.ref_name }}" "AgentChat_${version}_x64_portable.zip"
+          # 1. Process Windows artifacts
+          if ("${{ runner.os }}" -eq "Windows") {
+            $os = "windows"
+            $dir = "src-tauri/target/release/bundle"
+            $nsis = Get-ChildItem "$dir/nsis/*_nsis-setup.exe" | Select-Object -First 1
+            $msi  = Get-ChildItem "$dir/msi/*.msi"             | Select-Object -First 1
+            $upd  = Get-ChildItem "src-tauri/target/release/AgentChat.exe" | Select-Object -First 1
+            $sig  = Get-ChildItem "src-tauri/target/release/*.sig"        | Select-Object -First 1
+
+            if ($nsis) { Copy-Item $nsis.FullName "$staging\agentchat-$ver-$os.exe" }
+            if ($msi)  { Copy-Item $msi.FullName  "$staging\agentchat-$ver-$os.msi" }
+            if ($upd)  { Copy-Item $upd.FullName  "$staging\agentchat-$ver-$os" }
+            if ($sig)  { Copy-Item $sig.FullName  "$staging\agentchat-$ver-$os.sig" }
+
+            # Create Portable ZIP directly in staging directory
+            $portableStaging = "portable-staging"
+            New-Item -ItemType Directory -Force $portableStaging | Out-Null
+            Copy-Item "src-tauri\target\release\AgentChat.exe" "$portableStaging\"
+            Copy-Item "src-tauri\binaries\agentchat-backend-x86_64-pc-windows-msvc.exe" "$portableStaging\"
+            $zipPath = "$staging\agentchat-$ver-windows.zip"
+            Compress-Archive -Path "$portableStaging\*" -DestinationPath $zipPath
+            Write-Host "Portable ZIP created at: $zipPath"
+          } 
+          # 2. Process Linux artifacts
+          else {
+            $os = "linux"
+            $dir = "src-tauri/target/release/bundle"
+            $appimage = Get-ChildItem "$dir/appimage/*.AppImage" | Select-Object -First 1
+            $deb      = Get-ChildItem "$dir/deb/*.deb"          | Select-Object -First 1
+            $appimage_sig = Get-ChildItem "$dir/appimage/*.AppImage.sig" | Select-Object -First 1
+
+            if ($appimage)     { Copy-Item $appimage.FullName     "$staging\agentchat-$ver-$os.x86_64.AppImage" }
+            if ($deb)          { Copy-Item $deb.FullName          "$staging\agentchat-$ver-$os.x86_64.deb" }
+            if ($appimage_sig) { Copy-Item $appimage_sig.FullName "$staging\agentchat-$ver-$os.x86_64.AppImage.sig" }
+          }
+
+          # 3. Upload all prepared assets
+          $assets = Get-ChildItem "$staging\*"
+          foreach ($f in $assets) {
+            Write-Host "Uploading: $($f.Name)"
+            gh release upload $tag $f.FullName --clobber
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
