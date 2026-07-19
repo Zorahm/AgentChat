@@ -138,7 +138,11 @@ jobs:
           releaseDraft: false
           prerelease: false
           projectPath: src-tauri
-          includeRelease: false # We will handle artifact renaming and uploading manually to avoid race conditions
+          # NOTE: do not set `includeRelease: false` — that input means "produce a
+          # release (non-debug) build"; false makes tauri-action build nothing and
+          # fail with "No artifacts were found". It does NOT mean "skip creating the
+          # GitHub Release". tauri-action builds + creates the release here; the
+          # step below adds the renamed asset copies on top.
 
       - name: Rename, package and upload release artifacts
         shell: pwsh
