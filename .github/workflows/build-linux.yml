@@ -61,6 +61,16 @@ jobs:
       - name: Build backend sidecar (Linux)
         run: bash scripts/build-backend.sh
 
+      # Hand the just-built sidecar to the Arch AppImage job so it bundles the
+      # exact same backend instead of rebuilding Python inside the container.
+      - name: Upload Linux backend sidecar (for the Arch AppImage job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-backend-sidecar
+          path: src-tauri/binaries/agentchat-backend-x86_64-unknown-linux-gnu
+          if-no-files-found: error
+          retention-days: 1
+
       # No tagName → tauri-action only builds; it does NOT create a release.
       - name: Build Tauri app (no release)
         uses: tauri-apps/tauri-action@v0
@@ -77,4 +87,59 @@ jobs:
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+  # Smoke-test the AppImage the way real users get it: built on Arch so it bundles
+  # a modern WebKitGTK. The AppImage from the ubuntu job above bundles Ubuntu's
+  # older WebKit, which hard-aborts on EGL init against newer host Mesa (blank
+  # "white screen"). This mirrors the release.yml `appimage-arch` job but uploads
+  # a workflow artifact instead of touching a release.
+  appimage-arch:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build toolchain (pacman)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git curl jq \
+            rust nodejs npm \
+            webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg \
+            patchelf openssl
+
+      - uses: actions/checkout@v4
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory '*'
+
+      - name: Fetch prebuilt Linux backend sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-backend-sidecar
+          path: src-tauri/binaries
+      - name: Make sidecar executable
+        run: chmod +x src-tauri/binaries/agentchat-backend-x86_64-unknown-linux-gnu
+
+      - name: Build UI
+        run: |
+          npm ci --prefix ui
+          npm run build --prefix ui
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      # See release.yml for why APPIMAGE_EXTRACT_AND_RUN and NO_STRIP are needed.
+      - name: Build AppImage (Arch WebKit)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: tauri build --bundles appimage
+
+      - name: Upload Arch AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentchat-linux-appimage-arch
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error

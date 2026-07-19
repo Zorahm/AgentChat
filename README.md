@@ -62,7 +62,8 @@ npm install
 npm run dev
 
 # Or both at once
-.\run.bat   # choose option 3
+.\run.bat   # Windows — choose option 3
+./run.sh    # Linux / macOS — choose option 3
 ```
 
 UI: http://localhost:5173 · Backend: http://127.0.0.1:8787
@@ -96,6 +97,19 @@ npm run build --prefix ui
 cd src-tauri && cargo tauri build
 ```
 
+This produces three bundles under `src-tauri/target/release/bundle/`: `.deb`,
+`.rpm`, and `.AppImage`. Build deps: the WebKitGTK 4.1 stack, GTK 3, librsvg,
+patchelf, and (on Arch) `libayatana-appindicator`.
+
+> **AppImage & the white-screen trap.** An AppImage bundles the WebKit of the
+> machine that *built* it. If that WebKit is older than the Mesa/GPU stack on the
+> machine that *runs* it, the webview aborts on startup and the window is blank
+> (white) — no error shown. So an AppImage built on an older distro can
+> white-screen on a bleeding-edge one (Arch, CachyOS, Fedora). The official
+> release AppImage is therefore built on Arch (see below), and the `.deb`/`.rpm`
+> don't have this problem — they use your system's own WebKit. If you roll your
+> own AppImage, build it on a distro at least as new as your target.
+
 ## Building the Android client
 
 The APK is a thin client with **no bundled backend** — it pairs with a desktop instance over the network (QR code or manual URL + token), so there's no backend step:
@@ -112,13 +126,21 @@ Requires the Android SDK + NDK, the Rust Android targets, and (on Windows) Devel
 
 ## Releases / Auto-update
 
-Tagged pushes trigger GitHub Actions which:
+Tagged pushes trigger GitHub Actions, which builds every platform in parallel:
 
-1. Builds `agentchat-backend.exe` via PyInstaller
-2. Builds the Tauri NSIS `-setup.exe` + `.msi` installers
-3. Publishes a GitHub Release with `latest.json`
+- **Windows** — `agentchat-backend.exe` (PyInstaller) + the Tauri NSIS
+  `-setup.exe` and `.msi` installers, plus a portable ZIP.
+- **Linux** — the sidecar + `.deb`, `.rpm`, and `.AppImage`. The AppImage is
+  rebuilt in an Arch container so it ships a modern WebKit (see the white-screen
+  note above); the `.deb`/`.rpm` come from the standard Ubuntu runner.
+- Publishes a GitHub Release with a `latest.json` updater manifest.
 
 The installed desktop app checks for updates on every launch and prompts the user to install. The Android APK isn't part of this pipeline — it's built and sideloaded locally (see above); there's no auto-update for it.
+
+**Which Linux artifact?** `.deb` for Debian/Ubuntu/Mint, `.rpm` for
+Fedora/openSUSE, `.AppImage` for everything else (Arch/CachyOS and other rolling
+distros) — `chmod +x` it and run. The AppImage needs FUSE (`fuse2`), or run it
+with `--appimage-extract-and-run`.
 
 ```powershell
 git tag v1.1.0
@@ -168,12 +190,12 @@ WSL is not required — the agent falls back to PowerShell on Windows. Install i
 
 Everything is stored locally — there is no AgentChat account or cloud sync.
 
-| What | Where (packaged app) |
-|---|---|
-| Settings + provider keys | `%APPDATA%/AgentChat/.agents/settings.json` |
-| Chats | `%APPDATA%/AgentChat/.agents/agentchat.db` (SQLite) |
-| Projects | `%APPDATA%/AgentChat/.agents/projects.db` (SQLite) |
-| Skills | `~/.agents/skills/` |
+| What | Windows | Linux |
+|---|---|---|
+| Settings + provider keys | `%APPDATA%/AgentChat/.agents/settings.json` | `~/AgentChat/.agents/settings.json` |
+| Chats | `%APPDATA%/AgentChat/.agents/agentchat.db` (SQLite) | `~/AgentChat/.agents/agentchat.db` |
+| Projects | `%APPDATA%/AgentChat/.agents/projects.db` (SQLite) | `~/AgentChat/.agents/projects.db` |
+| Skills | `~/.agents/skills/` | `~/.agents/skills/` |
 
 In development these live under `<repo>/.agents/` instead.
 

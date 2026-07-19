@@ -125,6 +125,7 @@ setup_ndk() {
 
     local ndk_dir="$ANDROID_HOME/ndk"
     local version=""
+    local current=""
 
     if [[ ! -d "$ndk_dir" ]]; then
         warn "NDK directory not found: $ndk_dir"
@@ -212,8 +213,9 @@ setup_java
 setup_android
 setup_ndk
 
-build_apk
-RESULT=$?
+# Capture the build result without letting `set -e` abort before the banner.
+RESULT=0
+build_apk || RESULT=$?
 
 show_output
 

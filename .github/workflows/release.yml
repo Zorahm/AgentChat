@@ -112,6 +112,18 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/build-backend.sh
 
+      # Publish the just-built Linux sidecar so the Arch AppImage job (below) can
+      # bundle the EXACT same backend instead of rebuilding Python on Arch. This
+      # is additive — it does not change the .deb / .rpm / updater artifacts.
+      - name: Upload Linux backend sidecar (for the Arch AppImage job)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-backend-sidecar
+          path: src-tauri/binaries/agentchat-backend-x86_64-unknown-linux-gnu
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Build and publish Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -180,3 +192,108 @@ jobs:
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # The AppImage bundles WebKitGTK from the build host. Built on ubuntu-latest,
+  # that WebKit is too old and hard-aborts on EGL init against a newer host Mesa
+  # (Arch / CachyOS / Fedora) — the webview crashes and the window is blank
+  # ("white screen"). The .deb / .rpm are fine because they use the *target's*
+  # system WebKit, so only the AppImage needs a modern WebKit baked in.
+  #
+  # So we rebuild ONLY the AppImage inside an Arch container (fresh WebKitGTK,
+  # matching the distros AppImage users actually run) and overwrite the AppImage
+  # asset the release job already uploaded. The .deb, .rpm, Windows artifacts and
+  # the updater manifest (latest.json) are left exactly as the release job made
+  # them.
+  appimage-arch:
+    needs: release
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    permissions:
+      contents: write
+    steps:
+      # Install the toolchain first — the container is bare Arch, and
+      # actions/checkout needs git present in the container.
+      - name: Install build toolchain (pacman)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git curl jq \
+            rust nodejs npm \
+            webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg \
+            patchelf openssl github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Checkout runs as root inside the container; mark the tree safe so git
+      # (used by the version bump and tauri) doesn't refuse "dubious ownership".
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory '*'
+
+      # Same strip logic as the release job's pwsh step, in bash/jq: the tag's
+      # version, minus any pre-release suffix, into tauri.conf.json so the built
+      # AppImage filename matches the asset the release job uploaded.
+      - name: Bump tauri.conf.json version from tag
+        run: |
+          full="${GITHUB_REF_NAME#v}"
+          version="${full%%-*}"
+          jq --arg v "$version" '.version = $v' src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
+          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+          echo "==> tauri.conf.json version -> $version (from $full)"
+
+      # Reuse the sidecar the release job built on ubuntu (same backend as the
+      # .deb) rather than rebuilding Python inside a rolling-release container.
+      - name: Fetch prebuilt Linux backend sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-backend-sidecar
+          path: src-tauri/binaries
+      - name: Make sidecar executable
+        run: chmod +x src-tauri/binaries/agentchat-backend-x86_64-unknown-linux-gnu
+
+      - name: Build UI
+        run: |
+          npm ci --prefix ui
+          npm run build --prefix ui
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      # APPIMAGE_EXTRACT_AND_RUN: linuxdeploy/appimagetool are themselves
+      #   AppImages and there is no FUSE inside the container, so make them
+      #   self-extract instead of mounting.
+      # NO_STRIP: linuxdeploy's bundled `strip` is old binutils and chokes on
+      #   Arch's modern libraries ("unknown type [0x13] section .relr.dyn" — the
+      #   DT_RELR relocation format), which aborts the whole bundle. Stripping is
+      #   only a size optimisation, so skip it.
+      - name: Build AppImage (Arch WebKit)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: tauri build --bundles appimage
+
+      # Replace every *.AppImage asset the release job already uploaded (the
+      # tauri-action default name AND the renamed copy from the pwsh step) with
+      # this Arch-built one, whatever the naming scheme. The detached .sig files
+      # and latest.json (the updater manifest) are deliberately left untouched.
+      - name: Overwrite AppImage release asset(s)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          echo "==> Arch AppImage: $(basename "$appimage") ($(du -h "$appimage" | cut -f1))"
+          mapfile -t assets < <(gh release view "$GITHUB_REF_NAME" --json assets \
+            --jq '.assets[].name' | grep -iE '\.AppImage$' || true)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            assets=("$(basename "$appimage")")
+          fi
+          tmp=$(mktemp -d)
+          for name in "${assets[@]}"; do
+            echo "==> Overwriting release asset: $name"
+            cp "$appimage" "$tmp/$name"
+            gh release upload "$GITHUB_REF_NAME" "$tmp/$name" --clobber
+          done

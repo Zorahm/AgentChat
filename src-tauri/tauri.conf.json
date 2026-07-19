@@ -27,7 +27,6 @@
     "active": true,
     "targets": "all",
     "publisher": "Zorahm",
-    "artifactName": "agentchat-${version}-${target}",
     "copyright": "© 2026 Zorahm",
     "createUpdaterArtifacts": true,
     "icon": [

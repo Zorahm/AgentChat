@@ -311,9 +311,43 @@ cd src-tauri ; cargo tauri build     # 3. desktop app (bundles ui/dist + whateve
   status response that predates a new field). `build-backend.ps1` also bundles
   `ui/dist` (for remote/phone serving) and stamps the version from
   `tauri.conf.json` into `_buildstamp.py`.
-- Linux desktop is the same shape with `scripts/build-backend.sh` + `cargo tauri build`.
 - Signing/updater secrets are only needed for auto-update artifacts — an offline
   test build doesn't need them.
+- Linux is the same three steps with `scripts/build-backend.sh` — but the AppImage
+  has real gotchas; see **Linux** below.
+
+### Linux (deb + rpm + AppImage)
+
+Same three steps, POSIX shell:
+
+```sh
+npm run build --prefix ui            # 1. UI → ui/dist
+./scripts/build-backend.sh           # 2. sidecar → src-tauri/binaries/agentchat-backend-x86_64-unknown-linux-gnu
+cd src-tauri && cargo tauri build    # 3. bundles: appimage/ + deb/ + rpm/
+```
+
+Build deps (Arch names): `webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg
+patchelf openssl base-devel rust nodejs npm`. Debian/Ubuntu use the `-dev`
+equivalents (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, …).
+
+- **The AppImage bundles the *build host's* WebKitGTK — and that's a trap.** A
+  bundled WebKit older than the *runtime* host's Mesa hard-aborts on EGL init
+  (`Could not create default EGL display: EGL_BAD_PARAMETER. Aborting…`), the
+  webview process dies, and you get a **blank white window** with no error in the
+  UI. So an AppImage built on Ubuntu (WebKit ~2.44) white-screens on Arch /
+  CachyOS / Fedora (newer Mesa). The `.deb`/`.rpm` are immune — they link the
+  *target's* system WebKit. No `WEBKIT_DISABLE_*` / software-GL env var fixes the
+  abort; the only cure is a new-enough bundled WebKit.
+- **So the release AppImage is built in an Arch container** (fresh WebKit) — the
+  `appimage-arch` job in `release.yml`. Building an AppImage in a container needs
+  two env vars: `NO_STRIP=true` (linuxdeploy's bundled `strip` is old binutils and
+  chokes on modern libs' `.relr.dyn` / `DT_RELR` section → aborts the whole
+  bundle) and `APPIMAGE_EXTRACT_AND_RUN=1` (linuxdeploy/appimagetool are
+  themselves AppImages and there's no FUSE in the container).
+- **`bundle.artifactName` must NOT be in `tauri.conf.json`.** tauri-cli ≥ 2.11
+  rejects it (`Additional properties are not allowed ('artifactName' …)`); older
+  CLIs silently ignored it. Bundle filenames come from `productName` + `version`
+  regardless (`AgentChat_<version>_amd64.AppImage`, …).
 
 ### Android (APK)
 
@@ -382,3 +416,22 @@ Use the same `X.Y.Z` everywhere — the tag is that number prefixed with `v`.
 > CI re-bumps `src-tauri/tauri.conf.json` from the tag at build time, so the
 > *published* app matches the tag even if you forget — but `ui/package.json` is
 > **never** auto-bumped. Always bump both by hand; don't lean on the CI bump.
+
+### Linux artifacts (two-stage)
+
+`release.yml` builds Windows and Linux in a matrix. The `ubuntu-latest` leg
+produces the `.deb` + `.rpm` (fine — they use the target's system WebKit) and,
+via `tauri-action`, the `latest.json` updater manifest. A dependent
+**`appimage-arch`** job then rebuilds *only* the AppImage in an `archlinux`
+container (modern WebKit — see [Local builds → Linux](#linux-deb--rpm--appimage)
+for why) and **overwrites** every `*.AppImage` release asset with it via
+`gh release upload --clobber`. It reuses the exact sidecar the matrix leg built
+(handed over as the `linux-backend-sidecar` workflow artifact) and leaves the
+`.deb`/`.rpm`/`.sig`/`latest.json` untouched.
+
+- The `build-linux.yml` smoke-test workflow (manual `workflow_dispatch`) mirrors
+  this, uploading the Arch AppImage as the `agentchat-linux-appimage-arch`
+  artifact — run it to validate a Linux change before tagging.
+- Consequence of not touching `latest.json`: the AppImage's in-app auto-update
+  signature stays the ubuntu leg's, so it won't match the Arch AppImage. The
+  *download* works; wiring the updater to the Arch signature is a separate step.
