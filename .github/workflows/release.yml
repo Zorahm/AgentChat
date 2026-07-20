@@ -14,7 +14,12 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            args: ""
           - os: ubuntu-latest
+            # deb + rpm only. The AppImage is rebuilt on Arch (appimage-arch job)
+            # because ubuntu-latest's WebKit is too old and white-screens on newer
+            # distros — so we don't build (or ship) an AppImage from here at all.
+            args: "--bundles deb,rpm"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -135,67 +140,20 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "AgentChat ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: false
+          # Build into a DRAFT. The `publish` job flips it live only after the Arch
+          # AppImage lands, so nothing — and no broken interim AppImage — is ever
+          # public mid-build.
+          releaseDraft: true
           prerelease: false
           projectPath: src-tauri
-          # NOTE: do not set `includeRelease: false` — that input means "produce a
-          # release (non-debug) build"; false makes tauri-action build nothing and
-          # fail with "No artifacts were found". It does NOT mean "skip creating the
-          # GitHub Release". tauri-action builds + creates the release here; the
-          # step below adds the renamed asset copies on top.
-
-      - name: Rename, package and upload release artifacts
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $ver = $tag -replace '^v',''
-          $staging = "release-staging"
-          New-Item -ItemType Directory -Force $staging | Out-Null
-
-          # 1. Process Windows artifacts
-          if ("${{ runner.os }}" -eq "Windows") {
-            $os = "windows"
-            $dir = "src-tauri/target/release/bundle"
-            $nsis = Get-ChildItem "$dir/nsis/*_nsis-setup.exe" | Select-Object -First 1
-            $msi  = Get-ChildItem "$dir/msi/*.msi"             | Select-Object -First 1
-            $upd  = Get-ChildItem "src-tauri/target/release/AgentChat.exe" | Select-Object -First 1
-            $sig  = Get-ChildItem "src-tauri/target/release/*.sig"        | Select-Object -First 1
-
-            if ($nsis) { Copy-Item $nsis.FullName "$staging\agentchat-$ver-$os.exe" }
-            if ($msi)  { Copy-Item $msi.FullName  "$staging\agentchat-$ver-$os.msi" }
-            if ($upd)  { Copy-Item $upd.FullName  "$staging\agentchat-$ver-$os" }
-            if ($sig)  { Copy-Item $sig.FullName  "$staging\agentchat-$ver-$os.sig" }
-
-            # Create Portable ZIP directly in staging directory
-            $portableStaging = "portable-staging"
-            New-Item -ItemType Directory -Force $portableStaging | Out-Null
-            Copy-Item "src-tauri\target\release\AgentChat.exe" "$portableStaging\"
-            Copy-Item "src-tauri\binaries\agentchat-backend-x86_64-pc-windows-msvc.exe" "$portableStaging\"
-            $zipPath = "$staging\agentchat-$ver-windows.zip"
-            Compress-Archive -Path "$portableStaging\*" -DestinationPath $zipPath
-            Write-Host "Portable ZIP created at: $zipPath"
-          } 
-          # 2. Process Linux artifacts
-          else {
-            $os = "linux"
-            $dir = "src-tauri/target/release/bundle"
-            $appimage = Get-ChildItem "$dir/appimage/*.AppImage" | Select-Object -First 1
-            $deb      = Get-ChildItem "$dir/deb/*.deb"          | Select-Object -First 1
-            $appimage_sig = Get-ChildItem "$dir/appimage/*.AppImage.sig" | Select-Object -First 1
-
-            if ($appimage)     { Copy-Item $appimage.FullName     "$staging\agentchat-$ver-$os.x86_64.AppImage" }
-            if ($deb)          { Copy-Item $deb.FullName          "$staging\agentchat-$ver-$os.x86_64.deb" }
-            if ($appimage_sig) { Copy-Item $appimage_sig.FullName "$staging\agentchat-$ver-$os.x86_64.AppImage.sig" }
-          }
-
-          # 3. Upload all prepared assets
-          $assets = Get-ChildItem "$staging\*"
-          foreach ($f in $assets) {
-            Write-Host "Uploading: $($f.Name)"
-            gh release upload $tag $f.FullName --clobber
-          }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Per-OS bundle selection (Linux: deb,rpm — no AppImage here).
+          args: ${{ matrix.args }}
+          # One naming scheme for every asset, e.g.
+          # agentchat-3.0.0-linux-x86_64.deb / agentchat-3.0.0-windows-x86_64.exe.
+          assetNamePattern: "agentchat-[version]-[platform]-[arch][ext]"
+          # Do NOT set `includeRelease: false` — that input means "produce a
+          # release (non-debug) build", not "skip the GitHub Release"; false makes
+          # tauri-action build nothing ("No artifacts were found").
 
   # ---------------------------------------------------------------------------
   # The AppImage bundles WebKitGTK from the build host. Built on ubuntu-latest,
@@ -288,25 +246,43 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: tauri build --bundles appimage
 
-      # Replace every *.AppImage asset the release job already uploaded (the
-      # tauri-action default name AND the renamed copy from the pwsh step) with
-      # this Arch-built one, whatever the naming scheme. The detached .sig files
-      # and latest.json (the updater manifest) are deliberately left untouched.
-      - name: Overwrite AppImage release asset(s)
+      # Name the AppImage to match the other assets (the release job renamed
+      # everything via assetNamePattern) by taking the .deb's name and swapping the
+      # extension — e.g. agentchat-3.0.0-linux-x86_64.deb ->
+      # agentchat-3.0.0-linux-x86_64.AppImage — then upload it into the still-DRAFT
+      # release. The publish job flips the whole release live afterwards.
+      - name: Upload AppImage into the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
-          echo "==> Arch AppImage: $(basename "$appimage") ($(du -h "$appimage" | cut -f1))"
-          mapfile -t assets < <(gh release view "$GITHUB_REF_NAME" --json assets \
-            --jq '.assets[].name' | grep -iE '\.AppImage$' || true)
-          if [ "${#assets[@]}" -eq 0 ]; then
-            assets=("$(basename "$appimage")")
+          built=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          deb=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' | grep -E '\.deb$' | head -1)
+          if [ -z "$deb" ]; then
+            echo "no .deb asset on the release to derive the AppImage name from" >&2
+            exit 1
           fi
+          name="${deb%.deb}.AppImage"
+          echo "==> Uploading $(basename "$built") as $name ($(du -h "$built" | cut -f1))"
           tmp=$(mktemp -d)
-          for name in "${assets[@]}"; do
-            echo "==> Overwriting release asset: $name"
-            cp "$appimage" "$tmp/$name"
-            gh release upload "$GITHUB_REF_NAME" "$tmp/$name" --clobber
-          done
+          cp "$built" "$tmp/$name"
+          gh release upload "$GITHUB_REF_NAME" "$tmp/$name" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # ---------------------------------------------------------------------------
+  # Everything above builds into a DRAFT release. Only once every platform AND
+  # the Arch AppImage have landed do we flip the release public — so users never
+  # see a half-built release or a broken interim AppImage.
+  publish:
+    needs: [release, appimage-arch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false --latest
