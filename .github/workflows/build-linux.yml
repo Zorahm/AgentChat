@@ -104,7 +104,7 @@ jobs:
           pacman -Syu --noconfirm --needed \
             base-devel git curl jq \
             rust nodejs npm \
-            webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg \
+            webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg gdk-pixbuf2 \
             patchelf openssl
 
       - uses: actions/checkout@v4
@@ -127,6 +127,13 @@ jobs:
 
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@^2
+
+      # linuxdeploy-plugin-gtk copies /usr/lib/gdk-pixbuf-2.0/2.10.0 and aborts if
+      # it's missing; modern librsvg no longer creates it. See release.yml.
+      - name: Prepare gdk-pixbuf loader cache (for linuxdeploy-plugin-gtk)
+        run: |
+          mkdir -p /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+          gdk-pixbuf-query-loaders --update-cache || true
 
       # See release.yml for why APPIMAGE_EXTRACT_AND_RUN and NO_STRIP are needed.
       # --verbose surfaces linuxdeploy's own stderr (tauri otherwise swallows it).
