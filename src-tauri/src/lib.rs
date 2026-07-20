@@ -22,8 +22,8 @@ fn get_backend_url() -> String {
 /// here so users never get stranded inside the app with no back button.
 #[tauri::command]
 fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-    app.shell().open(url, None).map_err(|e| e.to_string())
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Save bytes to a location the user picks in the native save dialog, and
@@ -82,7 +82,7 @@ pub fn run() {
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init());
 
     // Process control + auto-updater are desktop-only concerns; on mobile the OS
