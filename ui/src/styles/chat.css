@@ -74,6 +74,16 @@
   font-size: 16px; color: var(--ink);
 }
 
+/* A flex item (of Astryx's ChatMessageBubble) defaults to min-width:auto,
+   i.e. it refuses to shrink below its content's intrinsic width. A long
+   unwrapped line (web_fetch output, a wide code block, ...) then forces this
+   box — and every ancestor up to the chat column — wider than the message
+   column, producing a page-level horizontal scrollbar instead of the
+   CodeBlock's own local one. min-width:0 lets it shrink to the available
+   column width; overflow-x:hidden then clips anything still too wide so the
+   CodeBlock's internal `overflow-x:auto` scroller is what actually scrolls. */
+.msg-group { min-width: 0; max-width: 100%; overflow-x: hidden; }
+
 /* ── Message action buttons (copy / retry) ────────────────────────── */
 .msg-actions {
   display: flex; gap: 2px;
@@ -257,9 +267,12 @@
 }
 
 /* ── Composer ──────────────────────────────────────────────────────────── */
+/* No background here — this token (--bg, the app's outermost body tone) is
+   darker than the surface the composer actually sits on (e.g. AppShell's
+   "section" content background), painting a visibly darker box wherever the
+   two differ. Just let the page's own background show through. */
 .composer {
   padding: 14px 16px 22px; flex-shrink: 0;
-  background: var(--bg);
 }
 .composer-box--dragging { border-color: transparent; }
 

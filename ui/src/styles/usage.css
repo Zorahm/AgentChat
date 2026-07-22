@@ -39,14 +39,9 @@
   display: flex;
   gap: 4px;
   background: var(--paper);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 3px;
-}
-
-.usage-period-btn.active {
-  background: var(--accent);
-  color: #fff;
 }
 
 .usage-error {
@@ -66,7 +61,7 @@
 }
 
 .usage-summary-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px 16px;
 }
@@ -197,7 +192,7 @@
   align-items: flex-end;
   gap: 4px;
   height: 140px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   padding-bottom: 2px;
 }
 
@@ -251,31 +246,21 @@
   gap: 2px;
 }
 
-.usage-top-chat-row {
+.usage-top-chat-row { justify-content: flex-start; text-align: left; }
+
+/* Astryx Button's children slot is a plain (non-flex) span — wrap multi-element
+   content in our own flex row rather than fighting the button's own box model. */
+.usage-top-chat-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: none;
-  background: transparent;
-  text-align: left;
-  padding: 8px 6px;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.usage-top-chat-row:hover:not(:disabled) {
-  background: var(--paper);
-}
-
-.usage-top-chat-row:disabled {
-  cursor: default;
-  color: var(--muted);
+  flex: 1;
+  min-width: 0;
 }
 
 .usage-top-chat-title {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -285,4 +270,5 @@
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }

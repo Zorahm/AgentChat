@@ -46,15 +46,19 @@ AgentChat/
 │   │   ├── models_routes.py    # GET /api/models
 │   │   ├── mcp.py              # MCP server management routes
 │   │   ├── projects.py         # Projects CRUD
+│   │   ├── agents.py           # Agent-persona CRUD (name, gradient avatar, system-prompt override)
 │   │   ├── remote.py           # Remote access (token, toggle, QR)
 │   │   ├── searxng.py          # SearXNG proxy
 │   │   ├── win_deps.py         # Windows dependency detection
+│   │   ├── config_routes.py    # GET /api/config/* — runtime capability probes for the UI
+│   │   ├── usage.py            # GET /api/usage/* — token/cost dashboard queries
 │   │   ├── router.py           # Route assembly
 │   │   └── schemas/            # Pydantic request/response models
 │   │       ├── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
 │   │       ├── mcp.py          # MCP schemas
 │   │       ├── settings.py     # Settings schemas
-│   │       └── skills.py       # Skills schemas
+│   │       ├── skills.py       # Skills schemas
+│   │       └── agents.py       # Agent-persona schemas
 │   ├── agent/                  # Agent core logic
 │   │   ├── loop.py             # AgentLoop — run_stream() is the main path
 │   │   ├── config.py           # AgentConfig dataclass
@@ -85,7 +89,9 @@ AgentChat/
 │   ├── llm/                    # LLM client layer
 │   │   ├── client.py           # LLMClient — wraps LiteLLM
 │   │   ├── model_tag.py        # Re-tags custom/OpenAI-compatible model ids
-│   │   └── models_fetcher.py   # Fetches available models from providers
+│   │   ├── models_fetcher.py   # Fetches available models from providers
+│   │   ├── usage_logging.py    # litellm.callbacks hook — writes one usage_log row per LLM call
+│   │   └── token_breakdown.py  # Local estimate of where prompt tokens went (system/tools/history/...)
 │   ├── mcp_integration/        # Model Context Protocol
 │   │   ├── client.py           # MCP client (stdio/HTTP)
 │   │   ├── config.py           # MCP server config
@@ -95,7 +101,8 @@ AgentChat/
 │   ├── store/                  # Persistence
 │   │   ├── chat_store.py       # SQLite chat storage (upsert, get, touch)
 │   │   ├── project_store.py    # SQLite project storage
-│   │   └── settings_store.py   # Settings read/write
+│   │   ├── settings_store.py   # Settings read/write
+│   │   └── usage_store.py      # SQLite usage/cost log (usage_log + model_pricing tables)
 │   ├── web_search/             # Web search module
 │   │   ├── config.py           # Provider config (native/Tavily/SearXNG)
 │   │   └── service.py          # WebSearchService — routes to active provider
@@ -104,26 +111,28 @@ AgentChat/
 │       ├── installer.py        # GitHub/archive skill installer
 │       └── catalog.py          # Curated Anthropic skill catalog (docx/xlsx/pptx/pdf/...)
 │
-├── ui/                         # React + TypeScript frontend
+├── ui/                         # React + TypeScript frontend, on Meta's Astryx design system
 │   └── src/
-│       ├── main.tsx            # React entry point
-│       ├── App.tsx             # Root component, settings context, layout
+│       ├── main.tsx            # React entry point; also routes ?debug-* query params to the harnesses below
+│       ├── App.tsx             # Root component, settings context, layout (Astryx AppShell/Theme)
+│       ├── Debug{Composer,Update,Usage}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage) — render one component tree in isolation against fabricated props for visual verification without a live backend
 │       ├── hooks/
 │       │   ├── useChats/           # Multi-session chat manager (THE main hook)
 │       │   │   ├── index.ts        # useChats() — composes the pieces below
 │       │   │   ├── api.ts          # backend chat CRUD + localStorage→backend migration
 │       │   │   ├── tree.ts         # pure chat-tree helpers (branches, variants)
-│       │   │   ├── persistence.ts  # localStorage load/save + legacy-tree migration
+│       │   │   ├── persistence.ts  # localStorage load/save + legacy-tree migration + pinned-chat ids
 │       │   │   └── easterEgg.ts    # Ghost Chat easter-egg lore injection
 │       │   ├── useSSE.ts           # SSE connection helper (sseConnect)
 │       │   ├── useAvatar.ts        # Avatar URL management
 │       │   ├── useProjects.ts      # Projects data hook
+│       │   ├── useAgents.ts        # Agent-persona CRUD hook (mirrors useProjects)
 │       │   ├── useShortcuts.ts     # Keyboard shortcut registration
 │       │   ├── useAppUpdate.ts     # Auto-update check
 │       │   ├── useFileDrop.ts      # File drop handling
 │       │   ├── useIsMobile.ts      # matchMedia-backed mobile breakpoint hook
 │       │   ├── useDarkMode.ts      # System dark-mode detection
-│       │   ├── useLongPress.ts     # Long-press gesture
+│       │   ├── useViewportHeight.ts # Pins --app-height to visualViewport (mobile URL-bar-safe layout)
 │       │   └── useWindowFileDrag.ts # Window-level drag detection
 │       ├── contexts/
 │       │   └── SettingsContext.tsx  # Shared settings state (model, theme, etc.)
@@ -132,13 +141,11 @@ AgentChat/
 │       ├── components/
 │       │   ├── Chat/
 │       │   │   ├── ChatView.tsx         # Chat column — messages + composer
-│       │   │   ├── ChatInput.tsx        # Message composer with file upload
-│       │   │   ├── MessageBubble.tsx    # Single message renderer
+│       │   │   ├── ChatInput.tsx        # Composer — Astryx ChatComposer/ChatComposerInput, no TipTap
+│       │   │   ├── MessageBubble.tsx    # Single message renderer — Astryx ChatMessage/ChatToolCalls/ChatMessageMetadata
 │       │   │   ├── ModelSelector.tsx    # Model dropdown
 │       │   │   ├── CodeBlockView.tsx    # Syntax-highlighted code blocks
 │       │   │   ├── MCPChip.tsx          # MCP indicator chip + composer "Connectors" row
-│       │   │   ├── MentionNodeView.tsx  # @mention node
-│       │   │   ├── MentionPopup.tsx     # @mention autocomplete
 │       │   │   ├── WebSearchControl.tsx # Web search toggle
 │       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
 │       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
@@ -149,6 +156,7 @@ AgentChat/
 │       │   ├── Mobile/
 │       │   │   └── MobileConnect.tsx    # Backend connect/reconnect screen (APK + PWA)
 │       │   ├── BottomSheet.tsx      # Generic mobile bottom-sheet primitive (drag handle)
+│       │   ├── AgentAvatar.tsx      # Gradient agent avatar — wraps Astryx Avatar, snaps to its pixel size scale
 │       │   ├── Settings/
 │       │   │   ├── SettingsPanel.tsx    # Shell — nav, tab routing, state
 │       │   │   ├── RestartBackendButton.tsx
@@ -161,6 +169,7 @@ AgentChat/
 │       │   │       ├── ModelsTab.tsx
 │       │   │       ├── PathsTab.tsx
 │       │   │       ├── MCPTab.tsx
+│       │   │       ├── AgentsTab.tsx
 │       │   │       ├── ShortcutsTab.tsx
 │       │   │       └── AboutTab.tsx
 │       │   ├── Projects/
@@ -175,52 +184,56 @@ AgentChat/
 │       │   ├── Skills/
 │       │   │   └── SkillsManager.tsx    # Master-detail; mobile swaps list↔detail full-screen
 │       │   ├── ToolCalls/
-│       │   │   ├── ToolCallBlock.tsx
 │       │   │   └── UserQuestionCard.tsx # ask_user tool — inline question UI
+│       │   ├── Usage/
+│       │   │   └── UsageDashboardPage.tsx # Token/cost dashboard — summary, by-model, breakdown, daily chart, top chats
 │       │   ├── Onboarding/
 │       │   │   ├── OnboardingWizard.tsx
 │       │   │   ├── EnvironmentStep.tsx
 │       │   │   └── DependencyCard.tsx
-│       │   ├── Markdown/
-│       │   │   └── Markdown.tsx
-│       │   ├── Sidebar.tsx          # Left nav — chat list + navigation
-│       │   ├── AllChatsPage.tsx     # All chats grid with search/sort
-│       │   ├── FilesGalleryPage.tsx # Gallery of all uploaded files
+│       │   ├── Sidebar.tsx          # Left nav — Astryx SideNav; chat list, pin/unpin, update banner
+│       │   ├── LibraryPage.tsx      # Chats | Files tab switcher over a shared search box
+│       │   ├── AllChatsPage.tsx     # All chats grid with search/sort (rendered inside LibraryPage)
+│       │   ├── FilesGalleryPage.tsx # Gallery of all uploaded files (rendered inside LibraryPage)
 │       │   ├── GhostChat.tsx        # Empty/placeholder chat state
 │       │   ├── GlobalDropZone.tsx   # App-wide file drop handler
 │       │   └── ErrorBoundary.tsx
 │       ├── types/
-│       │   ├── chat.ts         # ChatSession, ChatNode, UserNode, AssistantNode
+│       │   ├── chat.ts         # ChatSession, ChatNode, UserNode, AssistantNode, MessageUsage
 │       │   ├── tool-call.ts    # ToolCall, ProcessStep
 │       │   ├── artifact.ts     # LiveFile
-│       │   └── project.ts      # Project
+│       │   ├── project.ts      # Project
+│       │   └── agent.ts        # Agent persona
 │       ├── i18n/
 │       │   ├── index.ts
 │       │   ├── languages.ts
 │       │   └── locales/en/ ru/
+│       ├── styles/              # astryx-setup.css (theme import) + global.css (legacy-name → --color-* token bridge) + per-screen CSS
 │       └── utils/
 │           ├── apiBase.ts          # API_BASE/token, installApiAuth(), withToken(), disconnect events
 │           ├── tauri.ts            # isTauri()/isAndroidTauri() detection
-│           ├── downloadAndOpen.ts  # Desktop: fs write + OS "open with"; else: blob <a download>
+│           ├── downloadAndOpen.ts  # Blob-download fallback (browser/Android): fs write + OS "open with" on desktop
+│           ├── saveFileAs.ts       # Desktop-only OS "Save As" dialog (Tauri save_file_as command)
 │           ├── formatTime.ts       # Locale-aware time formatting
 │           ├── parseArtifacts.ts   # Artifact extraction (support path)
 │           ├── presentedFiles.ts   # Files surfaced via present_files tool
 │           ├── collectAllFiles.ts  # Aggregate file cards from tool calls
 │           ├── toolIcons.tsx       # Icon map for tool calls + file-ext icon/kind
+│           ├── toolActivity.ts     # Reads the model-authored `activity` label off a tool call
 │           ├── safeJson.ts         # Safe JSON parse/stringify
 │           ├── notify.ts           # Desktop notifications
 │           ├── openExternal.ts     # Open URLs in OS browser
-│           ├── mentions.ts         # @mention parsing
+│           ├── mentions.ts         # @mention parsing (Astryx ChatComposerInput trigger source)
 │           ├── mcpName.ts          # MCP server display-name helpers
 │           ├── research.ts         # Research report/event helpers
+│           ├── widgetTheme.ts      # Resolves app design tokens into a show_widget iframe's <style> block
 │           ├── zoom.ts             # UI zoom level handling
 │           ├── greetings.ts        # Welcome-screen greeting copy
 │           ├── frontmatter.ts      # Markdown frontmatter parsing
 │           ├── getLang.ts          # Syntax-highlighter language detection
 │           ├── basename.ts         # Path basename helper
 │           ├── parseCodeBlocks.ts  # Code block extraction
-│           ├── parseMath.ts        # Math expression parsing
-│           ├── renderMath.ts       # Math rendering
+│           ├── latexPlugins.tsx    # KaTeX inlinePlugins for Astryx's <Markdown/> (no built-in math support)
 │           └── updater.ts          # Tauri auto-updater
 │
 ├── src-tauri/                  # Tauri shell — Rust

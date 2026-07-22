@@ -428,6 +428,7 @@
     "backToChats": "Back to chats",
     "description": "A project has its own prompt and files. They are automatically passed to the model in every project chat — Word/PDF/Excel files as text immediately.",
     "newPlaceholder": "New project name",
+    "projectName": "Project name",
     "create": "Create",
     "defaultName": "New project",
     "empty": "No projects yet. Create one above.",

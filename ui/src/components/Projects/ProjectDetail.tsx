@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { TextArea } from "@astryxdesign/core/TextArea";
 import { Card } from "@astryxdesign/core/Card";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
@@ -202,12 +203,15 @@ export function ProjectDetail({
         />
 
         <div className="proj-title-row">
-          <input
+          <TextInput
+            label={t("projects.projectName")}
+            isLabelHidden
+            size="lg"
             className="proj-name-input"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(v) => setName(v)}
             onBlur={saveName}
-            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            onEnter={saveName}
           />
           <IconButton
             label={t("projects.deleteProject")}
@@ -367,12 +371,13 @@ export function ProjectDetail({
           <p className="proj-modal-hint">
             {t("projects.instructionsHint")}
           </p>
-          <textarea
+          <TextArea
+            label={t("projects.instructionsModalTitle")}
+            isLabelHidden
             className="proj-modal-textarea"
             value={instrDraft}
-            onChange={(e) => setInstrDraft(e.target.value)}
+            onChange={(v) => setInstrDraft(v)}
             rows={12}
-            autoFocus
           />
           <div className="proj-modal-actions">
             <Button

@@ -174,7 +174,7 @@ Built on the shoulders of:
 - **[FastAPI](https://fastapi.tiangolo.com)** — async Python API layer
 - **[Model Context Protocol](https://modelcontextprotocol.io)** — open standard by Anthropic for connecting AI models to external tools and data sources
 - **[Agent Skills](https://agentskills.io)** — the shared skill ecosystem the agent hooks into
-- **UI components** — [https://astryx.atmeta.com/](https://astryx.atmeta.com/)
+- **[Astryx](https://astryx.atmeta.com/)** — Meta's design system; the interface is built end-to-end on its React components, theming, and chat-specific building blocks (composer, message list, tool-call groups)
 
 ---
 

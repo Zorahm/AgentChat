@@ -1085,16 +1085,18 @@ export function useChats(): UseChatResult {
   );
 
   const pinChat = useCallback((id: string) => {
-    setSessions((prev) => {
-      const pinnedIds = loadPinnedIds();
-      if (pinnedIds.has(id)) {
-        pinnedIds.delete(id);
-      } else {
-        pinnedIds.add(id);
-      }
-      savePinnedIds(pinnedIds);
-      return prev.map((s) => (s.id === id ? { ...s, pinned: pinnedIds.has(id) } : s));
-    });
+    // localStorage read/write must happen here, once — not inside the
+    // setSessions updater below, which StrictMode double-invokes in dev and
+    // would otherwise silently re-toggle (and re-persist) the pinned set a
+    // second time, corrupting it out from under the committed state.
+    const pinnedIds = loadPinnedIds();
+    if (pinnedIds.has(id)) {
+      pinnedIds.delete(id);
+    } else {
+      pinnedIds.add(id);
+    }
+    savePinnedIds(pinnedIds);
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, pinned: pinnedIds.has(id) } : s)));
   }, []);
 
   const startGhostChat = useCallback(() => {

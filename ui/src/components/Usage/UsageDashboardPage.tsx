@@ -308,11 +308,14 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
                     icon={<ChatCircle size={16} />}
                     onClick={() => onGotoChat(c.chat_id)}
                     isDisabled={!c.title}
+                    width="100%"
                     className="usage-top-chat-row"
                   >
-                    <span className="usage-top-chat-title">{c.title ?? t("usage.topChats.deletedChat")}</span>
-                    <span className="usage-top-chat-meta">
-                      {fmtCost(c.cost)} · {c.calls} {t("usage.topChats.callsAbbrev")}
+                    <span className="usage-top-chat-content">
+                      <span className="usage-top-chat-title">{c.title ?? t("usage.topChats.deletedChat")}</span>
+                      <span className="usage-top-chat-meta">
+                        {fmtCost(c.cost)} · {c.calls} {t("usage.topChats.callsAbbrev")}
+                      </span>
                     </span>
                   </Button>
                 ))}

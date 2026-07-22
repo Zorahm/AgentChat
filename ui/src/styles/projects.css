@@ -34,26 +34,16 @@
   display: flex;
   gap: 8px;
   margin-bottom: 24px;
-}.proj-name-input{
-  flex: 1;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 9px 12px;
-  font-size: 14px;
-  font-family: var(--font-body);
-  outline: none;
 }
 
+/* Inline-editable title — Astryx TextInput wrapper, transparent until hover/focus. */
 .proj-name-input {
-  font-size: 18px;
-  font-weight: 600;
+  flex: 1;
   background: transparent;
   border-color: transparent;
 }
 .proj-name-input:hover { border-color: var(--line); }
-.proj-name-input:focus { border-color: var(--accent); background: var(--paper); }
+.proj-name-input:focus-within { border-color: var(--accent); background: var(--paper); }
 
 /* buttons */
 .proj-btn {
@@ -173,7 +163,8 @@
   gap: 8px;
   margin-bottom: 22px;
 }
-.proj-title-row .proj-name-input { font-size: 26px; font-weight: 700; flex: 1; padding: 4px 8px; }
+.proj-title-row .proj-name-input { flex: 1; }
+.proj-title-row .proj-name-input input { font-size: 26px; font-weight: 700; }
 
 .proj-chats-head {
   font-size: 13px;
@@ -394,21 +385,7 @@
 }
 .proj-modal-title { margin: 0 0 6px; font-size: 17px; }
 .proj-modal-hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.proj-modal-textarea {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 12px;
-  font-size: 14px;
-  font-family: var(--font-body);
-  line-height: 1.55;
-  resize: vertical;
-  outline: none;
-  box-sizing: border-box;
-}
-.proj-modal-textarea:focus { border-color: var(--accent); }
+.proj-modal-textarea { width: 100%; }
 .proj-modal-actions {
   display: flex;
   justify-content: flex-end;
