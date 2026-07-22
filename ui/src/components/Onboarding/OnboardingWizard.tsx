@@ -8,6 +8,9 @@ import { Check } from "@phosphor-icons/react";
 import { API_BASE } from "../../utils/apiBase";
 import { useTranslation } from "react-i18next";
 import { EnvironmentStep } from "./EnvironmentStep";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Selector } from "@astryxdesign/core/Selector";
 
 interface ProviderConfig {
   id: string;
@@ -199,18 +202,17 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               const state = step === n ? "active" : maxStep >= n ? "done" : "todo";
               const reachable = maxStep >= n && !envBusy;
               return (
-                <button
+                <Button
                   key={n}
                   type="button"
-                  className={`ob-rail-step ${state}`}
+                  variant={step === n ? "primary" : "secondary"}
+                  label={label}
                   onClick={() => reachable && go(n)}
-                  disabled={!reachable}
-                >
-                  <span className="ob-rail-badge">
-                    {maxStep > n && step !== n ? <Check size={13} weight="bold" /> : n}
-                  </span>
-                  <span className="ob-rail-label">{label}</span>
-                </button>
+                  isDisabled={!reachable}
+                  size="sm"
+                  icon={maxStep > n && step !== n ? <Check size={13} weight="bold" /> : undefined}
+                  className="ob-rail-step"
+                />
               );
             })}
           </nav>
@@ -222,20 +224,18 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <div className="ob-body">
                 <h3>{t("onboarding.step1Title")}</h3>
                 <p className="ob-sub">{t("onboarding.step1Description")}</p>
-                <input
-                  autoFocus
-                  className="ob-input"
-                  type="text"
+                <TextInput
+                  hasAutoFocus
+                  label={t("onboarding.step1Placeholder")}
                   value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
+                  onChange={(value: string) => setUserName(value)}
                   placeholder={t("onboarding.step1Placeholder")}
-                  onKeyDown={(e) => e.key === "Enter" && handleNextFromName()}
+                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleNextFromName()}
+                  isLabelHidden
                 />
                 <div className="ob-actions">
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(2)}>{t("onboarding.skip")}</button>
-                  <button className="ob-btn" onClick={handleNextFromName} disabled={saving}>
-                    {saving ? t("onboarding.saving") : t("onboarding.next")}
-                  </button>
+                  <Button variant="ghost" label={t("onboarding.skip")} onClick={() => go(2)} />
+                  <Button variant="primary" label={saving ? t("onboarding.saving") : t("onboarding.next")} onClick={handleNextFromName} isDisabled={saving} isLoading={saving} />
                 </div>
               </div>
             )}
@@ -245,66 +245,42 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <h3>{t("onboarding.step2Title")}</h3>
                 <p className="ob-sub">{t("onboarding.step2Description")}</p>
 
-                <label className="ob-label">{t("onboarding.step2Provider")}</label>
-                <select
-                  className="ob-select"
+                <Selector
+                  label={t("onboarding.step2Provider")}
                   value={selectedProvider}
-                  onChange={(e) => { setSelectedProvider(e.target.value); setDefaultModel(""); }}
-                >
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.api_key_set ? " ✓" : ""}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v: string) => { setSelectedProvider(v); setDefaultModel(""); }}
+                  options={providers.map((p) => ({ value: p.id, label: `${p.name}${p.api_key_set ? " ✓" : ""}` }))}
+                />
 
-                <label className="ob-label" style={{ marginTop: 12 }}>
-                  {t("onboarding.step2ApiKey")} {selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}
-                </label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    className="ob-input"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
-                    style={{ flex: 1 }}
-                  />
-                  <button className="ob-btn" onClick={handleSaveKey} disabled={saving || !apiKey.trim()}>
-                    {t("onboarding.step2SaveKey")}
-                  </button>
+                <TextInput
+                  type="password"
+                  label={`${t("onboarding.step2ApiKey")} ${selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}`}
+                  value={apiKey}
+                  onChange={(value: string) => setApiKey(value)}
+                  placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
+                  style={{ marginTop: 12 }}
+                />
+                <Button variant="secondary" label={t("onboarding.step2SaveKey")} onClick={handleSaveKey} isDisabled={saving || !apiKey.trim()} size="sm" />
+
+                <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center" }}>
+                  <label className="ob-label">{t("onboarding.step2DefaultModel")}</label>
+                  <Button variant="ghost" label={t("onboarding.step2Refresh")} onClick={refreshModels} size="sm" />
                 </div>
-
-                <label className="ob-label" style={{ marginTop: 16 }}>
-                  {t("onboarding.step2DefaultModel")}
-                  <button
-                    className="ob-btn ob-btn--ghost ob-btn--small"
-                    onClick={refreshModels}
-                    style={{ marginLeft: 8 }}
-                  >
-                    {t("onboarding.step2Refresh")}
-                  </button>
-                </label>
-                <select
-                  className="ob-select"
+                <Selector
+                  label={t("onboarding.step2DefaultModel")}
                   value={defaultModel}
-                  onChange={(e) => setDefaultModel(e.target.value)}
-                >
-                  <option value="">{t("onboarding.step2SelectModel")}</option>
-                  {providerModels.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name ?? m.id}</option>
-                  ))}
-                </select>
+                  onChange={(v: string) => setDefaultModel(v)}
+                  options={[{ value: "", label: t("onboarding.step2SelectModel") }, ...providerModels.map((m) => ({ value: m.id, label: m.name ?? m.id }))]}
+                  isLabelHidden
+                />
                 {providerModels.length === 0 && (
                   <p className="ob-sub2">{t("onboarding.step2NoModels")}</p>
                 )}
 
                 <div className="ob-actions">
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(1)}>{t("onboarding.back")}</button>
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(3)}>{t("onboarding.skip")}</button>
-                  <button className="ob-btn" onClick={handleNextFromProvider} disabled={saving}>
-                    {saving ? "…" : t("onboarding.next")}
-                  </button>
+                  <Button variant="ghost" label={t("onboarding.back")} onClick={() => go(1)} />
+                  <Button variant="ghost" label={t("onboarding.skip")} onClick={() => go(3)} />
+                  <Button variant="primary" label={saving ? "…" : t("onboarding.next")} onClick={handleNextFromProvider} isDisabled={saving} isLoading={saving} />
                 </div>
               </div>
             )}
@@ -313,9 +289,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <>
                 <EnvironmentStep osPlatform={osPlatform} onBusyChange={setEnvBusy} onError={setError} />
                 <div className="ob-actions">
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(2)} disabled={envBusy}>{t("onboarding.back")}</button>
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(4)} disabled={envBusy}>{t("onboarding.skip")}</button>
-                  <button className="ob-btn" onClick={() => go(4)} disabled={envBusy}>{t("onboarding.next")}</button>
+                  <Button variant="ghost" label={t("onboarding.back")} onClick={() => go(2)} isDisabled={envBusy} />
+                  <Button variant="ghost" label={t("onboarding.skip")} onClick={() => go(4)} isDisabled={envBusy} />
+                  <Button variant="primary" label={t("onboarding.next")} onClick={() => go(4)} isDisabled={envBusy} />
                 </div>
               </>
             )}
@@ -334,13 +310,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <p className="ob-sub2">{t("onboarding.skillsSource")}</p>
 
                 <div className="ob-actions">
-                  <button className="ob-btn ob-btn--ghost" onClick={() => go(3)}>{t("onboarding.back")}</button>
-                  <button className="ob-btn ob-btn--ghost" onClick={finish} disabled={saving}>
-                    {saving ? t("onboarding.finishing") : t("onboarding.skipSkills")}
-                  </button>
-                  <button className="ob-btn" onClick={finishAndOpenSkills} disabled={saving}>
-                    {t("onboarding.openSkills")}
-                  </button>
+                  <Button variant="ghost" label={t("onboarding.back")} onClick={() => go(3)} />
+                  <Button variant="ghost" label={saving ? t("onboarding.finishing") : t("onboarding.skipSkills")} onClick={finish} isDisabled={saving} isLoading={saving} />
+                  <Button variant="primary" label={t("onboarding.openSkills")} onClick={finishAndOpenSkills} isDisabled={saving} isLoading={saving} />
                 </div>
               </div>
             )}

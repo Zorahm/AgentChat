@@ -61,6 +61,11 @@
 .sk2-row + .sk2-row { margin-top: 1px; }
 .sk2-row:hover { background: var(--hover); }
 .sk2-row.active { background: var(--accent-soft, var(--hover)); }
+/* Astryx's Button puts `children` in a plain (display:inline) span — our
+ * badge + name/desc block need their own flex-row wrapper, since nothing
+ * upstream of this arranges them side by side (see astryx-migration memory:
+ * same root cause as the ModelSelector pill's chevron-fell-below bug). */
+.sk2-row-content { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; }
 .sk2-row-badge {
   width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -113,18 +118,6 @@
 }
 .sk2-detail-title h3 { margin: 0; font-size: 19px; font-weight: 600; color: var(--ink); }
 .sk2-detail-title .v { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
-
-.sk2-menu {
-  position: relative; cursor: pointer; color: var(--faint); flex-shrink: 0;
-  width: 30px; height: 30px; border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-}
-.sk2-menu:hover { background: var(--hover); color: var(--ink-2); }
-.sk2-popover {
-  position: absolute; top: 100%; right: 0; z-index: 10; margin-top: 4px;
-  background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.25); overflow: hidden; min-width: 150px;
-}
 .sk2-popover .pitem {
   display: flex; align-items: center; gap: 8px; padding: 9px 14px;
   font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap;
@@ -184,41 +177,34 @@
 .sk2-add-section:first-of-type { margin-top: 16px; }
 .sk2-add-sub { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 
-.sk2-cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+/* Compact tiles (ClickableCard) — a whole tile is the install target, no
+ * separate button. Author/requires details moved to the card's `title`
+ * (native hover tooltip) instead of a permanent line, which is what made
+ * the old row-style cards so tall. */
+.sk2-cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .sk2-cat-card {
-  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 14px; position: relative;
   border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface-2);
+  min-width: 0;
 }
 .sk2-cat-card.installed { border-color: color-mix(in srgb, var(--ok) 35%, var(--line-2)); }
 .sk2-cat-ic {
-  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--accent-soft); color: var(--accent);
 }
-.sk2-cat-body { flex: 1; min-width: 0; }
-.sk2-cat-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.sk2-cat-author { font-size: 10.5px; color: var(--faint); margin-top: 1px; }
-.sk2-cat-desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; margin-top: 1px; }
-.sk2-cat-req { font-size: 10.5px; color: var(--faint); line-height: 1.4; margin-top: 4px; }
-.sk2-cat-req-lbl { font-weight: 600; color: var(--muted); }
-.sk2-cat-req-link {
-  border: 0; background: none; padding: 0; font: inherit; font-size: 10.5px;
-  color: var(--accent); cursor: pointer; text-decoration: underline;
+.sk2-cat-body { min-width: 0; width: 100%; padding-right: 20px; }
+.sk2-cat-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.sk2-cat-desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+.sk2-cat-status {
+  position: absolute; top: 14px; right: 14px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--faint);
 }
-.sk2-cat-req-link:hover { color: var(--accent-strong, var(--accent)); }
-.sk2-cat-btn {
-  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
-  padding: 0 12px; height: 32px; border-radius: 8px;
-  border: 1px solid var(--ink); background: var(--ink); color: var(--on-ink);
-  font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
-}
-.sk2-cat-btn:hover:not(:disabled) { background: var(--ink-hover); }
-.sk2-cat-btn:disabled { cursor: default; }
-.sk2-cat-btn:disabled:not(.done) { opacity: .55; }
-.sk2-cat-btn.done {
-  background: transparent; color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
-}
+.sk2-cat-card.installed .sk2-cat-status { color: var(--ok); }
+.sk2-cat-spin { display: inline-block; animation: sk2-cat-spin .8s linear infinite; }
+@keyframes sk2-cat-spin { to { transform: rotate(360deg); } }
 
 .sk2-url-row { display: flex; gap: 8px; }
 .sk2-url {
@@ -289,7 +275,7 @@
 /* ── Responsive ───────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
-  .sk2-cat-grid { grid-template-columns: 1fr; }
+  .sk2-cat-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Phones: instead of stacking the list above the detail/add pane (cramped,

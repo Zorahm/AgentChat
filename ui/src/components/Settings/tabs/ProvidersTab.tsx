@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Switch } from "@astryxdesign/core/Switch";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { RadioList } from "@astryxdesign/core/RadioList";
 import type { ProviderConfig, ModelConfig, SettingsData } from "../SettingsPanel";
 import { API_BASE } from "../../../utils/apiBase";
 
@@ -98,16 +103,24 @@ function HeadersEditor({ rows, onChange, lockedKeys }: {
               onChange={(e) => update(i, "value", e.target.value)}
             />
             {!locked && (
-              <button className="mcp-kv-del" onClick={() => remove(i)} title={t("settings.providers.removeHeader")}>
-                ×
-              </button>
+              <IconButton
+                label={t("settings.providers.removeHeader")}
+                icon={<span>×</span>}
+                onClick={() => remove(i)}
+                variant="ghost"
+                size="sm"
+              />
             )}
           </div>
         );
       })}
-      <button className="mcp-kv-add" onClick={add}>
-        + {t("settings.providers.addHeader")}
-      </button>
+      <Button
+        label={t("settings.providers.addHeader")}
+        icon={<span>+</span>}
+        onClick={add}
+        variant="secondary"
+        size="sm"
+      />
     </div>
   );
 }
@@ -151,9 +164,13 @@ export function ProvidersTab({ settings, statuses, loading, expanded, setExpande
         <h3 className="st2-h">{t("settings.providers.title")}</h3>
         <p className="st2-sub">{t("settings.providers.description")}</p>
       </div>
-      <button className="st2-btn" onClick={onRefreshModels} disabled={loading}>
-        {t("settings.providers.refresh")}
-      </button>
+      <Button
+        label={t("settings.providers.refresh")}
+        onClick={onRefreshModels}
+        isDisabled={loading}
+        isLoading={loading}
+        variant="secondary"
+      />
     </div>
 
     <div className="st2-pv-section-label">{t("settings.providers.globalSection")}</div>
@@ -233,31 +250,25 @@ function WebSearchSettings({ settings, onUpdate }: {
           const available = !hasStatus || !st || st.available;
           return (
             <div key={m.id} className={`st2-ws-item${selected ? " selected" : ""}`}>
-              <button
-                type="button"
-                className="st2-ws-item-head"
+              <Button
+                label={t(m.labelKey)}
                 onClick={() => onUpdate({ web_search_mode: m.id })}
-              >
-                <span className="st2-ws-radio" aria-hidden />
-                <span className="st2-ws-item-info">
-                  <span className="st2-ws-item-name">
-                    {t(m.labelKey)}
-                    {hasStatus && (
-                      <span
-                        className={`st2-ws-status${available ? " ok" : " off"}`}
-                        title={st?.reason ?? ""}
-                      >
-                        {available
-                          ? t("settings.providers.webSearch.ready")
-                          : t("settings.providers.webSearch.unavailable")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="st2-ws-item-desc">
-                    {t(`settings.providers.webSearch.modeDesc.${m.id}`)}
-                  </span>
+                variant={selected ? "primary" : "ghost"}
+                className="st2-ws-item-head"
+              />
+              {hasStatus && (
+                <span
+                  className={`st2-ws-status${available ? " ok" : " off"}`}
+                  title={st?.reason ?? ""}
+                >
+                  {available
+                    ? t("settings.providers.webSearch.ready")
+                    : t("settings.providers.webSearch.unavailable")}
                 </span>
-              </button>
+              )}
+              <span className="st2-ws-item-desc">
+                {t(`settings.providers.webSearch.modeDesc.${m.id}`)}
+              </span>
 
               {selected && m.id === "litellm" && (
                 <div className="st2-ws-config">
@@ -275,9 +286,13 @@ function WebSearchSettings({ settings, onUpdate }: {
                       onChange={(e) => setTavily(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") commitTavily(); }}
                     />
-                    <button className="st2-btn" onClick={commitTavily} disabled={!tavily.trim()}>
-                      {t("common.save")}
-                    </button>
+                    <Button
+                      label={t("common.save")}
+                      onClick={commitTavily}
+                      isDisabled={!tavily.trim()}
+                      variant="secondary"
+                      size="sm"
+                    />
                   </div>
                   <p className="st2-ws-hint">{t("settings.providers.webSearch.tavilyHint")}</p>
                 </div>
@@ -445,9 +460,14 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
         status.winget_available ? (
           <>
             <p className="st2-ws-hint">{t(`${WS}.dockerAutoHint`)}</p>
-            <button className="st2-btn" onClick={installDocker} disabled={dockerBusy}>
-              {dockerBusy ? t(`${WS}.installingDocker`) : t(`${WS}.installDocker`)}
-            </button>
+            <Button
+              label={dockerBusy ? t(`${WS}.installingDocker`) : t(`${WS}.installDocker`)}
+              onClick={installDocker}
+              isDisabled={dockerBusy}
+              isLoading={dockerBusy}
+              variant="secondary"
+              size="sm"
+            />
           </>
         ) : (
           <p className="st2-ws-hint">
@@ -464,22 +484,28 @@ function SearxngInstaller({ onInstalled }: { onInstalled: (url: string) => void 
             {status.docker_available ? t(`${WS}.installHint`) : t(`${WS}.dockerSetupHint`)}
           </p>
           <div className="st2-ws-btn-row">
-            <button className="st2-btn" onClick={install} disabled={busy || repairBusy}>
-              {busy
+            <Button
+              label={busy
                 ? t(`${WS}.installing`)
                 : status.running
                   ? t(`${WS}.reinstall`)
                   : t(`${WS}.install`)}
-            </button>
+              onClick={install}
+              isDisabled={busy || repairBusy}
+              isLoading={busy}
+              variant="secondary"
+              size="sm"
+            />
             {status.running && (
-              <button
-                className="st2-btn st2-btn-secondary"
+              <Button
+                label={repairBusy ? t(`${WS}.repairing`) : t(`${WS}.repair`)}
                 onClick={repair}
-                disabled={busy || repairBusy}
-                title={t(`${WS}.repairHint`)}
-              >
-                {repairBusy ? t(`${WS}.repairing`) : t(`${WS}.repair`)}
-              </button>
+                isDisabled={busy || repairBusy}
+                isLoading={repairBusy}
+                tooltip={t(`${WS}.repairHint`)}
+                variant="secondary"
+                size="sm"
+              />
             )}
           </div>
           {status.running && (
@@ -556,9 +582,12 @@ function AddProviderForm({ existingIds, onAdd }: {
 
   if (!open) {
     return (
-      <button className="st2-add-btn" onClick={() => setOpen(true)}>
-        + {t("settings.providers.addButton")}
-      </button>
+      <Button
+        label={t("settings.providers.addButton")}
+        icon={<span>+</span>}
+        onClick={() => setOpen(true)}
+        variant="secondary"
+      />
     );
   }
 
@@ -566,7 +595,13 @@ function AddProviderForm({ existingIds, onAdd }: {
     <div className="st2-add-form">
       <div className="st2-add-form-head">
         <span>{t("settings.providers.formTitle")}</span>
-        <button className="st2-add-form-close" onClick={() => { reset(); setOpen(false); }}>✕</button>
+        <IconButton
+          label={t("common.close")}
+          icon={<span>✕</span>}
+          onClick={() => { reset(); setOpen(false); }}
+          variant="ghost"
+          size="sm"
+        />
       </div>
 
       <div className="st2-add-fields">
@@ -626,12 +661,20 @@ function AddProviderForm({ existingIds, onAdd }: {
       {err && <div className="st2-add-err">{err}</div>}
 
       <div className="st2-add-actions">
-        <button className="st2-btn" onClick={submit} disabled={saving || !slug || !!slugConflict}>
-          {saving ? t("settings.providers.saving") : t("settings.providers.add")}
-        </button>
-        <button className="st2-btn st2-btn--ghost" onClick={() => { reset(); setOpen(false); }}>
-          {t("settings.providers.cancel")}
-        </button>
+        <Button
+          label={saving ? t("settings.providers.saving") : t("settings.providers.add")}
+          onClick={submit}
+          isDisabled={saving || !slug || !!slugConflict}
+          isLoading={saving}
+          variant="primary"
+          size="sm"
+        />
+        <Button
+          label={t("settings.providers.cancel")}
+          onClick={() => { reset(); setOpen(false); }}
+          variant="ghost"
+          size="sm"
+        />
       </div>
     </div>
   );
@@ -689,13 +732,14 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
         <div className="st2-pv-meta">
           {badge}
           <span className="st2-pv-key">{p.api_key_set ? t("settings.providers.keySet") : t("settings.providers.noKey")}</span>
-          <div
-            className={`st2-switch st2-switch--lg${p.enabled ? " on" : ""}`}
-            role="switch"
-            aria-checked={p.enabled}
-            title={p.enabled ? t("settings.providers.enabled") : t("settings.providers.disabled")}
-            onClick={(e) => { e.stopPropagation(); onUpdate({ enabled: !p.enabled }); }}
-          />
+          <div onClick={(e) => { e.stopPropagation(); }}>
+            <Switch
+              label={p.enabled ? t("settings.providers.enabled") : t("settings.providers.disabled")}
+              value={p.enabled}
+              onChange={(v) => onUpdate({ enabled: v })}
+              isLabelHidden
+            />
+          </div>
           <span className="st2-pv-chev" aria-hidden>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -736,13 +780,19 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
               placeholder={p.api_key_set ? t("settings.providers.keyNew") : t("settings.providers.keyPlaceholder")}
               value={key} onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSaveKey()} />
-            <button className="st2-btn" onClick={handleSaveKey}>
-              {t("settings.providers.saveKey")}
-            </button>
+            <Button
+              label={t("settings.providers.saveKey")}
+              onClick={handleSaveKey}
+              variant="secondary"
+              size="sm"
+            />
             {onDelete && (
-              <button className="st2-btn st2-btn--danger" onClick={onDelete}>
-                {t("settings.providers.delete")}
-              </button>
+              <Button
+                label={t("settings.providers.delete")}
+                onClick={onDelete}
+                variant="destructive"
+                size="sm"
+              />
             )}
           </div>
 
@@ -772,14 +822,15 @@ function ProviderCard({ p, models, status, defaultModel, open, onToggle, onUpdat
             </div>
             <HeadersEditor rows={headerRows} onChange={setHeaderRows}
               lockedKeys={p.id === "yandex" ? new Set(["x-folder-id"]) : undefined} />
-            <button
-              className="st2-btn"
-              style={{ marginTop: 10 }}
+            <Button
+              label={headersSaving ? t("settings.providers.saving") : t("settings.providers.saveHeaders")}
               onClick={handleSaveHeaders}
-              disabled={headersSaving}
-            >
-              {headersSaving ? t("settings.providers.saving") : t("settings.providers.saveHeaders")}
-            </button>
+              isDisabled={headersSaving}
+              isLoading={headersSaving}
+              variant="secondary"
+              size="sm"
+              style={{ marginTop: 10 }}
+            />
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { PencilSimple, ArrowRight, ArrowLeft, ArrowUDownLeft } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
 import type { UserQuestionData, UserQuestion } from "../../types/tool-call";
 
 interface UserQuestionCardProps {
@@ -186,16 +187,15 @@ export function UserQuestionCard({ data, onSubmit }: UserQuestionCardProps) {
         {current.options.map((opt, oIdx) => {
           const isSel = (selected[active] ?? []).includes(opt);
           return (
-            <button
+            <Button
               key={oIdx}
-              type="button"
-              className={`uq2-opt${isSel ? " sel" : ""}`}
+              variant={isSel ? "primary" : "secondary"}
+              size="sm"
+              label={opt}
               onClick={() => choose(active, opt)}
-            >
-              <span className="uq2-num">{isSel ? "✓" : oIdx + 1}</span>
-              <span className="uq2-opt-text">{opt}</span>
-              {isSel && <ArrowUDownLeft className="uq2-enter" weight="bold" />}
-            </button>
+              width="full"
+              endContent={isSel ? <ArrowUDownLeft weight="bold" /> : undefined}
+            />
           );
         })}
 
@@ -213,37 +213,43 @@ export function UserQuestionCard({ data, onSubmit }: UserQuestionCardProps) {
 
       <div className="uq2-foot">
         {multi && active > 0 ? (
-          <button type="button" className="uq2-btn" onClick={back}>
-            <ArrowLeft weight="bold" /> {t("chat.askUser.back")}
-          </button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<ArrowLeft weight="bold" />}
+            label={t("chat.askUser.back")}
+            onClick={back}
+          />
         ) : (
-          <span />
+          <div />
         )}
 
         <div className="uq2-foot-right">
           {multi && !isLast && (
-              <button type="button" className="uq2-btn uq2-skip" onClick={next}>
-              {t("chat.askUser.skip")}
-            </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              label={t("chat.askUser.skip")}
+              onClick={next}
+            />
           )}
           {isLast ? (
-            <button
-              type="button"
-              className="uq2-btn uq2-primary"
-              disabled={answeredCount === 0}
+            <Button
+              variant="primary"
+              size="sm"
+              label={t("chat.askUser.submit")}
+              isDisabled={answeredCount === 0}
               onClick={submit}
-              >
-              {t("chat.askUser.submit")}
-            </button>
+            />
           ) : (
-            <button
-              type="button"
-              className="uq2-btn uq2-primary"
-              disabled={!curAnswered}
+            <Button
+              variant="primary"
+              size="sm"
+              label={t("chat.askUser.next")}
+              endContent={<ArrowRight weight="bold" />}
+              isDisabled={!curAnswered}
               onClick={next}
-            >
-              {t("chat.askUser.next")} <ArrowRight weight="bold" />
-            </button>
+            />
           )}
         </div>
       </div>

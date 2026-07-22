@@ -4,6 +4,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChartBar, ChatCircle } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
+import { ToggleButtonGroup } from "@astryxdesign/core/ToggleButton";
 import { API_BASE } from "../../utils/apiBase";
 
 type Period = "day" | "week" | "month" | "all";
@@ -167,13 +170,12 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
         <h1 className="usage-title"><ChartBar size={22} weight="duotone" /> {t("usage.title")}</h1>
         <div className="usage-period">
           {(["day", "week", "month", "all"] as Period[]).map((p) => (
-            <button
+            <Button
               key={p}
-              className={`usage-period-btn${period === p ? " active" : ""}`}
+              label={t(`usage.period.${p}`)}
+              variant={period === p ? "primary" : "secondary"}
               onClick={() => setPeriod(p)}
-            >
-              {t(`usage.period.${p}`)}
-            </button>
+            />
           ))}
         </div>
       </header>
@@ -299,18 +301,20 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
             ) : (
               <div className="usage-top-chats">
                 {topChats.map((c) => (
-                  <button
+                  <Button
                     key={c.chat_id}
-                    className="usage-top-chat-row"
+                    label={c.title ?? t("usage.topChats.deletedChat")}
+                    variant="ghost"
+                    icon={<ChatCircle size={16} />}
                     onClick={() => onGotoChat(c.chat_id)}
-                    disabled={!c.title}
+                    isDisabled={!c.title}
+                    className="usage-top-chat-row"
                   >
-                    <ChatCircle size={16} />
                     <span className="usage-top-chat-title">{c.title ?? t("usage.topChats.deletedChat")}</span>
                     <span className="usage-top-chat-meta">
                       {fmtCost(c.cost)} · {c.calls} {t("usage.topChats.callsAbbrev")}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -323,10 +327,10 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="usage-summary-card">
+    <Card className="usage-summary-card" padding={3}>
       <div className="usage-summary-value">{value}</div>
       <div className="usage-summary-label">{label}</div>
-    </div>
+    </Card>
   );
 }
 

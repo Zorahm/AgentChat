@@ -16,15 +16,6 @@
   background: var(--surface-2); flex-shrink: 0;
 }
 
-.lib-back {
-  display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: var(--radius-sm);
-  background: transparent; border: none;
-  color: var(--muted); cursor: pointer; flex-shrink: 0;
-  transition: background .12s, color .12s;
-}
-.lib-back:hover { background: var(--hover); color: var(--ink); }
-
 /* Tabs */
 .lib-tabs {
   display: flex; align-items: center; gap: 4px;
@@ -32,15 +23,7 @@
   background: var(--surface); border: 1px solid var(--line);
   flex-shrink: 0;
 }
-.lib-tab {
-  display: flex; align-items: center; gap: 7px;
-  padding: 6px 12px; border-radius: var(--radius-sm);
-  background: transparent; border: none; cursor: pointer;
-  font-family: var(--font-body); font-size: 13px; font-weight: 500;
-  color: var(--muted); transition: background .12s, color .12s;
-}
 .lib-tab svg { flex-shrink: 0; }
-.lib-tab:hover { color: var(--ink); }
 .lib-tab.active { background: var(--hover); color: var(--ink); }
 .lib-tab-count {
   font-family: var(--font-mono); font-size: 9.5px; color: var(--faint);
@@ -55,21 +38,12 @@
   border: 1px solid var(--line); background: var(--surface);
   transition: border-color .15s; max-width: 460px; margin-left: auto;
 }
-.lib-search:focus-within { border-color: var(--accent); }
-.lib-search-icon { color: var(--faint); flex-shrink: 0; }
 .lib-search input {
   flex: 1; border: none; background: none; outline: none;
   font-family: var(--font-body); font-size: 13px; color: var(--ink);
   min-width: 0;
 }
 .lib-search input::placeholder { color: var(--faint); }
-.lib-search-clear {
-  display: flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: var(--hover); border: none; cursor: pointer;
-  color: var(--muted); flex-shrink: 0; transition: background .12s, color .12s;
-}
-.lib-search-clear:hover { background: var(--line); color: var(--ink); }
 
 /* ── Body — hosts the embedded page ─────────────────────────────────────── */
 .lib-body {

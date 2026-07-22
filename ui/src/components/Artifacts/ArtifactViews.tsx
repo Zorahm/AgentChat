@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Folder, FileText } from "@phosphor-icons/react";
-import { marked } from "marked";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Button } from "@astryxdesign/core/Button";
+import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Markdown } from "@astryxdesign/core/Markdown";
+import { latexMarkdownPlugins } from "../../utils/latexPlugins";
 import type { Artifact } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { API_BASE, withToken } from "../../utils/apiBase";
-import { useDarkMode } from "../../hooks/useDarkMode";
 import { useTranslation } from "react-i18next";
 import { parseFrontmatter } from "../../utils/frontmatter";
 import { basename } from "../../utils/basename";
@@ -99,11 +99,10 @@ export function RenderView({
 
   if (ext === "md") {
     const { meta, body } = parseFrontmatter(content);
-    const html = marked.parse(body) as string;
     return (
-      <div className="art-render-md md">
+      <div className="art-render-md">
         {Object.keys(meta).length > 0 && <FrontmatterCard meta={meta} />}
-        <div dangerouslySetInnerHTML={{ __html: html }} />
+        <Markdown inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
       </div>
     );
   }
@@ -218,7 +217,6 @@ function ArchiveTreeView({ path }: { path: string }) {
  * for everything else. */
 function ArchiveMember({ path, member }: { path: string; member: string }) {
   const { t } = useTranslation();
-  const isDark = useDarkMode();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -258,20 +256,22 @@ function ArchiveMember({ path, member }: { path: string; member: string }) {
         <span className="azm-name">{name}</span>
         {isMd && (
           <div className="azm-tabs">
-            <button
-              type="button"
-              className={`azm-tab${tab === "render" ? " active" : ""}`}
+            <Button
+              label={t("artifacts.preview")}
               onClick={() => setTab("render")}
+              variant={tab === "render" ? "primary" : "secondary"}
+              size="sm"
             >
               {t("artifacts.preview")}
-            </button>
-            <button
-              type="button"
-              className={`azm-tab${tab === "code" ? " active" : ""}`}
+            </Button>
+            <Button
+              label={t("artifacts.code")}
               onClick={() => setTab("code")}
+              variant={tab === "code" ? "primary" : "secondary"}
+              size="sm"
             >
               {t("artifacts.code")}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -283,7 +283,7 @@ function ArchiveMember({ path, member }: { path: string; member: string }) {
         ) : isMd && tab === "render" ? (
           <MarkdownBody content={content} />
         ) : (
-          <MemberCode name={name} content={content} isDark={isDark} />
+          <MemberCode name={name} content={content} />
         )}
       </div>
     </div>
@@ -293,35 +293,25 @@ function ArchiveMember({ path, member }: { path: string; member: string }) {
 /** Markdown body with formatted frontmatter — shared by the archive preview. */
 function MarkdownBody({ content }: { content: string }) {
   const { meta, body } = parseFrontmatter(content);
-  const html = marked.parse(body) as string;
   return (
-    <div className="art-render-md md azm-md">
+    <div className="art-render-md azm-md">
       {Object.keys(meta).length > 0 && <FrontmatterCard meta={meta} />}
-      <div dangerouslySetInnerHTML={{ __html: html }} />
+      <Markdown inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
     </div>
   );
 }
 
-function MemberCode({ name, content, isDark }: { name: string; content: string; isDark: boolean }) {
+function MemberCode({ name, content }: { name: string; content: string }) {
   return (
-    <SyntaxHighlighter
+    <CodeBlock
+      code={content.trim()}
       language={getLang(name)}
-      style={isDark ? vscDarkPlus : vs}
-      showLineNumbers
-      customStyle={{
-        margin: 0,
-        padding: "12px 0",
-        background: isDark ? "#1e1e1e" : "#ffffff",
-        fontSize: "12.5px",
-        lineHeight: "1.6",
-        height: "100%",
-        overflow: "auto",
-        borderRadius: 0,
-      }}
-      lineNumberStyle={{ color: isDark ? "#5a5a5a" : "#b0aaa0", minWidth: "34px" }}
-    >
-      {content.trim()}
-    </SyntaxHighlighter>
+      hasLineNumbers
+      hasCopyButton
+      size="sm"
+      width="100%"
+      container="section"
+    />
   );
 }
 
@@ -390,7 +380,6 @@ export function CodeView({
   loading: boolean;
 }) {
   const { t } = useTranslation();
-  const isDark = useDarkMode();
 
   if (loading) return <div className="art-state">{t("artifacts.loading")}</div>;
   if (content === null) {
@@ -403,30 +392,18 @@ export function CodeView({
   }
 
   const lang = getLang(artifact.path ?? "");
-  const hlStyle = isDark ? vscDarkPlus : vs;
-  const bgColor = isDark ? "#1e1e1e" : "#ffffff";
-  const lineNumColor = isDark ? "#5a5a5a" : "#b0aaa0";
 
   return (
     <div className="art-code-wrap">
-      <SyntaxHighlighter
+      <CodeBlock
+        code={content.trim()}
         language={lang}
-        style={hlStyle}
-        showLineNumbers
-        customStyle={{
-          margin: 0,
-          padding: "14px 0",
-          background: bgColor,
-          fontSize: "13px",
-          lineHeight: "1.65",
-          height: "100%",
-          overflow: "auto",
-          borderRadius: 0,
-        }}
-        lineNumberStyle={{ color: lineNumColor, minWidth: "36px" }}
-      >
-        {content.trim()}
-      </SyntaxHighlighter>
+        hasLineNumbers
+        hasCopyButton
+        size="sm"
+        width="100%"
+        container="section"
+      />
     </div>
   );
 }

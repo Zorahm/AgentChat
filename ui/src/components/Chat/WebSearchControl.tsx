@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Globe, CaretDown, Check } from "@phosphor-icons/react";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Button } from "@astryxdesign/core/Button";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../utils/apiBase";
 
@@ -60,35 +62,47 @@ export function WebSearchControl({ enabled, mode, onChange }: WebSearchControlPr
 
   return (
     <div className="ws-control" ref={rootRef}>
-      <button
-        className={`ws-toggle${enabled ? " on" : ""}`}
+      <IconButton
+        label={t("chat.webSearch.toggle")}
+        icon={<Globe size={16} />}
         onClick={() => onChange(!enabled, mode)}
-        title={t("chat.webSearch.toggle")}
-      >
-        <Globe size={16} />
-      </button>
+        tooltip={t("chat.webSearch.toggle")}
+        variant={enabled ? "primary" : "ghost"}
+        size="sm"
+        className={`ws-toggle${enabled ? " on" : ""}`}
+      />
       {enabled && (
-        <button className="ws-mode" onClick={() => setMenuOpen((v) => !v)} title={t("chat.webSearch.mode")}>
-          <span>{modeLabel(mode)}</span>
-          <CaretDown size={11} />
-        </button>
+        <Button
+          label={modeLabel(mode)}
+          onClick={() => setMenuOpen((v) => !v)}
+          tooltip={t("chat.webSearch.mode")}
+          endContent={<CaretDown size={11} />}
+          variant="ghost"
+          size="sm"
+          className="ws-mode"
+        >
+          {modeLabel(mode)}
+        </Button>
       )}
       {enabled && menuOpen && (
         <div className="ws-menu">
           {MODE_ORDER.map((id) => {
             const ok = available(id);
             return (
-              <button
+              <Button
                 key={id}
-                className={`ws-menu-item${mode === id ? " active" : ""}`}
-                disabled={!ok}
-                title={id === "auto" ? t("chat.webSearch.autoHint") : reason(id)}
+                label={modeLabel(id)}
                 onClick={() => { onChange(true, id); setMenuOpen(false); }}
+                isDisabled={!ok}
+                tooltip={id === "auto" ? t("chat.webSearch.autoHint") : reason(id)}
+                variant={mode === id ? "primary" : "secondary"}
+                size="sm"
+                className={`ws-menu-item${mode === id ? " active" : ""}`}
               >
                 <span className="ws-menu-check">{mode === id ? <Check size={12} /> : null}</span>
                 <span className="ws-menu-label">{modeLabel(id)}</span>
                 {id !== "auto" && !ok && <span className="ws-menu-reason">{reason(id)}</span>}
-              </button>
+              </Button>
             );
           })}
         </div>

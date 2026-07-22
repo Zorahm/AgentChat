@@ -174,6 +174,7 @@ class UsageStore:
                 "SUM(completion_tokens) AS completion_tokens, "
                 "SUM(cached_tokens) AS cached_tokens, "
                 "SUM(cost_usd) AS cost_usd, "
+                "SUM(latency_ms) AS latency_ms, "
                 "COUNT(*) AS calls, "
                 "SUM(CASE WHEN usage_source = 'estimated' THEN 1 ELSE 0 END) AS estimated_calls, "
                 "SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown_cost_calls "

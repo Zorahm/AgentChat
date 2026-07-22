@@ -1,0 +1,20 @@
+/* Astryx design-system setup — loaded before all app CSS.
+ *
+ * Cascade layers: Astryx ships its own stylesheets pre-assigned to layers —
+ * reset.css → @layer reset, astryx.css → @layer astryx-base, theme.css prose →
+ * @layer reset + component overrides → @layer astryx-theme. We declare the
+ * canonical order once here, up front, so those internal layers resolve
+ * predictably. The app's own (legacy) CSS stays UNLAYERED on purpose: unlayered
+ * rules beat every layer, so each not-yet-migrated screen keeps its styling and
+ * wins over astryx-base until it is ported. The one hazard — an aggressive
+ * `* { margin:0; padding:0 }` reset — is removed from global.css so it can no
+ * longer zero out Astryx component padding.
+ */
+@layer reset, astryx-base, astryx-theme;
+
+/* neutral theme font: Figtree (headings + body), JetBrains Mono (code) */
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';

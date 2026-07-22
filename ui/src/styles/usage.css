@@ -44,16 +44,6 @@
   padding: 3px;
 }
 
-.usage-period-btn {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
 .usage-period-btn.active {
   background: var(--accent);
   color: #fff;

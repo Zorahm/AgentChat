@@ -166,6 +166,7 @@
     },
     "usage": {
       "tokensAbbrev": "tkn",
+      "speedAbbrev": "t/s",
       "notAvailable": "n/a",
       "estimatedTitle": "Estimated locally — the provider didn't report usage for this call.",
       "title": "{{prompt}} prompt + {{completion}} completion tokens",
@@ -364,7 +365,7 @@
     "pinTooltip": "Pin",
     "working": "Working…",
     "updateAvailable": "Update available v{{version}}",
-    "updateRestart": "Restart & update",
+    "updateRestart": "Install",
     "updateLater": "Install later",
     "updateDownloading": "Downloading {{progress}}%",
     "updateInstalling": "Installing…",
@@ -512,7 +513,7 @@
     "nav": {
       "title": "Settings",
       "personal": "Personal",
-      "profile": "Profile",
+      "profile": "Home",
       "appearance": "Appearance",
       "shortcuts": "Shortcuts",
       "about": "About",
@@ -546,15 +547,8 @@
       }
     },
     "general": {
-      "profile": "Profile",
+      "profile": "Home",
       "profileDescription": "How the model addresses you. Not sent anywhere.",
-      "avatar": "Avatar",
-      "avatarHint": "Shown in the sidebar. Stored only locally.",
-      "clickToUpload": "Click to upload photo",
-      "changePhoto": "Change photo",
-      "uploadPhoto": "Upload photo",
-      "deletePhoto": "Delete",
-      "avatarFormats": "JPG, PNG, WEBP \u00b7 cropped to square",
       "userName": "User name",
       "userNameHint": "The model uses this name when addressing you. Can be left empty.",
       "userNamePlaceholder": "Enter name",
@@ -992,7 +986,6 @@
     "installSkillTitle": "Install this skill into your skills library",
     "skillInstalled": "Installed",
     "requires": "Requires",
-    "requiresInstall": "install in Terminal",
     "metaAuthor": "Author",
     "catalog": {
       "agentchat": { "label": "About AgentChat", "desc": "Lets the model answer questions about this app and its features" },
@@ -1167,6 +1160,11 @@
     "rendered": "Widget",
     "renderedNamed": "Widget: {{title}}",
     "error": "Widget failed"
+  },
+  "errorBoundary": {
+    "title": "Something broke",
+    "unknownError": "Unknown error",
+    "reload": "Reload"
   },
   "greetings": {
     "morning": [

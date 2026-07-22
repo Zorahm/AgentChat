@@ -71,29 +71,10 @@
   overflow-y: auto;
 }
 
-.st2-mh-refresh {
-  margin-left: auto;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 3px 7px;
-  border-radius: 6px;
-  transition: color .12s, background .12s;
-}
-.st2-mh-refresh:hover:not(:disabled) { color: var(--ink); background: var(--paper-2); }
-.st2-mh-refresh:disabled { opacity: .55; cursor: default; }
-.st2-mh-refresh svg { width: 14px; height: 14px; }
-
 .st2-h-row {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 14px;
 }
 .st2-h-row .st2-h { margin-bottom: 0; }

@@ -29,14 +29,6 @@
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-.ghost-back {
-  background: none; border: none; color: var(--muted);
-  cursor: pointer; font-size: 13px;
-  padding: 4px 8px; border-radius: 6px;
-  transition: background .12s, color .12s;
-  font-family: var(--font-body);
-}
-.ghost-back:hover { background: var(--hover); color: var(--ink); }
 .ghost-head-center { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .ghost-name  { font-weight: 600; font-size: 14px; color: var(--ink); }
 .ghost-status { font-size: 11px; color: var(--muted); }
@@ -79,18 +71,6 @@
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
 }
-.ghost-footer {
-  padding: 12px 14px;
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.ghost-input-fake {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-.ghost-input-text { font-size: 13px; color: var(--muted); }
 .ghost-end {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
   padding: 32px 24px; text-align: center;
@@ -111,12 +91,3 @@
   to   { box-shadow: 0 0 0 8px rgba(208,2,27,.12), 0 4px 40px rgba(208,2,27,.55); }
 }
 .ghost-err-desc { margin: 0; font-size: 13px; color: var(--muted); }
-.ghost-close-btn {
-  margin-top: 8px; padding: 9px 28px;
-  background: var(--ink); color: var(--bg);
-  border: none; border-radius: 9px;
-  cursor: pointer; font-size: 14px; font-weight: 500;
-  font-family: var(--font-body);
-  transition: opacity .15s;
-}
-.ghost-close-btn:hover { opacity: .82; }

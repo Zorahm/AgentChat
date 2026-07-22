@@ -1,11 +1,16 @@
-/** Chat input — Composer with @mentions + file attachments. */
+/** Chat input — Astryx ChatComposer with @mentions + file attachments. */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, X, Plus, Paperclip, Image as ImageIcon, Camera } from "@phosphor-icons/react";
-import { EditorContent, useEditor, ReactNodeViewRenderer } from "@tiptap/react";
-import { mergeAttributes } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Mention from "@tiptap/extension-mention";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X, Plus, Paperclip, Image as ImageIcon, Camera } from "@phosphor-icons/react";
+import {
+  ChatComposer,
+  ChatComposerInput,
+  ChatComposerDrawer,
+  type ChatComposerTrigger,
+  type ChatComposerInputHandle,
+} from "@astryxdesign/core/Chat";
+import { createStaticSource, TypeaheadItem } from "@astryxdesign/core/Typeahead";
+import type { SearchableItem } from "@astryxdesign/core/Typeahead";
 import type { ModelItem } from "./ChatView";
 import { ModelSelector } from "./ModelSelector";
 import type { Agent } from "../../types/agent";
@@ -16,8 +21,13 @@ import { WebSearchMenuSection } from "./WebSearchMenuSection";
 import { ResearchMenuSection } from "./ResearchMenuSection";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import type { AttachmentInfo } from "../../types/chat";
-import { buildMentionSuggestion, extractText, mentionDisplay } from "../../utils/mentions";
-import { MentionNodeView } from "./MentionNodeView";
+import {
+  getMentionItems,
+  textToDisplayHtml,
+  capitalizeFirst,
+  ATTACH_FILE_ID,
+  type MentionAux,
+} from "../../utils/mentions";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../utils/apiBase";
 
@@ -85,7 +95,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const [textLen, setTextLen] = useState(0);
+  const [value, setValue] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [plusOpen, setPlusOpen] = useState(false);
   const [plusUp, setPlusUp] = useState(true);
@@ -93,6 +103,11 @@ export function ChatInput({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
+  const inputHandleRef = useRef<ChatComposerInputHandle>(null);
+  // Always-current mirror of the input value so async handleSend reads the
+  // latest text rather than a stale closure.
+  const valueRef = useRef("");
+  valueRef.current = value;
   // Always-current mirror of pendingFiles, so async handlers (handleSend after
   // awaiting uploads, removeFile) read the latest paths instead of a stale closure.
   const pendingRef = useRef<PendingFile[]>([]);
@@ -105,19 +120,37 @@ export function ChatInput({
   // Authoritative record of resolved upload paths, keyed by id. handleSend reads
   // this rather than React state so it can't race the post-upload re-render.
   const resolvedRef = useRef<Map<string, { path: string; content?: string }>>(new Map());
-  // Bind the mention popup's "attach file" action to our file input.
-  const mentionSuggestion = useRef(
-    buildMentionSuggestion({
-      onAttachFile: () => fileInputRef.current?.click(),
-    }),
-  ).current;
+
+  /* ── @-mention trigger (skills + attach-file action) ─────────────────── */
+
+  const [mentionItems, setMentionItems] = useState<SearchableItem<MentionAux>[]>([]);
+  const refreshMentions = useCallback(() => { void getMentionItems().then(setMentionItems); }, []);
+  useEffect(() => { refreshMentions(); }, [refreshMentions]);
+
+  const mentionSource = useMemo(() => createStaticSource(mentionItems), [mentionItems]);
+  const mentionTrigger = useMemo<ChatComposerTrigger>(() => ({
+    character: "@",
+    searchSource: mentionSource,
+    menuLabel: t("chat.mention.heading"),
+    emptySearchResultsText: t("chat.mention.nothingFound"),
+    renderItem: (item) => (
+      <TypeaheadItem item={item} description={(item.auxiliaryData as MentionAux | undefined)?.desc} />
+    ),
+    onSelect: (item) => {
+      // The "attach file" action inserts no token — it opens the file picker.
+      if (item.id === ATTACH_FILE_ID) {
+        fileInputRef.current?.click();
+        return "";
+      }
+      // Skill → token serialized as `@skill:NAME` so the agent picks it up.
+      return { value: `@skill:${item.id}`, label: capitalizeFirst(String(item.label)), variant: "green" as const };
+    },
+  }), [mentionSource, t]);
 
   /* ── send ─────────────────────────────────── */
 
   const handleSend = useCallback(async () => {
-    if (!editorRef.current) return;
-    const html = editorRef.current.getHTML();
-    const rawText = extractText(editorRef.current.getJSON());
+    const rawText = valueRef.current;
     if ((!rawText.trim() && pendingRef.current.length === 0) || disabled) return;
 
     // Files upload the moment they're added, so by send-time they usually have
@@ -131,7 +164,7 @@ export function ChatInput({
     // content=null ensures the backend references it by path (read_file),
     // rather than inlining it into the model's context.
     let sendText = rawText;
-    let sendHtml = html;
+    let sendHtml: string | undefined = textToDisplayHtml(rawText);
     // Fold in any paths resolved by the immediate upload — authoritative even if
     // the post-upload re-render hasn't flushed into pendingRef yet.
     let basePending = pendingRef.current.map((pf) => {
@@ -155,7 +188,7 @@ export function ChatInput({
         type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
       }, ...basePending];
       sendText = "";
-      sendHtml = "";
+      sendHtml = undefined;
     }
     // ── end auto-convert ───────────────────────────────────────────────────
 
@@ -182,10 +215,7 @@ export function ChatInput({
         if (r.ok) {
           // The response preserves the order of `needUpload` (the order we
           // appended to FormData), so pair by index. Matching by name was
-          // unreliable: the backend sanitises filenames (_safe_filename), and
-          // the old `&& pf.uploading` guard never matched — finalFiles holds
-          // the pre-upload objects whose `uploading` flag is still false, so
-          // uploadedPath was never set and the model saw "path: None".
+          // unreliable: the backend sanitises filenames (_safe_filename).
           const uploaded: Array<{ name: string; path: string; size: number; mime_type: string; content?: string }> = await r.json();
           uploaded.forEach((up, i) => {
             const src = needUpload[i];
@@ -217,139 +247,75 @@ export function ChatInput({
         data_url: pf.dataUrl,
       }));
 
-    onSend(sendText.trim() || "(attached files)", attachments, sendHtml.trim() || undefined);
-    editorRef.current.commands.clearContent();
-    setTextLen(0);
+    onSend(sendText.trim() || "(attached files)", attachments, sendHtml?.trim() || undefined);
+    setValue("");
     setPendingFiles([]);
     resolvedRef.current.clear();
   }, [disabled, onSend, dirSlug]);
 
-  /* ── editor ───────────────────────────────── */
+  /* ── controlled value ─────────────────────── */
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const editorRef = useRef<any>(null);
+  const handleChange = useCallback((v: string) => setValue(v), []);
 
-  const CustomMention = Mention.extend({
-    addNodeView() {
-      return ReactNodeViewRenderer(MentionNodeView);
-    },
-    // getHTML() (used for the persisted/sent displayHtml) bypasses the React
-    // NodeView, so without this the chip serialized as the raw "@skill:NAME"
-    // label. Mirror the NodeView: strip the "type:" prefix and capitalize.
-    renderHTML({ node, HTMLAttributes }) {
-      const label = String(node.attrs.label ?? node.attrs.id ?? "");
-      const { type, text } = mentionDisplay(label);
-      return [
-        "span",
-        mergeAttributes({ class: `mention-chip--${type}` }, HTMLAttributes),
-        `@${text}`,
-      ];
-    },
-  });
+  /* ── large-text / image paste ─────────────── */
 
-  // Ref pattern keeps the closure current without re-creating the editor on each render.
-  const handlePasteRef = useRef<(view: unknown, event: ClipboardEvent) => boolean>(() => false);
-  handlePasteRef.current = (_view, event) => {
-    const plainText = event.clipboardData?.getData("text/plain") ?? "";
-    if (plainText.length > LARGE_TEXT_CHARS) {
-      const fileName = `pasted_${Date.now()}.txt`;
-      const file = new File([plainText], fileName, { type: "text/plain" });
-      setPendingFiles((prev) => [...prev, {
-        id: nextFid(), file, name: fileName, size: file.size,
-        type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
-      }]);
-      return true; // tells ProseMirror: handled, don't insert
-    }
-    const items = event.clipboardData?.items;
-    if (items) {
-      let handled = false;
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item?.type.startsWith("image/")) {
-          const blob = item.getAsFile();
-          if (!blob) continue;
-          const name = `pasted_${Date.now()}.png`;
-          const reader = new FileReader();
-          reader.onload = () => {
-            setPendingFiles((prev) => [...prev, {
-              id: nextFid(),
-              file: new File([blob], name, { type: blob.type }),
-              name, size: blob.size, type: blob.type,
-              content: null, dataUrl: reader.result as string,
-              uploading: false, error: null,
-            }]);
-          };
-          reader.readAsDataURL(blob);
-          handled = true;
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>, plainText: string): boolean | void => {
+      if (plainText.length > LARGE_TEXT_CHARS) {
+        const fileName = `pasted_${Date.now()}.txt`;
+        const file = new File([plainText], fileName, { type: "text/plain" });
+        setPendingFiles((prev) => [...prev, {
+          id: nextFid(), file, name: fileName, size: file.size,
+          type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
+        }]);
+        return true; // handled — don't insert the text
+      }
+      const items = event.clipboardData?.items;
+      if (items) {
+        let handled = false;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item?.type.startsWith("image/")) {
+            const blob = item.getAsFile();
+            if (!blob) continue;
+            const name = `pasted_${Date.now()}.png`;
+            const reader = new FileReader();
+            reader.onload = () => {
+              setPendingFiles((prev) => [...prev, {
+                id: nextFid(),
+                file: new File([blob], name, { type: blob.type }),
+                name, size: blob.size, type: blob.type,
+                content: null, dataUrl: reader.result as string,
+                uploading: false, error: null,
+              }]);
+            };
+            reader.readAsDataURL(blob);
+            handled = true;
+          }
         }
+        if (handled) return true;
       }
-      if (handled) return true;
-    }
-    return false;
-  };
-
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ heading: false, codeBlock: false, blockquote: false }),
-      CustomMention.configure({
-        HTMLAttributes: { class: "mention-chip" },
-        suggestion: mentionSuggestion,
-      }),
-    ],
-    editorProps: {
-      attributes: { class: "composer-editor", "data-placeholder": placeholder ?? t("chat.placeholder") },
-      handlePaste: (view, event) => handlePasteRef.current(view, event),
+      return false;
     },
-    onUpdate: ({ editor: ed }) => {
-      setTextLen(ed.getText().length);
-    },
-  });
-
-  editorRef.current = editor;
-
-  /* ── keyboard ─────────────────────────────── */
-
-  useEffect(() => {
-    if (!editor) return;
-    const el = editor.view.dom;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey && !isStreaming) {
-        e.preventDefault();
-        handleSend();
-      }
-    };
-    el.addEventListener("keydown", onKey);
-    return () => el.removeEventListener("keydown", onKey);
-  }, [editor, handleSend, isStreaming]);
+    [],
+  );
 
   /* ── fill text from outside (chips) ─────────── */
 
   useEffect(() => {
-    if (!fillText || !editor) return;
-    editor.commands.setContent(fillText);
-    editor.commands.focus("end");
-    setTextLen(fillText.length);
+    if (!fillText) return;
+    setValue(fillText);
+    inputHandleRef.current?.focus();
     onFillTextConsumed?.();
-  }, [fillText, editor, onFillTextConsumed]);
-
-  /* ── mobile: auto-scroll editor to bottom so new text stays visible ──── */
-
-  useEffect(() => {
-    if (!editor || !isMobile) return;
-    const el = editor.view.dom;
-    if (el.scrollHeight > el.clientHeight) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [textLen, isMobile, editor]);
+  }, [fillText, onFillTextConsumed]);
 
   /* ── focus from the "focus input" keyboard shortcut ─────────── */
 
   useEffect(() => {
-    if (!editor) return;
-    const focusComposer = () => editor.commands.focus("end");
+    const focusComposer = () => inputHandleRef.current?.focus();
     window.addEventListener("focus-composer", focusComposer);
     return () => window.removeEventListener("focus-composer", focusComposer);
-  }, [editor]);
+  }, []);
 
   /* ── file attach ──────────────────────────── */
 
@@ -551,14 +517,129 @@ export function ChatInput({
 
   /* ── render ───────────────────────────────── */
 
-  const hasText = textLen > 0;
+  const hasText = value.trim().length > 0;
+  const ph = placeholder ?? t("chat.placeholder");
 
-  if (!editor) return null;
+  const attachMenu = (
+    <div className="composer-plus" ref={plusRef}>
+      <button className="icon-btn" title={t("chat.add")} onClick={togglePlus}><Plus /></button>
+      {plusOpen && isMobile && (
+        <BottomSheet open={plusOpen} onClose={() => setPlusOpen(false)}>
+          <div className="cpm-sheet cpm-sheet--claude">
+            <div className="cpm-sheet-head">
+              <span className="cpm-sheet-title">{t("chat.addToChat")}</span>
+              <button
+                className="cpm-sheet-close"
+                onClick={() => setPlusOpen(false)}
+                aria-label={t("common.close")}
+              >
+                <X />
+              </button>
+            </div>
+
+            <div className="cpm-quick-row">
+              <button className="cpm-quick" onClick={openCamera}>
+                <span className="cpm-quick-ic"><Camera weight="duotone" /></span>
+                <span className="cpm-quick-label">{t("chat.quickCamera")}</span>
+              </button>
+              <button className="cpm-quick" onClick={openPhotos}>
+                <span className="cpm-quick-ic"><ImageIcon weight="duotone" /></span>
+                <span className="cpm-quick-label">{t("chat.quickPhotos")}</span>
+              </button>
+              <button className="cpm-quick" onClick={openFilePicker}>
+                <span className="cpm-quick-ic"><Paperclip weight="duotone" /></span>
+                <span className="cpm-quick-label">{t("chat.quickFiles")}</span>
+              </button>
+            </div>
+
+            <div className="cpm-list">
+              {onResearchChange && (
+                <ResearchMenuSection enabled={researchEnabled ?? false} onChange={onResearchChange} />
+              )}
+              {onWebSearchChange && (
+                <WebSearchMenuSection
+                  enabled={webSearchEnabled ?? false}
+                  mode={webSearchMode ?? "auto"}
+                  onChange={onWebSearchChange}
+                />
+              )}
+              {onToggleMcpServer && (
+                <McpMenuSection enabledIds={mcpEnabled ?? []} onToggle={onToggleMcpServer} />
+              )}
+            </div>
+          </div>
+        </BottomSheet>
+      )}
+      {plusOpen && !isMobile && (
+        <div className={`composer-plus-menu${plusUp ? "" : " composer-plus-menu--down"}`}>
+          <button className="cpm-item" onClick={openFilePicker}>
+            <Paperclip /> <span>{t("chat.attachFiles")}</span>
+          </button>
+          {onToggleMcpServer && (
+            <McpMenuSection enabledIds={mcpEnabled ?? []} onToggle={onToggleMcpServer} />
+          )}
+          {onWebSearchChange && (
+            <WebSearchMenuSection
+              enabled={webSearchEnabled ?? false}
+              mode={webSearchMode ?? "auto"}
+              onChange={onWebSearchChange}
+            />
+          )}
+          {onResearchChange && (
+            <ResearchMenuSection enabled={researchEnabled ?? false} onChange={onResearchChange} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const attachmentsDrawer = pendingFiles.length > 0 ? (
+    <ChatComposerDrawer count={pendingFiles.length} label={t("chat.files", { count: pendingFiles.length })}>
+      <div className="ca-grid">
+        {pendingFiles.map((pf) => {
+          const isImage = pf.type.startsWith("image/");
+          const ext = pf.name.includes(".")
+            ? pf.name.split(".").pop()!.toUpperCase().slice(0, 5)
+            : "FILE";
+          const lineCount = pf.content != null ? pf.content.split("\n").length : null;
+          const errStyle = pf.error
+            ? { borderColor: "var(--err-line)", background: "var(--err-soft)" }
+            : undefined;
+
+          if (isImage && pf.dataUrl) {
+            return (
+              <div key={pf.id} className={`ca-card-img${pf.uploading ? " ca-card--up" : ""}`}>
+                <img src={pf.dataUrl} alt={pf.name} />
+                <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={pf.id}
+              className={`ca-card${pf.uploading ? " ca-card--up" : ""}${pf.error ? " ca-card--err" : ""}`}
+              style={errStyle}
+            >
+              <div className="ca-name">{pf.name}</div>
+              <div className="ca-meta">
+                {pf.error ? pf.error : lineCount != null ? `${lineCount} lines` : fmtSize(pf.size)}
+              </div>
+              <div className="ca-badge">{ext}</div>
+              {pf.uploading
+                ? <span className="ca-spin">⟳</span>
+                : <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>}
+            </div>
+          );
+        })}
+      </div>
+    </ChatComposerDrawer>
+  ) : undefined;
 
   return (
     <div className="composer">
       <div
-        className={`composer-box${showDrop ? " composer-box--dragging" : ""}`}
+        className={`composer-shell${showDrop ? " composer-box--dragging" : ""}`}
         {...dropHandlers}
       >
         {showDrop && (
@@ -567,174 +648,66 @@ export function ChatInput({
             <span>{t("chat.dropToAttach")}</span>
           </div>
         )}
-        {pendingFiles.length > 0 && (
-          <div className="ca-grid">
-            {pendingFiles.map((pf) => {
-              const isImage = pf.type.startsWith("image/");
-              const ext = pf.name.includes(".")
-                ? pf.name.split(".").pop()!.toUpperCase().slice(0, 5)
-                : "FILE";
-              const lineCount = pf.content != null ? pf.content.split("\n").length : null;
-              const errStyle = pf.error
-                ? { borderColor: "var(--err-line)", background: "var(--err-soft)" }
-                : undefined;
 
-              if (isImage && pf.dataUrl) {
-                return (
-                  <div key={pf.id} className={`ca-card-img${pf.uploading ? " ca-card--up" : ""}`}>
-                    <img src={pf.dataUrl} alt={pf.name} />
-                    <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={pf.id}
-                  className={`ca-card${pf.uploading ? " ca-card--up" : ""}${pf.error ? " ca-card--err" : ""}`}
-                  style={errStyle}
-                >
-                  <div className="ca-name">{pf.name}</div>
-                  <div className="ca-meta">
-                    {pf.error ? pf.error : lineCount != null ? `${lineCount} lines` : fmtSize(pf.size)}
-                  </div>
-                  <div className="ca-badge">{ext}</div>
-                  {pf.uploading
-                      ? <span className="ca-spin">⟳</span>
-                      : <button className="ca-x" onClick={() => removeFile(pf.id)} title={t("chat.remove")}>×</button>
-                  }
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="composer-wrap">
-          <EditorContent editor={editor} />
-          {textLen === 0 && <div className="composer-ph">{placeholder ?? t("chat.placeholder")}</div>}
-        </div>
-
-        <div className="composer-bar">
-          <div className="composer-left">
-            <div className="composer-plus" ref={plusRef}>
-              <button className="icon-btn" title={t("chat.add")} onClick={togglePlus}><Plus /></button>
-              {plusOpen && isMobile && (
-                <BottomSheet open={plusOpen} onClose={() => setPlusOpen(false)}>
-                  <div className="cpm-sheet cpm-sheet--claude">
-                    <div className="cpm-sheet-head">
-                      <span className="cpm-sheet-title">{t("chat.addToChat")}</span>
-                      <button
-                        className="cpm-sheet-close"
-                        onClick={() => setPlusOpen(false)}
-                        aria-label={t("common.close")}
-                      >
-                        <X />
-                      </button>
-                    </div>
-
-                    <div className="cpm-quick-row">
-                      <button className="cpm-quick" onClick={openCamera}>
-                        <span className="cpm-quick-ic"><Camera weight="duotone" /></span>
-                        <span className="cpm-quick-label">{t("chat.quickCamera")}</span>
-                      </button>
-                      <button className="cpm-quick" onClick={openPhotos}>
-                        <span className="cpm-quick-ic"><ImageIcon weight="duotone" /></span>
-                        <span className="cpm-quick-label">{t("chat.quickPhotos")}</span>
-                      </button>
-                      <button className="cpm-quick" onClick={openFilePicker}>
-                        <span className="cpm-quick-ic"><Paperclip weight="duotone" /></span>
-                        <span className="cpm-quick-label">{t("chat.quickFiles")}</span>
-                      </button>
-                    </div>
-
-                    <div className="cpm-list">
-                      {onResearchChange && (
-                        <ResearchMenuSection
-                          enabled={researchEnabled ?? false}
-                          onChange={onResearchChange}
-                        />
-                      )}
-                      {onWebSearchChange && (
-                        <WebSearchMenuSection
-                          enabled={webSearchEnabled ?? false}
-                          mode={webSearchMode ?? "auto"}
-                          onChange={onWebSearchChange}
-                        />
-                      )}
-                      {onToggleMcpServer && (
-                        <McpMenuSection
-                          enabledIds={mcpEnabled ?? []}
-                          onToggle={onToggleMcpServer}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </BottomSheet>
+        <ChatComposer
+          value={value}
+          onChange={handleChange}
+          onSubmit={() => { void handleSend(); }}
+          onStop={onStop}
+          isStopShown={!!isStreaming}
+          // NOT isDisabled={disabled} here: Astryx's ChatComposer applies
+          // pointer-events:none to the whole body when isDisabled, which also
+          // swallows clicks on the stop button (its own internal isDisabled
+          // logic already ignores composer-level isDisabled while streaming,
+          // but that's moot once the ancestor blocks pointer events outright).
+          // Typing is still blocked below via ChatComposerInput's own isDisabled.
+          placeholder={ph}
+          drawer={attachmentsDrawer}
+          footerActions={attachMenu}
+          sendActions={
+            <>
+              {(hasText || pendingFiles.length > 0) && (
+                <span className="composer-token-count">
+                  {pendingFiles.length > 0 && `${pendingFiles.length} ${t("chat.files", { count: pendingFiles.length })} · `}
+                  ~{Math.ceil(value.length / 3.5)} tokens
+                </span>
               )}
-              {plusOpen && !isMobile && (
-                <div className={`composer-plus-menu${plusUp ? "" : " composer-plus-menu--down"}`}>
-                  <button className="cpm-item" onClick={openFilePicker}>
-                    <Paperclip /> <span>{t("chat.attachFiles")}</span>
-                  </button>
-                  {onToggleMcpServer && (
-                    <McpMenuSection
-                      enabledIds={mcpEnabled ?? []}
-                      onToggle={onToggleMcpServer}
-                    />
-                  )}
-                  {onWebSearchChange && (
-                    <WebSearchMenuSection
-                      enabled={webSearchEnabled ?? false}
-                      mode={webSearchMode ?? "auto"}
-                      onChange={onWebSearchChange}
-                    />
-                  )}
-                  {onResearchChange && (
-                    <ResearchMenuSection
-                      enabled={researchEnabled ?? false}
-                      onChange={onResearchChange}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-            <ModelSelector
-              models={models}
-              model={model}
-              onChange={onModelChange}
-              thinkingEnabled={thinkingEnabled}
-              onThinkingToggle={onThinkingToggle}
-              effortLevel={effortLevel}
-              onEffortChange={onEffortChange}
-              agents={agents}
-              agentId={agentId}
-              onAgentChange={onAgentChange}
+              <ModelSelector
+                models={models}
+                model={model}
+                onChange={onModelChange}
+                thinkingEnabled={thinkingEnabled}
+                onThinkingToggle={onThinkingToggle}
+                effortLevel={effortLevel}
+                onEffortChange={onEffortChange}
+                agents={agents}
+                agentId={agentId}
+                onAgentChange={onAgentChange}
+              />
+            </>
+          }
+          input={
+            <ChatComposerInput
+              handleRef={inputHandleRef}
+              value={value}
+              onChange={handleChange}
+              triggers={[mentionTrigger]}
+              onSubmit={() => { void handleSend(); }}
+              onPaste={handlePaste}
+              onFocus={refreshMentions}
+              pasteAsToken={false}
+              hasHistory={false}
+              maxRows={10}
+              isDisabled={disabled}
+              placeholder={ph}
+              label={t("chat.placeholder")}
             />
-            <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleFileSelected} />
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFileSelected} />
-            <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleFileSelected} />
+          }
+        />
 
-            {(hasText || pendingFiles.length > 0) && (
-              <span className="composer-token-count">
-                {pendingFiles.length > 0 && `${pendingFiles.length} ${t("chat.files", { count: pendingFiles.length })} · `}
-                ~{Math.ceil(textLen / 3.5)} tokens
-              </span>
-            )}
-          </div>
-
-          <div className="composer-right">
-            {isStreaming ? (
-              <button className="send-btn stop-btn" onClick={onStop} title={t("chat.stop")}><X /></button>
-            ) : (
-              <button
-                className="send-btn"
-                onClick={handleSend}
-                disabled={disabled || (!hasText && pendingFiles.length === 0)}
-                title={t("chat.send")}
-              ><ArrowUp /></button>
-            )}
-          </div>
-        </div>
+        <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleFileSelected} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleFileSelected} />
+        <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleFileSelected} />
       </div>
       <p className="composer-disclaimer">{t("chat.disclaimer")}</p>
     </div>
@@ -747,28 +720,4 @@ function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-function fileIcon(name: string, mime: string): string {
-  if (mime.startsWith("image/")) return "🖼";
-  if (name.endsWith(".pdf")) return "📕";
-  if (name.endsWith(".txt") || name.endsWith(".md")) return "📄";
-  if (name.endsWith(".docx") || name.endsWith(".doc")) return "📝";
-  if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) return "📊";
-  if (name.endsWith(".pptx") || name.endsWith(".ppt")) return "📽";
-  if (name.endsWith(".zip") || name.endsWith(".tar") || name.endsWith(".gz")) return "📦";
-  return "📎";
-}
-
-function fileType(name: string, mime: string): string {
-  const lastDot = name.lastIndexOf(".");
-  if (lastDot > 0 && lastDot < name.length - 1) {
-    const ext = name.slice(lastDot + 1).toUpperCase();
-    if (ext.length <= 5) return ext;
-  }
-  if (mime.startsWith("image/")) return "IMG";
-  if (mime.startsWith("text/")) return "TXT";
-  if (mime.startsWith("audio/")) return "AUDIO";
-  if (mime.startsWith("video/")) return "VIDEO";
-  return "FILE";
 }

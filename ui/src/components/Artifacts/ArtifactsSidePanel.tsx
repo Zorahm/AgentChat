@@ -8,6 +8,10 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { X, ArrowClockwise, CaretDown, Copy, DownloadSimple, Eye, Code, Sparkle } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { ButtonGroup } from "@astryxdesign/core/ButtonGroup";
+import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact, LiveFile } from "../../types/artifact";
 import { RENDERABLE_EXTS, BINARY_EXTS } from "../../types/artifact";
@@ -288,23 +292,41 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
 
       <div className="ap-head">
         <div className="ap-head-left">
-          {canRender && (
-            <button
-              className={`ap-tab-btn${tab === "render" ? " active" : ""}`}
-              onClick={() => setTab("render")}
-              title={t("artifacts.preview")}
+          {canRender && canCode && (
+            <SegmentedControl
+              value={tab}
+              onChange={(v) => setTab(v as ViewTab)}
+              label={t("artifacts.viewMode")}
+              size="sm"
             >
-              <Eye />
-            </button>
+              <SegmentedControlItem
+                value="render"
+                label={t("artifacts.preview")}
+                icon={<Eye size={14} />}
+                isLabelHidden
+              />
+              <SegmentedControlItem
+                value="code"
+                label={t("artifacts.code")}
+                icon={<Code size={14} />}
+                isLabelHidden
+              />
+            </SegmentedControl>
           )}
-          {canCode && (
-            <button
-              className={`ap-tab-btn${tab === "code" ? " active" : ""}`}
-              onClick={() => setTab("code")}
-              title={t("artifacts.code")}
+          {canRender && !canCode && (
+            <SegmentedControl
+              value={tab}
+              onChange={(v) => setTab(v as ViewTab)}
+              label={t("artifacts.viewMode")}
+              size="sm"
             >
-              <Code />
-            </button>
+              <SegmentedControlItem
+                value="render"
+                label={t("artifacts.preview")}
+                icon={<Eye size={14} />}
+                isLabelHidden
+              />
+            </SegmentedControl>
           )}
           <span className="ap-head-name">
             {fileName}
@@ -314,36 +336,40 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
 
         <div className="ap-head-right">
           {canInstall && (
-            <button
-              className={`ap-skill-btn${installState === "done" ? " ap-skill-btn--done" : ""}${installState === "error" ? " ap-skill-btn--error" : ""}`}
+            <Button
+              label={installLabel}
+              icon={<Sparkle size={14} weight={installState === "done" ? "fill" : "regular"} />}
               onClick={installSkill}
-              disabled={installState === "installing" || installState === "done"}
-              title={installState === "error" ? installErr : t("skills.installSkillTitle")}
+              isDisabled={installState === "installing" || installState === "done"}
+              isLoading={installState === "installing"}
+              tooltip={installState === "error" ? installErr : t("skills.installSkillTitle")}
+              size="sm"
+              variant={installState === "done" ? "secondary" : installState === "error" ? "destructive" : "secondary"}
             >
-              <Sparkle size={14} weight={installState === "done" ? "fill" : "regular"} />
-              <span>{installLabel}</span>
-            </button>
+              {installLabel}
+            </Button>
           )}
           <div className="ap-drop-wrap" ref={dropRef}>
-            <div className="ap-split-btn">
-              <button
-                className="ap-split-btn__main"
+            <ButtonGroup label={t("artifacts.actions")}>
+              <Button
+                label={t("artifacts.download")}
+                icon={<DownloadSimple size={14} />}
                 onClick={download}
-                disabled={isWritingSelected}
-                title={t("artifacts.download")}
-              >
-                <DownloadSimple size={14} />
-                <span>{t("artifacts.download")}</span>
-              </button>
-              <button
-                className="ap-split-btn__arrow"
+                isDisabled={isWritingSelected}
+                tooltip={t("artifacts.download")}
+                size="sm"
+                variant="secondary"
+              />
+              <IconButton
+                label={t("artifacts.more")}
+                icon={<CaretDown size={10} />}
                 onClick={() => setDropOpen((o) => !o)}
-                disabled={content === null}
-                title={t("artifacts.more")}
-              >
-                <CaretDown size={10} />
-              </button>
-            </div>
+                isDisabled={content === null}
+                tooltip={t("artifacts.more")}
+                size="sm"
+                variant="secondary"
+              />
+            </ButtonGroup>
             {dropOpen && (
               <div className="ap-drop-menu">
                 <button className="ap-drop-item" onClick={copy}>
@@ -353,12 +379,24 @@ export function ArtifactsSidePanel({ messages, liveFiles, openFilePath, onClose,
               </div>
             )}
           </div>
-          <button className="ap-icon-btn" onClick={refresh} title={t("artifacts.refresh")}>
-            <ArrowClockwise size={15} />
-          </button>
-          <button className="ap-icon-btn ap-icon-btn--close" onClick={onClose} title={t("artifacts.close")}>
-            <X size={15} />
-          </button>
+          <ButtonGroup label={t("artifacts.tools")}>
+            <IconButton
+              label={t("artifacts.refresh")}
+              icon={<ArrowClockwise size={15} />}
+              onClick={refresh}
+              tooltip={t("artifacts.refresh")}
+              size="sm"
+              variant="ghost"
+            />
+            <IconButton
+              label={t("artifacts.close")}
+              icon={<X size={15} />}
+              onClick={onClose}
+              tooltip={t("artifacts.close")}
+              size="sm"
+              variant="ghost"
+            />
+          </ButtonGroup>
         </div>
       </div>
 

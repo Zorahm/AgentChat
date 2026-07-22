@@ -3,6 +3,10 @@
 import { Globe, Palette, Sun, Moon, Monitor, Bell, MusicNote, Play, UploadSimple, Trash, ChatCircleDots } from "@phosphor-icons/react";
 import { useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Switch } from "@astryxdesign/core/Switch";
+import { Selector } from "@astryxdesign/core/Selector";
 import { SUPPORTED_LANGUAGES } from "../../../i18n/languages";
 import { setNotifySound, previewNotificationSound } from "../../../utils/notify";
 import type { SettingsData } from "../SettingsPanel";
@@ -68,16 +72,13 @@ export function AppearanceTab({ settings, onUpdate }: {
             <p className="d">{t("settings.general.languageHint")}</p>
           </div>
           <div className="st2-mctl">
-            <div className="lang-picker">
-              <span className="flag">{FLAG_MAP[currentLang] ?? ""}</span>
-              <span className="lang-name">{SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.label ?? currentLang}</span>
-              <span className="arrow">▾</span>
-              <select value={currentLang} onChange={(e) => onUpdate({ language: e.target.value })}>
-                {SUPPORTED_LANGUAGES.map((lng) => (
-                  <option key={lng.code} value={lng.code}>{lng.label}</option>
-                ))}
-              </select>
-            </div>
+            <Selector
+              label={t("settings.general.language")}
+              isLabelHidden
+              value={currentLang}
+              onChange={(val) => onUpdate({ language: val })}
+              options={SUPPORTED_LANGUAGES.map((lng) => ({ value: lng.code, label: lng.label }))}
+            />
           </div>
         </div>
 
@@ -153,11 +154,11 @@ export function AppearanceTab({ settings, onUpdate }: {
             <p className="d">{t("settings.general.notifySoundHint")}</p>
           </div>
           <div className="st2-mctl st2-notify-ctl">
-            <div
-              className={`st2-switch st2-switch--lg${settings.notify_sound ? " on" : ""}`}
-              role="switch"
-              aria-checked={settings.notify_sound ?? false}
-              onClick={() => onUpdate({ notify_sound: !settings.notify_sound })}
+            <Switch
+              label={t("settings.general.notifySound")}
+              isLabelHidden
+              value={settings.notify_sound ?? false}
+              onChange={(checked) => onUpdate({ notify_sound: checked })}
             />
 
             {settings.notify_sound && (
@@ -178,33 +179,28 @@ export function AppearanceTab({ settings, onUpdate }: {
                   </span>
                 </div>
                 <div className="st2-sound-ctl">
-                  <button
-                    type="button"
-                    className="st2-btn st2-btn--ghost"
+                  <IconButton
+                    icon={<Play size={16} weight="fill" />}
+                    label={t("settings.general.notifySoundPreview")}
                     onClick={() => previewNotificationSound()}
-                    title={t("settings.general.notifySoundPreview")}
-                  >
-                    <Play size={16} weight="fill" />
-                  </button>
-                  <button
-                    type="button"
-                    className="st2-btn"
-                    onClick={() => soundInputRef.current?.click()}
-                  >
-                    <UploadSimple size={16} />{" "}
-                    {settings.notify_sound_data
+                    variant="ghost"
+                  />
+                  <Button
+                    label={settings.notify_sound_data
                       ? t("settings.general.notifySoundReplace")
                       : t("settings.general.notifySoundChoose")}
-                  </button>
+                    icon={<UploadSimple size={16} />}
+                    onClick={() => soundInputRef.current?.click()}
+                    variant="secondary"
+                    size="sm"
+                  />
                   {settings.notify_sound_data && (
-                    <button
-                      type="button"
-                      className="st2-btn st2-btn--danger"
+                    <IconButton
+                      icon={<Trash size={16} />}
+                      label={t("settings.general.notifySoundReset")}
                       onClick={resetSound}
-                      title={t("settings.general.notifySoundReset")}
-                    >
-                      <Trash size={16} />
-                    </button>
+                      variant="destructive"
+                    />
                   )}
                 </div>
                 {soundError && <p className="d st2-err st2-notify-err">{soundError}</p>}
@@ -219,11 +215,11 @@ export function AppearanceTab({ settings, onUpdate }: {
             <p className="d">{t("settings.general.describeActionsHint")}</p>
           </div>
           <div className="st2-mctl">
-            <div
-              className={`st2-switch st2-switch--lg${settings.describe_actions ? " on" : ""}`}
-              role="switch"
-              aria-checked={settings.describe_actions ?? false}
-              onClick={() => onUpdate({ describe_actions: !settings.describe_actions })}
+            <Switch
+              label={t("settings.general.describeActions")}
+              isLabelHidden
+              value={settings.describe_actions ?? false}
+              onChange={(checked) => onUpdate({ describe_actions: checked })}
             />
           </div>
         </div>

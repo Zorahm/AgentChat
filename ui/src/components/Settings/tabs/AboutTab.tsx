@@ -1,6 +1,18 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Atom, Lightning, Desktop, Brain, Code, ArrowClockwise, CheckCircle, WarningCircle, X, CloudArrowDown } from "@phosphor-icons/react";
+import { Atom, Lightning, Desktop, Brain, Code, CloudArrowDown, CheckCircle, WarningCircle, ArrowClockwise, X } from "@phosphor-icons/react";
+import { VStack, HStack } from "@astryxdesign/core/Stack";
+import { Heading } from "@astryxdesign/core/Heading";
+import { Text } from "@astryxdesign/core/Text";
+import { Section } from "@astryxdesign/core/Section";
+import { Card } from "@astryxdesign/core/Card";
+import { Avatar } from "@astryxdesign/core/Avatar";
+import { Divider } from "@astryxdesign/core/Divider";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Grid } from "@astryxdesign/core/Grid";
+import { Link } from "@astryxdesign/core/Link";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { checkForUpdate, installUpdate, type UpdateStatus } from "../../../utils/updater";
 import { isTauri } from "../../../utils/tauri";
 import pkg from "../../../../package.json";
@@ -47,145 +59,173 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
 
   const closeCard = () => setStatus({ state: "idle" });
 
-  const renderUpdateCard = () => {
+  const renderUpdateContent = () => {
     switch (status.state) {
       case "checking":
         return (
-          <div className="st2-update-card">
+          <HStack gap={2} align="center">
             <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">{t("settings.about.checking")}</span>
-          </div>
+            <Text>{t("settings.about.checking")}</Text>
+          </HStack>
         );
       case "available":
         return (
-          <div className="st2-update-card is-available">
-            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
-            <div className="st2-update-card-head">
-              <CloudArrowDown />
-              <span>{t("settings.about.updateAvailable")}</span>
-            </div>
-            <div className="st2-update-card-ver">{t("settings.about.updateTo", { from: pkg.version, to: status.version })}</div>
-            {status.body && <div className="st2-update-card-notes">{status.body}</div>}
-            <button className="st2-btn st2-update-card-go" onClick={handleInstall}>
-              {t("settings.about.updateAndRestart")}
-            </button>
-          </div>
+          <VStack gap={3}>
+            <HStack gap={2} align="center" justify="between">
+              <HStack gap={2} align="center">
+                <CloudArrowDown />
+                <Text weight="semibold">{t("settings.about.updateAvailable")}</Text>
+              </HStack>
+              <IconButton label={t("settings.about.close")} icon={<X />} onClick={closeCard} variant="ghost" size="sm" />
+            </HStack>
+            <Text color="secondary">{t("settings.about.updateTo", { from: pkg.version, to: status.version })}</Text>
+            {status.body && <Text type="supporting">{status.body}</Text>}
+            <Button label={t("settings.about.updateAndRestart")} onClick={handleInstall} variant="primary" />
+          </VStack>
         );
       case "downloading":
         return (
-          <div className="st2-update-card">
-            <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">{t("settings.about.downloading")} {status.progress}%</span>
-          </div>
+          <VStack gap={2}>
+            <HStack gap={2} align="center">
+              <ArrowClockwise className="spin" />
+              <Text>{t("settings.about.downloading")} {status.progress}%</Text>
+            </HStack>
+            <ProgressBar value={status.progress ?? 0} max={100} label="download" hasValueLabel />
+          </VStack>
         );
       case "installing":
         return (
-          <div className="st2-update-card">
+          <HStack gap={2} align="center">
             <ArrowClockwise className="spin" />
-            <span className="st2-update-card-msg">{t("settings.about.installing")}</span>
-          </div>
+            <Text>{t("settings.about.installing")}</Text>
+          </HStack>
         );
       case "latest":
         return (
-          <div className="st2-update-card is-latest">
-            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
-            <CheckCircle />
-            <span className="st2-update-card-msg">{t("settings.about.latestVersion")}</span>
-          </div>
+          <HStack gap={2} align="center" justify="between">
+            <HStack gap={2} align="center">
+              <CheckCircle />
+              <Text>{t("settings.about.latestVersion")}</Text>
+            </HStack>
+            <IconButton label={t("settings.about.close")} icon={<X />} onClick={closeCard} variant="ghost" size="sm" />
+          </HStack>
         );
       case "error":
         return (
-          <div className="st2-update-card is-error">
-            <button className="st2-update-card-x" onClick={closeCard} title={t("settings.about.close")}><X /></button>
-            <WarningCircle />
-            <span className="st2-update-card-msg">{status.message}</span>
-          </div>
+          <HStack gap={2} align="center" justify="between">
+            <HStack gap={2} align="center">
+              <WarningCircle />
+              <Text>{status.message}</Text>
+            </HStack>
+            <IconButton label={t("settings.about.close")} icon={<X />} onClick={closeCard} variant="ghost" size="sm" />
+          </HStack>
         );
       default:
         return null;
     }
   };
 
-  return <>
-    <h3 className="st2-h">{t("settings.about.title")}</h3>
-    <p className="st2-sub">
-      {t("settings.about.description")}
-    </p>
+  return (
+    <Section variant="transparent" padding={4}>
+      <VStack gap={4}>
+        <VStack gap={1}>
+          <Heading level={2}>{t("settings.about.title")}</Heading>
+          <Text type="body" color="secondary">{t("settings.about.description")}</Text>
+        </VStack>
 
-    <div className="st2-section">
-      <h4 style={{ marginBottom: 10 }}>{t("settings.about.stack")}</h4>
-      <div className="st2-about-stack">
-        {stack.map((s) => (
-          <div key={s.name} className="st2-about-stack-item">
-            <span className="st2-about-stack-ic">{s.icon}</span>
-            <span className="st2-about-stack-name">{s.name}</span>
-            <span className="st2-about-stack-desc">{s.desc}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+        <VStack gap={2}>
+          <Heading level={3}>{t("settings.about.stack")}</Heading>
+          <Grid columns={{ minWidth: 200 }} gap={2}>
+            {stack.map((s) => (
+              <Card key={s.name} padding={3}>
+                <HStack gap={2} align="start">
+                  <Text color="accent">{s.icon}</Text>
+                  <VStack gap={0.5}>
+                    <Text weight="semibold">{s.name}</Text>
+                    <Text type="supporting">{s.desc}</Text>
+                  </VStack>
+                </HStack>
+              </Card>
+            ))}
+          </Grid>
+        </VStack>
 
-    <div className="st2-section">
-      <h4 style={{ marginBottom: 6 }}>{t("settings.about.authors")}</h4>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="st2-about-author">
-          <span className="st2-about-author-ic"><img src={avatarZorahm} alt="" /></span>
-          <div className="st2-about-author-info">
-            <a className="st2-about-author-name" href="https://github.com/zorahm" target="_blank" rel="noopener noreferrer">ZorahM</a>
-            <span className="st2-about-author-meta">{t("settings.about.authorBackend")}</span>
-          </div>
-        </div>
-        <div className="st2-about-author">
-          <span className="st2-about-author-ic"><img src={avatarHerman} alt="" /></span>
-          <div className="st2-about-author-info">
-            <a className="st2-about-author-name" href="https://github.com/hermandebush" target="_blank" rel="noopener noreferrer">Herman</a>
-            <span className="st2-about-author-meta">{t("settings.about.authorUx")}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+        <VStack gap={2}>
+          <Heading level={3}>{t("settings.about.authors")}</Heading>
+          <VStack gap={3}>
+            <HStack gap={3} align="center">
+              <Avatar src={avatarZorahm} name="ZorahM" size="medium" />
+              <VStack gap={0.5}>
+                <Link href="https://github.com/zorahm" target="_blank" rel="noopener noreferrer" isExternalLink>
+                  ZorahM
+                </Link>
+                <Text type="supporting">{t("settings.about.authorBackend")}</Text>
+              </VStack>
+            </HStack>
+            <HStack gap={3} align="center">
+              <Avatar src={avatarHerman} name="Herman" size="medium" />
+              <VStack gap={0.5}>
+                <Link href="https://github.com/hermandebush" target="_blank" rel="noopener noreferrer" isExternalLink>
+                  Herman
+                </Link>
+                <Text type="supporting">{t("settings.about.authorUx")}</Text>
+              </VStack>
+            </HStack>
+          </VStack>
+        </VStack>
 
-    <div className="st2-section">
-      <h4 style={{ marginBottom: 6 }}>{t("settings.about.goal")}</h4>
-      <p className="st2-sub2">
-        {t("settings.about.goalText")}
-      </p>
-    </div>
+        <VStack gap={2}>
+          <Heading level={3}>{t("settings.about.goal")}</Heading>
+          <Text type="body">{t("settings.about.goalText")}</Text>
+        </VStack>
 
-    <div className="st2-section st2-version-section">
-      <div className="st2-version-row">
-        <div className="st2-about-author" style={{ gap: 12 }}>
-          <div style={{ position: "relative", width: 36, height: 36 }}>
-            {ghostClicks >= 5 && (
-              <button
-                className="st2-ghost-btn revealed"
-                onClick={onStartGhostChat}
-                title="????"
-              >
-                +
-              </button>
-            )}
-            <img
-              src="/dots.svg"
-              alt=""
-              onClick={() => setGhostClicks(c => c + 1)}
-              className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
-              style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }}
+        <Divider />
+
+        <HStack gap={3} align="center" justify="between">
+          <HStack gap={3} align="center">
+            <div style={{ position: "relative", width: 36, height: 36 }}>
+              {ghostClicks >= 5 && onStartGhostChat && (
+                <Button
+                  label="????"
+                  onClick={onStartGhostChat}
+                  variant="secondary"
+                  size="sm"
+                  className="st2-ghost-btn revealed"
+                >
+                  +
+                </Button>
+              )}
+              <img
+                src="/dots.svg"
+                alt=""
+                onClick={() => setGhostClicks(c => c + 1)}
+                className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
+                style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }}
+              />
+            </div>
+            <VStack gap={0}>
+              <Text weight="semibold">{t("settings.about.appName")}</Text>
+              <Text type="supporting">{t("settings.about.version")} {pkg.version}</Text>
+            </VStack>
+          </HStack>
+          {isTauri() && (
+            <Button
+              label={status.state === "checking" ? t("settings.about.checking") : t("settings.about.checkUpdates")}
+              icon={<ArrowClockwise className={busy ? "spin" : ""} />}
+              onClick={handleCheck}
+              isDisabled={busy}
+              isLoading={busy}
+              variant="secondary"
             />
-          </div>
-          <div>
-            <span className="st2-about-author-name">{t("settings.about.appName")}</span>
-            <span className="st2-about-author-meta">{t("settings.about.version")} {pkg.version}</span>
-          </div>
-        </div>
-        {isTauri() && (
-          <button className="st2-update-btn" onClick={handleCheck} disabled={busy}>
-            <ArrowClockwise className={busy ? "spin" : ""} />
-            {status.state === "checking" ? t("settings.about.checking") : t("settings.about.checkUpdates")}
-          </button>
+          )}
+        </HStack>
+
+        {isTauri() && cardOpen && (
+          <Card padding={3}>
+            {renderUpdateContent()}
+          </Card>
         )}
-      </div>
-      {isTauri() && cardOpen && renderUpdateCard()}
-    </div>
-  </>;
+      </VStack>
+    </Section>
+  );
 }

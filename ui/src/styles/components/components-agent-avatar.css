@@ -1,8 +1,9 @@
 /* Components — Agent gradient avatar (shared by the model selector's agent
-   row/flyout and the Settings > Agents tab). */
+   row/flyout and the Settings > Agents tab). Built on Astryx's Avatar
+   (initials-from-name fallback); this repaints that fallback circle with the
+   agent's two-color gradient instead of Astryx's default neutral fill. */
 
-.agent-avatar {
-  display: inline-block;
-  border-radius: 50%;
-  flex-shrink: 0;
+.agent-avatar > div > div {
+  background: linear-gradient(135deg, var(--agent-avatar-from), var(--agent-avatar-to));
+  color: #fff;
 }

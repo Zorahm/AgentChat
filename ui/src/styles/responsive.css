@@ -11,7 +11,6 @@
 /* The hamburger that opens the drawer + the drawer backdrop only exist on
  * mobile; hide them everywhere else regardless of state. */
 .chat-mobile-menu-btn { display: none; }
-.mobile-drawer-backdrop { display: none; }
 
 @media (max-width: 768px) {
   /* ── Visible viewport height ──────────────────────────────────────────
@@ -99,16 +98,16 @@
   .chat-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── Breathing room: tighten the wide desktop paddings ───────────────── */
-  .chat-scroll { padding: 16px 14px 12px; gap: 18px; }
+  .chat-scroll { padding: 16px 14px 12px; }
+  .chat-scroll-inner { gap: 18px; }
   .msg-user { max-width: 88%; }
   .msg-assistant { max-width: 100%; }
   .composer { padding: 10px 10px calc(14px + env(safe-area-inset-bottom)); }
-  .chat:not(.chat--welcome) .composer-box { max-width: 100%; }
+  .chat:not(.chat--welcome) .composer-shell { max-width: 100%; }
 
   /* ── Shrink buttons across the interface ─────────────────────────────── */
   .icon-btn { width: 28px; height: 28px; }
   .icon-btn svg { width: 16px; height: 16px; }
-  .send-btn { width: 28px; height: 28px; }
   .chat-head-btn { width: 28px; height: 28px; }
   .chat-mobile-menu-btn { width: 34px; height: 34px; }
   .ms-pill { font-size: 12.5px; }
@@ -153,7 +152,6 @@
 
   /* ── Modals / page overlays: edge-to-edge ────────────────────────────── */
   .ac-modal-overlay { padding: env(safe-area-inset-top, 0px) 0 0; }
-  .ac-modal-content { max-width: 100%; }
   .ac-page {
     max-height: 100vh;
     height: 100vh;

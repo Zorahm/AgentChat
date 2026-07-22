@@ -1,14 +1,18 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { DebugComposerHarness } from "./DebugComposerHarness";
+import { DebugUpdateHarness } from "./DebugUpdateHarness";
+import { DebugUsageHarness } from "./DebugUsageHarness";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { captureTokenFromUrl, installApiAuth } from "./utils/apiBase";
 import { installLinkInterceptor } from "./utils/openExternal";
 import { installZoom } from "./utils/zoom";
 import "./i18n";
 import "katex/dist/katex.min.css";
+import "./styles/katex-math.css";
+import "./styles/astryx-setup.css";
 import "./styles/global.css";
-import "./styles/markdown.css";
 import "./styles/chat.css";
 import "./styles/components.css";
 import "./styles/panels.css";
@@ -31,7 +35,10 @@ installZoom();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      {window.location.search.includes("debug-composer") ? <DebugComposerHarness />
+        : window.location.search.includes("debug-update") ? <DebugUpdateHarness />
+        : window.location.search.includes("debug-usage") ? <DebugUsageHarness />
+        : <App />}
     </ErrorBoundary>
   </StrictMode>
 );

@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, List } from "@phosphor-icons/react";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import type { AgentChatState } from "../../hooks/useChats";
 import { ChatInput } from "./ChatInput";
+import { ChatMessageList } from "@astryxdesign/core/Chat";
 import { MessageBubble } from "./MessageBubble";
 import { UserQuestionCard } from "../ToolCalls/UserQuestionCard";
 import type { ChatMessage, AttachmentInfo, ChatNode } from "../../types/chat";
@@ -191,14 +193,14 @@ export function ChatView({
       {!isEmpty && (
         <div className="chat-head">
           {onOpenSidebar && (
-            <button
+            <IconButton
               className="chat-mobile-menu-btn"
+              icon={<List />}
+              label={t("sidebar.expand")}
               onClick={onOpenSidebar}
-              title={t("sidebar.expand")}
-              aria-label={t("sidebar.expand")}
-            >
-              <List />
-            </button>
+              variant="ghost"
+              size="sm"
+            />
           )}
           <div>
             <div className="chat-head-title">{chatTitle}</div>
@@ -209,9 +211,14 @@ export function ChatView({
             </div>
           </div>
           {hasFiles && (
-            <button className="chat-head-btn" onClick={onToggleFiles} title={t("chat.chatFiles")}>
-              <FolderOpen />
-            </button>
+            <IconButton
+              className="chat-head-btn"
+              icon={<FolderOpen />}
+              label={t("chat.chatFiles")}
+              onClick={onToggleFiles}
+              variant="ghost"
+              size="sm"
+            />
           )}
         </div>
       )}
@@ -219,14 +226,14 @@ export function ChatView({
       {isEmpty ? (
         <div className="chat-welcome">
           {onOpenSidebar && (
-            <button
+            <IconButton
               className="chat-mobile-menu-btn"
+              icon={<List />}
+              label={t("sidebar.expand")}
               onClick={onOpenSidebar}
-              title={t("sidebar.expand")}
-              aria-label={t("sidebar.expand")}
-            >
-              <List />
-            </button>
+              variant="ghost"
+              size="sm"
+            />
           )}
           <div className="chat-welcome-hgroup">
             <div className="chat-welcome-logo" onClick={() => setRevealed(true)}>
@@ -269,6 +276,8 @@ export function ChatView({
       ) : (
         <>
           <div className="chat-scroll" ref={scrollRef} onScroll={handleScroll}>
+            <div className="chat-scroll-inner">
+            <ChatMessageList isStreaming={state.isStreaming}>
             {state.messages.map((msg: ChatMessage, idx: number) => {
               const node = branchNodes[idx];
               const isLast = idx === branchNodes.length - 1;
@@ -301,11 +310,13 @@ export function ChatView({
                 />
               );
             })}
+            </ChatMessageList>
             {state.error && (
               <div className="msg msg-assistant" style={{ color: "var(--accent)" }}>
                 {t("chat.error")}: {state.error}
               </div>
             )}
+            </div>
           </div>
 
           {pending && (

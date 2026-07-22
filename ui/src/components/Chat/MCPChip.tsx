@@ -4,6 +4,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plugs, CaretRight } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Badge } from "@astryxdesign/core/Badge";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { Switch } from "@astryxdesign/core/Switch";
 import { API_BASE } from "../../utils/apiBase";
 
 interface ServerLite {
@@ -41,12 +47,18 @@ export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
 
   return (
     <div className="cpm-section cpm-connectors">
-      <button className="cpm-item" onClick={() => setOpen((v) => !v)}>
-        <Plugs />
-        <span className="cpm-item-label">{t("chat.mcp.servers")}</span>
-        {enabledIds.length > 0 && <span className="cpm-count">{enabledIds.length}</span>}
-        <CaretRight className="cpm-arr" />
-      </button>
+      <DropdownMenuItem
+        icon={<Plugs />}
+        label={t("chat.mcp.servers")}
+        onClick={() => setOpen((v) => !v)}
+        endContent={
+          <>
+            {enabledIds.length > 0 && <Badge variant="blue" label={String(enabledIds.length)} />}
+            <CaretRight />
+          </>
+        }
+        className="cpm-item"
+      />
 
       {open && (
         <div className="cpm-flyout">
@@ -55,25 +67,34 @@ export function McpMenuSection({ enabledIds, onToggle }: McpMenuSectionProps) {
           ) : usable.length === 0 ? (
             <div className="cpm-flyout-empty">{t("chat.mcp.none")}</div>
           ) : (
-            usable.map((s) => (
-              <label key={s.id} className="cpm-mcp-item">
-                <input
-                  type="checkbox"
-                  checked={enabledSet.has(s.id)}
-                  onChange={() => onToggle(s.id)}
-                />
-                <span className="cpm-mcp-name">{s.name}</span>
-                <span className={`mcp-chip-dot mcp-chip-dot--${s.state}`} />
-                <span className="cpm-mcp-tools">{s.tool_count}</span>
-              </label>
-            ))
+            <div className="cpm-mcp-list">
+              {usable.map((s) => (
+                <div key={s.id} className="cpm-mcp-item">
+                  <Switch
+                    value={enabledSet.has(s.id)}
+                    onChange={() => onToggle(s.id)}
+                    label={s.name}
+                    labelPosition="start"
+                    labelSpacing="spread"
+                  />
+                  <div className="cpm-mcp-meta">
+                    <StatusDot
+                      variant={s.state === "running" ? "success" : s.state === "error" ? "error" : "neutral"}
+                      label={s.state}
+                    />
+                    <span className="cpm-mcp-tools">{s.tool_count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-          <button
-            className="cpm-flyout-manage"
+          <Button
+            variant="secondary"
+            size="sm"
+            label={t("chat.mcp.manage")}
             onClick={() => window.dispatchEvent(new CustomEvent("navigate", { detail: "settings" }))}
-          >
-            {t("chat.mcp.manage")}
-          </button>
+            width="full"
+          />
         </div>
       )}
     </div>

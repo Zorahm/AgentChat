@@ -139,6 +139,7 @@
     },
     "usage": {
       "tokensAbbrev": "ткн",
+      "speedAbbrev": "т/с",
       "notAvailable": "н/д",
       "estimatedTitle": "Оценено локально — провайдер не вернул usage для этого запроса.",
       "title": "{{prompt}} промпт + {{completion}} ответ токенов",
@@ -377,7 +378,7 @@
     "pinTooltip": "Закрепить",
     "working": "Работает…",
     "updateAvailable": "Доступно обновление v{{version}}",
-    "updateRestart": "Перезагрузить для обновления",
+    "updateRestart": "Установить",
     "updateLater": "Установить позже",
     "updateDownloading": "Загрузка {{progress}}%",
     "updateInstalling": "Установка…",
@@ -526,7 +527,7 @@
     "nav": {
       "title": "Настройки",
       "personal": "Личное",
-      "profile": "Профиль",
+      "profile": "Главная",
       "appearance": "Оформление",
       "shortcuts": "Горячие клавиши",
       "about": "О приложении",
@@ -560,15 +561,8 @@
       }
     },
     "general": {
-      "profile": "Профиль",
+      "profile": "Главная",
       "profileDescription": "Как модель к вам обращается. Не отправляется наружу.",
-      "avatar": "Аватарка",
-      "avatarHint": "Отображается в сайдбаре. Хранится только локально.",
-      "clickToUpload": "Нажми чтобы загрузить фото",
-      "changePhoto": "Изменить фото",
-      "uploadPhoto": "Загрузить фото",
-      "deletePhoto": "Удалить",
-      "avatarFormats": "JPG, PNG, WEBP · обрезается до квадрата",
       "userName": "Имя пользователя",
       "userNameHint": "Модель использует это имя в обращениях. Можно оставить пустым.",
       "userNamePlaceholder": "Введите имя",
@@ -1006,7 +1000,6 @@
     "installSkillTitle": "Установить этот навык в библиотеку навыков",
     "skillInstalled": "Установлено",
     "requires": "Требует",
-    "requiresInstall": "установить в Терминале",
     "metaAuthor": "Автор",
     "catalog": {
       "agentchat": { "label": "Об AgentChat", "desc": "Позволяет модели отвечать на вопросы об этом приложении и его возможностях" },
@@ -1181,6 +1174,11 @@
     "rendered": "Виджет",
     "renderedNamed": "Виджет: {{title}}",
     "error": "Виджет не загрузился"
+  },
+  "errorBoundary": {
+    "title": "Что-то сломалось",
+    "unknownError": "Неизвестная ошибка",
+    "reload": "Перезагрузить"
   },
   "greetings": {
     "morning": [

@@ -1,6 +1,7 @@
 /** Files panel — all attachments + artifacts for the current chat. */
 
 import { X } from "@phosphor-icons/react";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact } from "../../types/artifact";
 import { presentedArtifacts } from "../../utils/presentedFiles";
@@ -69,9 +70,14 @@ export function FilesPanel({ messages, onOpenFile, onClose }: FilesPanelProps) {
     <aside className="files-panel">
       <div className="fp-head">
         <span className="fp-head-title">{t("filesPanel.title")}</span>
-        <button className="fp-head-close" onClick={onClose} title={t("filesPanel.close")}>
-          <X size={15} weight="bold" />
-        </button>
+        <IconButton
+          label={t("filesPanel.close")}
+          icon={<X size={15} weight="bold" />}
+          onClick={onClose}
+          tooltip={t("filesPanel.close")}
+          size="sm"
+          variant="ghost"
+        />
       </div>
       <div className="fp-scroll">
         {attached.length > 0 && (

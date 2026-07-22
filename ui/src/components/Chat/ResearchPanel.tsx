@@ -4,6 +4,7 @@
 
 import { useTranslation } from "react-i18next";
 import { X, MagnifyingGlass, FileText } from "@phosphor-icons/react";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import type { ToolCall, ResearchStep } from "../../types/tool-call";
 import { aggregateSources, domainOf } from "../../utils/research";
 import { SourcesBox } from "./SourcesBox";
@@ -35,9 +36,14 @@ export function ResearchPanel({ call, onClose, onResizeStart }: ResearchPanelPro
 
       <div className="rp-head">
         <span className="rp-head-title" title={title}>{title}</span>
-        <button className="ap-icon-btn ap-icon-btn--close" onClick={onClose} title={t("artifacts.close")}>
-          <X size={15} />
-        </button>
+        <IconButton
+          label={t("artifacts.close")}
+          icon={<X size={15} />}
+          onClick={onClose}
+          tooltip={t("artifacts.close")}
+          size="sm"
+          variant="ghost"
+        />
       </div>
 
       <div className="rp-body">

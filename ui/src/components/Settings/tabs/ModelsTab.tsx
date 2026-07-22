@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowClockwise } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { Selector } from "@astryxdesign/core/Selector";
 import type { SettingsData, ModelConfig } from "../SettingsPanel";
 
 const MAX_ITER_MIN = 1;
@@ -55,10 +57,14 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
           <h3 className="st2-h">{t("settings.models.title")}</h3>
           <p className="st2-sub">{t("settings.models.description")}</p>
         </div>
-        <button className="st2-btn" onClick={onRefresh} disabled={loading}>
-          <ArrowClockwise className={loading ? "spin" : ""} weight="bold" />
-          {loading ? t("settings.models.refreshing") : t("settings.models.refresh")}
-        </button>
+        <Button
+          label={loading ? t("settings.models.refreshing") : t("settings.models.refresh")}
+          icon={<ArrowClockwise weight="bold" />}
+          onClick={onRefresh}
+          isDisabled={loading}
+          isLoading={loading}
+          variant="secondary"
+        />
       </div>
 
       {/* 01 Default model */}
@@ -77,24 +83,19 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
               <p className="d">{t("settings.models.defaultModelHint")}</p>
             </div>
             <div className="st2-mctl">
-              <select
-                className="st2-models-select"
+              <Selector
+                label={t("settings.models.defaultModel")}
+                isLabelHidden
                 value={settings.default_model}
-                onChange={(e) => onUpdate({ default_model: e.target.value })}
-              >
-                {settings.models.length === 0 && (
-                  <option value="">{t("settings.models.noModels")}</option>
-                )}
-                {Array.from(grouped.entries()).map(([provider, models]) => (
-                  <optgroup key={provider} label={provider}>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name ?? m.id}{m.thinking ? " · thinking" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                onChange={(val) => onUpdate({ default_model: val })}
+                options={
+                  settings.models.length === 0
+                    ? ([{ value: "", label: t("settings.models.noModels"), disabled: true }] as unknown as Array<{ type: "section"; title: string; options: Array<{ value: string; label: string }> }>)
+                    : Array.from(grouped.entries()).flatMap(([provider, models]) => [
+                        { type: "section" as const, title: provider, options: models.map((m) => ({ value: m.id, label: `${m.name ?? m.id}${m.thinking ? " · thinking" : ""}` })) },
+                      ])
+                }
+              />
             </div>
           </div>
         </div>
@@ -116,22 +117,18 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
               <p className="d">{t("settings.models.researchModelHint")}</p>
             </div>
             <div className="st2-mctl">
-              <select
-                className="st2-models-select"
+              <Selector
+                label={t("settings.models.researchModel")}
+                isLabelHidden
                 value={settings.research_model || ""}
-                onChange={(e) => onUpdate({ research_model: e.target.value })}
-              >
-                <option value="">{t("settings.models.researchUseDefault")}</option>
-                {Array.from(grouped.entries()).map(([provider, models]) => (
-                  <optgroup key={provider} label={provider}>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name ?? m.id}{m.thinking ? " · thinking" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                onChange={(val) => onUpdate({ research_model: val })}
+                options={[
+                  { value: "", label: t("settings.models.researchUseDefault") },
+                  ...Array.from(grouped.entries()).flatMap(([provider, models]) => [
+                    { type: "section" as const, title: provider, options: models.map((m) => ({ value: m.id, label: `${m.name ?? m.id}${m.thinking ? " · thinking" : ""}` })) },
+                  ]),
+                ]}
+              />
             </div>
           </div>
         </div>
@@ -197,13 +194,13 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
                 />
                 <div className="st2-iter-presets">
                   {[25, 50, 100, 200].map((v) => (
-                    <button
+                    <Button
                       key={v}
-                      className={`st2-iter-preset${settings.max_iterations === v ? " active" : ""}`}
+                      label={String(v)}
                       onClick={() => onUpdate({ max_iterations: v })}
-                    >
-                      {v}
-                    </button>
+                      variant={settings.max_iterations === v ? "primary" : "secondary"}
+                      size="sm"
+                    />
                   ))}
                 </div>
               </div>

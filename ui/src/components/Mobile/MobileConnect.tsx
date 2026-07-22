@@ -16,9 +16,11 @@
  *  the remote backend and the normal app boots against it. */
 
 import { useEffect, useState } from "react";
-import { QrCode, Keyboard, ArrowLeft, CircleNotch, X } from "@phosphor-icons/react";
+import { QrCode, Keyboard, ArrowLeft, CircleNotch } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { setBackendUrl, setToken, getBackendOverride } from "../../utils/apiBase";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
 
 type Mode = "choose" | "manual";
 
@@ -121,9 +123,7 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
       <div className="mc-scan">
         <div className="mc-scan-frame" />
         <p className="mc-scan-hint">{t("mobile.scanning")}</p>
-        <button className="ob-btn ob-btn--ghost mc-scan-cancel" onClick={() => void cancelScan()}>
-          {t("mobile.scanCancel")}
-        </button>
+        <Button variant="ghost" label={t("mobile.scanCancel")} onClick={() => void cancelScan()} />
       </div>
     );
   }
@@ -136,9 +136,7 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
         <div className="ob-header">
           <h2>{isReconnect ? t("mobile.reconnectTitle") : t("mobile.connectTitle")}</h2>
           {onDismiss && (
-            <button className="confirm-close" onClick={onDismiss} aria-label={t("common.close")} title={t("common.close")}>
-              <X weight="bold" />
-            </button>
+            <Button variant="ghost" isIconOnly icon={<ArrowLeft size={18} weight="bold" />} label={t("common.close")} onClick={onDismiss} />
           )}
         </div>
         <div className="ob-body">
@@ -155,50 +153,46 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
 
               {mode === "choose" && (
                 <div className="mc-choices">
-                  <button className="mc-choice" onClick={() => void startScan()}>
-                    <QrCode size={28} weight="duotone" />
-                    <span className="mc-choice-title">{t("mobile.scanOption")}</span>
-                    <span className="mc-choice-sub">{t("mobile.scanOptionHint")}</span>
-                  </button>
-                  <button className="mc-choice" onClick={() => { setError(null); setMode("manual"); }}>
-                    <Keyboard size={28} weight="duotone" />
-                    <span className="mc-choice-title">{t("mobile.manualOption")}</span>
-                    <span className="mc-choice-sub">{t("mobile.manualOptionHint")}</span>
-                  </button>
+                  <Button
+                    variant="secondary"
+                    label={t("mobile.scanOption")}
+                    icon={<QrCode size={28} weight="duotone" />}
+                    onClick={() => void startScan()}
+                    className="mc-choice"
+                  />
+                  <Button
+                    variant="secondary"
+                    label={t("mobile.manualOption")}
+                    icon={<Keyboard size={28} weight="duotone" />}
+                    onClick={() => { setError(null); setMode("manual"); }}
+                    className="mc-choice"
+                  />
                 </div>
               )}
 
               {mode === "manual" && (
                 <>
-                  <label className="ob-label">{t("mobile.backendUrlLabel")}</label>
-                  <input
-                    className="ob-input"
-                    type="url"
-                    inputMode="url"
-                    autoCapitalize="none"
-                    autoCorrect="off"
+                  <TextInput
+                    label={t("mobile.backendUrlLabel")}
+                    type="text"
                     value={url}
-                    onChange={(e) => { setError(null); setUrl(e.target.value); }}
+                    onChange={(value: string) => { setError(null); setUrl(value); }}
                     placeholder={t("mobile.backendUrlPlaceholder")}
                   />
 
-                  <label className="ob-label" style={{ marginTop: 12 }}>{t("mobile.tokenLabel")}</label>
-                  <input
-                    className="ob-input"
+                  <TextInput
+                    label={t("mobile.tokenLabel")}
                     type="password"
                     value={token}
-                    onChange={(e) => { setError(null); setTokenInput(e.target.value); }}
+                    onChange={(value: string) => { setError(null); setTokenInput(value); }}
                     placeholder={t("mobile.tokenPlaceholder")}
-                    onKeyDown={(e) => { if (e.key === "Enter") void connect(url, token); }}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") void connect(url, token); }}
+                    style={{ marginTop: 12 }}
                   />
 
                   <div className="ob-actions" style={{ marginTop: 20 }}>
-                    <button className="ob-btn ob-btn--ghost" onClick={() => { setError(null); setMode("choose"); }}>
-                      <ArrowLeft size={16} /> {t("mobile.back")}
-                    </button>
-                    <button className="ob-btn" onClick={() => void connect(url, token)}>
-                      {t("mobile.connectButton")}
-                    </button>
+                    <Button variant="ghost" label={t("mobile.back")} onClick={() => { setError(null); setMode("choose"); }} icon={<ArrowLeft size={16} />} />
+                    <Button variant="primary" label={t("mobile.connectButton")} onClick={() => void connect(url, token)} />
                   </div>
                 </>
               )}

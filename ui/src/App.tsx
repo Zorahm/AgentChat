@@ -28,6 +28,10 @@ import { useViewportHeight } from "./hooks/useViewportHeight";
 import { resolveBindings } from "./shortcuts/registry";
 import { i18n } from "./i18n";
 import { useTranslation } from "react-i18next";
+import { Theme } from "@astryxdesign/core/theme";
+import { AppShell } from "@astryxdesign/core/AppShell";
+import { neutralTheme } from "@astryxdesign/theme-neutral/built";
+import { useDarkMode } from "./hooks/useDarkMode";
 
 const PANEL_MIN = 280;
 const PANEL_MAX = 1500;
@@ -58,7 +62,7 @@ export function App() {
   const [openFilePath, setOpenFilePath] = useState<string | null>(null);
   const [openResearchId, setOpenResearchId] = useState<string | null>(null);
   const [userName, setUserName] = useState("");
-  const { avatarUrl, setAvatarFromFile, clearAvatar } = useAvatar();
+  const { avatarUrl, clearAvatar } = useAvatar();
   const appUpdate = useAppUpdate();
   const [theme, setTheme] = useState("system");
   const [language, setLanguage] = useState("");
@@ -325,6 +329,10 @@ export function App() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
+  // Resolved dark flag (tracks the data-theme the effect above stamps) — fed to
+  // the Astryx <Theme> provider so its light-dark() tokens match the app mode.
+  const isDark = useDarkMode();
+
   // Apply the persisted language once settings load. An empty value means the
   // user never picked one — keep the OS-locale guess from i18n's detector.
   useEffect(() => {
@@ -499,19 +507,22 @@ export function App() {
   // On mobile the sidebar is a fixed drawer (not a grid column), so the grid is
   // a single column — responsive.css enforces this; the inline value is just a
   // harmless fallback. On desktop the 3-column grid drives the layout.
-  const sideW = sidebarCollapsed ? 44 : 240;
   const rightW = view === "chat" && panelOpen ? panelWidth : 0;
-  const gridCols = isMobile ? "1fr" : `${sideW}px 1fr ${rightW}px`;
   const effectiveCollapsed = isMobile ? false : sidebarCollapsed;
 
   // Android APK first run: no local backend exists on the phone, so gate the
   // whole app behind a "connect to a remote backend" screen until a backend URL
   // is configured. Placed after all hooks above to satisfy the rules of hooks.
   if (isAndroidTauri() && !getBackendOverride()) {
-    return <MobileConnect />;
+    return (
+      <Theme theme={neutralTheme} mode={isDark ? "dark" : "light"}>
+        <MobileConnect />
+      </Theme>
+    );
   }
 
   return (
+    <Theme theme={neutralTheme} mode={isDark ? "dark" : "light"}>
     <SettingsContext.Provider value={settingsCtx}>
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <GlobalDropZone enabled={view === "chat"} />
@@ -524,17 +535,14 @@ export function App() {
           onDismiss={() => { resetBackendDisconnected(); setBackendDisconnected(false); }}
         />
       )}
-      <div
-        className={`app-body${effectiveCollapsed ? " sidebar-collapsed" : ""}`}
-        style={{ gridTemplateColumns: gridCols }}
-      >
-        {isMobile && mobileNavOpen && (
-          <div
-            className="mobile-drawer-backdrop"
-            onClick={() => setMobileNavOpen(false)}
-          />
-        )}
-        <Sidebar
+      <AppShell
+        height="fill"
+        contentPadding={0}
+        variant="section"
+        style={{ height: "100%", minHeight: 0 }}
+        mobileNav={{ isOpen: isMobile && mobileNavOpen, onOpenChange: setMobileNavOpen, breakpoint: "md" }}
+        sideNav={
+          <Sidebar
           sessions={chats.sessions}
           activeId={chats.activeId}
           streamingIds={chats.streamingIds}
@@ -549,10 +557,18 @@ export function App() {
           onToggle={() => setSidebarCollapsed((v) => !v)}
           userName={userName}
           avatarUrl={avatarUrl}
-          mobileOpen={isMobile && mobileNavOpen}
           update={appUpdate}
-        />
-
+          />
+        }
+      >
+        <div
+          className="content-row"
+          style={{ display: "grid", gridTemplateColumns: `1fr ${rightW}px`, height: "100%", minHeight: 0 }}
+        >
+        <div
+          className="content-main"
+          style={{ minWidth: 0, minHeight: 0, display: "grid", gridTemplateRows: "minmax(0, 1fr)", overflow: "hidden" }}
+        >
         {view === "usage" ? (
           <UsageDashboardPage onGotoChat={gotoChatFromGallery} />
         ) : view === "projects" ? (
@@ -606,6 +622,7 @@ export function App() {
             onAgentChange={handleAgentChange}
           />
         )}
+        </div>
         {view === "chat" && generalPanelOpen && !openFilePath && !openResearchId && (
           <FilesPanel
             messages={chats.messages}
@@ -634,7 +651,8 @@ export function App() {
             onResizeStart={handleResizeStart}
           />
         )}
-      </div>
+        </div>
+      </AppShell>
 
       {view === "library" && (
         <div className="page-overlay">
@@ -656,9 +674,6 @@ export function App() {
           <SettingsPanel
             onClose={() => handleNavigate("chat")}
             initialTab={settingsTab}
-            avatarUrl={avatarUrl}
-            setAvatarFromFile={setAvatarFromFile}
-            clearAvatar={clearAvatar}
             onSignOut={handleSignOut}
             onOpenOnboarding={() => { setView("chat"); setOnboardingDone(false); }}
             onStartGhostChat={() => {
@@ -689,5 +704,6 @@ export function App() {
       )}
     </div>
     </SettingsContext.Provider>
+    </Theme>
   );
 }

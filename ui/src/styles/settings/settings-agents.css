@@ -34,13 +34,6 @@
   display: flex; flex-direction: column; gap: 5px;
   font-size: 12px; font-weight: 500; color: var(--ink-soft);
 }
-.ag-field input, .ag-field textarea {
-  font-family: var(--font-mono); font-size: 12px;
-  border: 1px solid var(--line); background: var(--surface, var(--paper-2));
-  padding: 7px 10px; border-radius: 7px; color: var(--ink); outline: none;
-}
-.ag-field input:focus, .ag-field textarea:focus { border-color: var(--ink-soft); }
-.ag-prompt-textarea { resize: vertical; min-height: 140px; font-family: var(--font-mono); line-height: 1.5; }
 
 .ag-color-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ag-color-row input[type="color"] {
@@ -84,9 +77,4 @@
   display: flex; justify-content: space-between; align-items: center;
   font-size: 14px; font-weight: 600; margin-bottom: 12px;
 }
-.ag-add-form-close {
-  background: none; border: none; cursor: pointer; color: var(--muted);
-  padding: 4px; border-radius: 4px; display: flex; align-items: center;
-}
-.ag-add-form-close:hover { color: var(--ink); background: var(--surface-2, var(--paper-2)); }
 .ag-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }

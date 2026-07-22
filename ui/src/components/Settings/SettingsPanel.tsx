@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, Robot, CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, Robot, CaretLeft, CaretRight, X as XIcon } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { API_BASE } from "../../utils/apiBase";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
@@ -77,15 +79,12 @@ export type NavTab =
 interface SettingsPanelProps {
   onClose?: () => void;
   initialTab?: NavTab;
-  avatarUrl: string | null;
-  setAvatarFromFile: (file: File) => Promise<void>;
-  clearAvatar: () => void;
   onSignOut: (deleteChats: boolean) => void;
   onOpenOnboarding: () => void;
   onStartGhostChat?: () => void;
 }
 
-export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFile, clearAvatar, onSignOut, onOpenOnboarding, onStartGhostChat }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding, onStartGhostChat }: SettingsPanelProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [settings, setSettings] = useState<SettingsData | null>(null);
@@ -227,7 +226,12 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         <h2 className="st2-nav-h"><img className="st2-nav-mark" src="/dots.svg" alt="" /> {t("settings.nav.title")}</h2>
 
         {onClose && (
-          <button className="st2-back" onClick={onClose}>{t("settings.back")}</button>
+          <IconButton
+            icon={<ArrowLeft size={20} />}
+            label={t("settings.back")}
+            onClick={onClose}
+            variant="ghost"
+          />
         )}
         <div className="st2-group">{t("settings.nav.personal")}</div>
         <NavItem t="profile" cur={tab} label={t("settings.nav.profile")} ic={<User size={16} />} onClick={handleTabClick} />
@@ -257,9 +261,12 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         <div className="st2-body st2-mlist-body">
           <div className="st2-mob-bar">
             {onClose && (
-              <button className="st2-mob-btn" onClick={onClose} aria-label={t("settings.back")} title={t("settings.back")}>
-                <CaretLeft size={22} />
-              </button>
+              <IconButton
+                icon={<CaretLeft size={20} />}
+                label={t("settings.back")}
+                onClick={onClose}
+                variant="ghost"
+              />
             )}
             <span className="st2-mob-title">{t("settings.nav.title")}</span>
           </div>
@@ -287,14 +294,17 @@ export function SettingsPanel({ onClose, initialTab, avatarUrl, setAvatarFromFil
         <div className="st2-body">
           {isMobile && (
             <div className="st2-mob-bar">
-              <button className="st2-mob-btn" onClick={() => setMobileShowList(true)} aria-label={t("settings.back")} title={t("settings.back")}>
-                <CaretLeft size={22} />
-              </button>
+              <IconButton
+                icon={<CaretLeft size={20} />}
+                label={t("settings.back")}
+                onClick={() => setMobileShowList(true)}
+                variant="ghost"
+              />
               <span className="st2-mob-title">{t(`settings.nav.${tab}`)}</span>
             </div>
           )}
           {error && <div className="st2-error">{error}</div>}
-          {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} avatarUrl={avatarUrl} setAvatarFromFile={setAvatarFromFile} clearAvatar={clearAvatar} onSignOut={onSignOut} onOpenOnboarding={onOpenOnboarding} />}
+          {tab === "profile" && <ProfileTab settings={settings} onUpdate={updateGlobal} onSignOut={onSignOut} onOpenOnboarding={onOpenOnboarding} />}
           {tab === "appearance" && <AppearanceTab settings={settings} onUpdate={updateGlobal} />}
           {tab === "terminal" && <TerminalTab settings={settings} onUpdate={updateGlobal} />}
           {tab === "sandbox" && <SandboxTab settings={settings} onUpdate={updateGlobal} />}
@@ -342,15 +352,19 @@ function Loading({ error, onRetry, onClose }: { error: string | null; onRetry: (
 
           <div className="error-actions">
             {onClose && (
-              <button className="error-btn error-btn--secondary" onClick={onClose}>
-                <ArrowLeft size={16} weight="bold" />
-                <span>{t("settings.backToChats")}</span>
-              </button>
+              <Button
+                label={t("settings.backToChats")}
+                icon={<ArrowLeft size={16} weight="bold" />}
+                onClick={onClose}
+                variant="secondary"
+              />
             )}
-            <button className="error-btn error-btn--primary" onClick={onRetry}>
-              <ArrowClockwise size={16} weight="bold" />
-                <span>{t("settings.retry")}</span>
-            </button>
+            <Button
+              label={t("settings.retry")}
+              icon={<ArrowClockwise size={16} weight="bold" />}
+              onClick={onRetry}
+              variant="primary"
+            />
           </div>
         </div>
       </div>

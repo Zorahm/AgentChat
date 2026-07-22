@@ -40,6 +40,9 @@ export interface MessageUsage {
   /** "estimated" when usage wasn't reported by the provider and was counted
    * locally instead — shown with a leading "≈" in the UI. */
   usageSource: "api" | "estimated";
+  /** Summed LLM call duration for this turn (ms) — null when no call in the
+   * turn reported timing. Drives the tokens/sec and elapsed-time display. */
+  latencyMs: number | null;
   /** Local, always-estimated split of prompt tokens by source — explains why
    * a short message still billed thousands of tokens (system prompt + tool
    * schemas + prior conversation, not the message itself). Never used for

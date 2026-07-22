@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Keyboard, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { useSettings } from "../../../contexts/SettingsContext";
 import {
   SHORTCUT_ACTIONS,
@@ -90,30 +92,28 @@ export function ShortcutsTab() {
                     {t("settings.shortcuts.conflict", { action: label(conflict.withId) })}
                   </span>
                 )}
-                <button
-                  className={`st2-sc-combo${recording ? " recording" : ""}`}
+                <Button
+                  label={recording ? t("settings.shortcuts.recording") : formatCombo(bindings[action.id] ?? action.defaultCombo)}
                   onClick={() => {
                     setConflict(null);
                     setRecordingId(recording ? null : action.id);
                   }}
-                  title={t("settings.shortcuts.rebindTooltip")}
-                >
-                  {recording
-                    ? t("settings.shortcuts.recording")
-                    : formatCombo(bindings[action.id] ?? action.defaultCombo)}
-                </button>
-                <button
-                  className="st2-sc-reset"
-                  disabled={bindings[action.id] === action.defaultCombo}
+                  tooltip={t("settings.shortcuts.rebindTooltip")}
+                  variant={recording ? "primary" : "secondary"}
+                  className="st2-sc-combo"
+                />
+                <IconButton
+                  label={t("settings.shortcuts.reset")}
+                  icon={<ArrowCounterClockwise size={14} />}
+                  isDisabled={bindings[action.id] === action.defaultCombo}
                   onClick={() => {
                     setConflict(null);
                     setRecordingId(null);
                     setCombo(action.id, action.defaultCombo);
                   }}
-                  title={t("settings.shortcuts.reset")}
-                >
-                  <ArrowCounterClockwise size={14} />
-                </button>
+                  variant="ghost"
+                  size="sm"
+                />
               </div>
             </div>
           );
@@ -124,9 +124,11 @@ export function ShortcutsTab() {
         <span className="st2-sc-hint">
           <Keyboard size={14} /> {t("settings.shortcuts.hint")}
         </span>
-        <button className="st2-sc-reset-all" onClick={() => { setRecordingId(null); setConflict(null); save({}); }}>
-          {t("settings.shortcuts.resetAll")}
-        </button>
+        <Button
+          label={t("settings.shortcuts.resetAll")}
+          onClick={() => { setRecordingId(null); setConflict(null); save({}); }}
+          variant="secondary"
+        />
       </div>
     </div>
   );

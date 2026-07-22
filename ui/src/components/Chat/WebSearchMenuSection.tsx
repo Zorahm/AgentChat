@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Globe, Check, CaretDown } from "@phosphor-icons/react";
+import { DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from "../../utils/apiBase";
 
@@ -45,21 +47,22 @@ export function WebSearchMenuSection({ enabled, mode, onChange }: WebSearchMenuS
   return (
     <div className="cpm-section">
       <div className="cpm-ws-row">
-        <button
-          className={`cpm-item cpm-item--toggle${enabled ? " cpm-item--on" : ""}`}
+        <DropdownMenuItem
+          icon={<Globe />}
+          label={t("chat.webSearch.toggle")}
           onClick={() => onChange(!enabled, mode)}
-        >
-          <Globe />
-          <span className="cpm-item-label">{t("chat.webSearch.toggle")}</span>
-          {enabled && <Check className="cpm-check" weight="bold" />}
-        </button>
-        <button
-          className={`cpm-caret${expanded ? " cpm-caret--open" : ""}`}
-          title={t("chat.webSearch.settings")}
+          endContent={enabled ? <Check className="cpm-check" weight="bold" /> : undefined}
+          className={`cpm-item cpm-item--toggle${enabled ? " cpm-item--on" : ""}`}
+        />
+        <IconButton
+          label={t("chat.webSearch.settings")}
+          icon={<CaretDown size={14} />}
           onClick={() => setExpanded((v) => !v)}
-        >
-          <CaretDown size={14} />
-        </button>
+          tooltip={t("chat.webSearch.settings")}
+          variant="ghost"
+          size="sm"
+          className={`cpm-caret${expanded ? " cpm-caret--open" : ""}`}
+        />
       </div>
 
       {expanded && (
@@ -67,17 +70,15 @@ export function WebSearchMenuSection({ enabled, mode, onChange }: WebSearchMenuS
           {MODE_ORDER.map((id) => {
             const ok = available(id);
             return (
-              <button
+              <DropdownMenuItem
                 key={id}
-                className={`cpm-subitem${mode === id ? " sel" : ""}`}
-                disabled={!ok}
-                title={id === "auto" ? t("chat.webSearch.autoHint") : reason(id)}
+                label={label(id)}
+                description={id === "auto" ? t("chat.webSearch.autoHint") : (!ok ? reason(id) : undefined)}
                 onClick={() => onChange(true, id)}
-              >
-                <span className="cpm-sub-label">{label(id)}</span>
-                {id !== "auto" && !ok && <span className="cpm-sub-reason">{reason(id)}</span>}
-                {mode === id && <Check className="cpm-check" weight="bold" />}
-              </button>
+                isDisabled={!ok}
+                endContent={mode === id ? <Check className="cpm-check" weight="bold" /> : undefined}
+                className={`cpm-subitem${mode === id ? " sel" : ""}`}
+              />
             );
           })}
         </div>

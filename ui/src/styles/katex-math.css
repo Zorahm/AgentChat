@@ -1,0 +1,25 @@
+/* KaTeX output for the LaTeX inlinePlugins (utils/latexPlugins.tsx) fed into
+ * every Astryx <Markdown/> instance — Astryx's own Markdown has no built-in
+ * math rendering, so these wrapper classes are ours, not Astryx's. */
+
+.math-inline { display: inline; }
+.math-block {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1.25em 0;
+  padding: .5em 0;
+  -webkit-overflow-scrolling: touch;
+}
+.math-block .katex-display { margin: 0; padding: 0 .5em; }
+.katex { font-size: max(1.15em, 15px); }
+.katex-display > .katex { font-size: 1.15em; white-space: nowrap; }
+.katex-error {
+  color: var(--err);
+  font-family: var(--font-mono);
+  font-size: .85em;
+  background: var(--err-soft);
+  padding: .2em .4em;
+  border-radius: 4px;
+  border: 1px solid var(--err-line);
+}

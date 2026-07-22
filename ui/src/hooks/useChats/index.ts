@@ -539,6 +539,7 @@ export function useChats(): UseChatResult {
               usageSource: (data.usage_source === "estimated" ? "estimated" : "api") as
                 | "api"
                 | "estimated",
+              latencyMs: data.latency_ms == null ? null : Number(data.latency_ms),
               ...(rawBreakdown
                 ? {
                     breakdown: {

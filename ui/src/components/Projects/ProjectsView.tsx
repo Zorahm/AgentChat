@@ -4,6 +4,11 @@
 import { useCallback, useState } from "react";
 import { Plus, FolderOpen, X, Trash } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { ClickableCard } from "@astryxdesign/core/ClickableCard";
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { useProjects } from "../../hooks/useProjects";
 import type { ModelItem } from "../Chat/ChatView";
 import type { ChatSession, AttachmentInfo } from "../../types/chat";
@@ -87,9 +92,12 @@ export function ProjectsView({
     <div className="proj-page">
       <header className="proj-head">
         <h1 className="proj-title">{t("projects.title")}</h1>
-        <button className="proj-icon-btn" onClick={onClose} title={t("projects.backToChats")}>
-          <X weight="bold" />
-        </button>
+        <IconButton
+          label={t("projects.backToChats")}
+          icon={<X weight="bold" />}
+          onClick={onClose}
+          variant="ghost"
+        />
       </header>
 
       <p className="proj-sub">
@@ -97,18 +105,21 @@ export function ProjectsView({
       </p>
 
       <div className="proj-create">
-        <input
-          className="proj-input"
+        <TextInput
+          label={t("projects.newPlaceholder")}
+          isLabelHidden
           placeholder={t("projects.newPlaceholder")}
           value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void handleCreate();
-          }}
+          onChange={(v) => setNewName(v)}
         />
-        <button className="proj-btn proj-btn--primary" onClick={() => void handleCreate()} disabled={busy}>
-          <Plus weight="bold" /> {t("projects.create")}
-        </button>
+        <Button
+          label={t("projects.create")}
+          variant="primary"
+          icon={<Plus weight="bold" />}
+          onClick={() => void handleCreate()}
+          isDisabled={busy}
+          isLoading={busy}
+        />
       </div>
 
       {api.projects.length === 0 ? (
@@ -120,7 +131,11 @@ export function ProjectsView({
         <div className="proj-grid">
           {api.projects.map((p) => (
             <div key={p.id} className="proj-card-wrap">
-              <button className="proj-card" onClick={() => setOpenId(p.id)}>
+              <ClickableCard
+                label={p.name}
+                onClick={() => setOpenId(p.id)}
+                className="proj-card"
+              >
                 <div className="proj-card-icon">
                   <FolderOpen size={22} weight="duotone" />
                 </div>
@@ -129,40 +144,35 @@ export function ProjectsView({
                   {p.file_count} {t("projects.files", { count: p.file_count })}
                   {p.instructions.trim() ? " · " + t("projects.hasPrompt") : ""}
                 </div>
-              </button>
-              <button
-                className="proj-card-del"
+              </ClickableCard>
+              <IconButton
+                label={t("projects.deleteProject")}
+                icon={<Trash />}
+                variant="ghost"
                 onClick={() => setConfirmId(p.id)}
-                title={t("projects.deleteProject")}
-              >
-                <Trash />
-              </button>
+                className="proj-card-del"
+              />
             </div>
           ))}
         </div>
       )}
 
-      {confirmId && (
-        <div className="proj-confirm-overlay" onClick={() => setConfirmId(null)}>
-          <div className="proj-confirm" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("projects.deleteConfirm")}</h3>
-            <p>{t("projects.deleteMessage")}</p>
-            <div className="proj-confirm-actions">
-              <button className="proj-btn" onClick={() => setConfirmId(null)}>{t("projects.cancel")}</button>
-              <button
-                className="proj-btn proj-btn--danger"
-                onClick={() => {
-                  const id = confirmId;
-                  setConfirmId(null);
-                  void api.deleteProject(id);
-                }}
-              >
-                {t("projects.delete")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        isOpen={confirmId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmId(null);
+        }}
+        title={t("projects.deleteConfirm")}
+        description={t("projects.deleteMessage")}
+        cancelLabel={t("projects.cancel")}
+        actionLabel={t("projects.delete")}
+        actionVariant="destructive"
+        onAction={() => {
+          const id = confirmId;
+          setConfirmId(null);
+          void api.deleteProject(id ?? "");
+        }}
+      />
     </div>
   );
 }

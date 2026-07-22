@@ -23,22 +23,6 @@
   font-family: var(--font-mono);
 }
 .st2-paths-url-input input::placeholder { color: var(--faint); }
-
-.st2-paths-url-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 16px; height: 38px;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  background: var(--surface, var(--paper));
-  font-family: var(--font-body); font-size: 13px; font-weight: 500;
-  color: var(--ink-2); cursor: pointer;
-  white-space: nowrap; flex-shrink: 0;
-  transition: background .15s, color .15s, border-color .15s;
-}
-.st2-paths-url-btn:hover {
-  background: var(--hover, var(--paper-2));
-  color: var(--ink);
-}
 .st2-paths-url-btn.applied {
   background: var(--ok-soft);
   border-color: var(--ok-line);
@@ -69,25 +53,11 @@
 .st2-remote-urls {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
-.st2-remote-url-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 999px;
-  border: 1px solid var(--line-2); background: var(--surface, var(--paper));
-  font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2);
-  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
-}
-.st2-remote-url-chip:hover { background: var(--hover, var(--paper-2)); color: var(--ink); }
 .st2-remote-url-chip.on {
   background: var(--accent-soft, var(--ok-soft)); border-color: var(--accent-2);
   color: var(--ink);
 }
 .st2-remote-url-chip.ts { border-color: var(--accent-2, var(--ok-line)); }
-.st2-remote-url-tag {
-  font-family: var(--font-sans, inherit);
-  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-  padding: 1px 5px; border-radius: 999px;
-  background: var(--accent-2, var(--ink)); color: var(--paper);
-}
 .st2-remote-field {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }

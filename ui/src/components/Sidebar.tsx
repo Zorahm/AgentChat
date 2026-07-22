@@ -1,8 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, Images, CaretRight, ArrowClockwise, CloudArrowDown, WarningCircle, ChartBar } from "@phosphor-icons/react";
+import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, CaretRight, CloudArrowDown, WarningCircle, ChartBar } from "@phosphor-icons/react";
+import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
+import { Avatar } from "@astryxdesign/core/Avatar";
+import { ContextMenu, ContextMenuItem } from "@astryxdesign/core/ContextMenu";
+import { Divider } from "@astryxdesign/core/Divider";
 import type { ChatSession } from "../hooks/useChats";
 import type { AppUpdate } from "../hooks/useAppUpdate";
-import { useLongPress } from "../hooks/useLongPress";
 import { GhostChat } from "./GhostChat";
 import { useTranslation } from "react-i18next";
 
@@ -33,7 +40,7 @@ const RECENT_LIMIT = 15;
 export function Sidebar({
   sessions, activeId, streamingIds, onNew, onSwitch, onDelete, onRename, onPin,
   activeView, onNavigate, collapsed, onToggle, userName, avatarUrl,
-  mobileOpen = false, update,
+  update,
 }: SidebarProps) {
   const { t } = useTranslation();
   const [orderIds, setOrderIds] = useState<string[]>(() => {
@@ -143,7 +150,7 @@ export function Sidebar({
         newOrder.splice(targetIdx, 0, removed);
         saveOrder(newOrder);
       }
-      
+
       if (togglePin) {
          onPin(dragId);
       }
@@ -157,18 +164,18 @@ export function Sidebar({
 
     let currentOrder = [...orderIds];
     const allIds = allDisplayed.map(s => s.id);
-    
+
     for (const id of allIds) {
       if (!currentOrder.includes(id)) currentOrder.push(id);
     }
-    
+
     const draggedIdx = currentOrder.indexOf(draggedId);
     const targetIdx = currentOrder.indexOf(targetId);
-    
+
     if (draggedIdx !== -1 && targetIdx !== -1) {
       const draggedSession = sessions.find(s => s.id === draggedId);
       const targetSession = sessions.find(s => s.id === targetId);
-      
+
       if (draggedSession && targetSession && draggedSession.pinned !== targetSession.pinned) {
          if (draggedSession.pinned && !targetSession.pinned) {
             setPendingDrop({ draggedId, targetId, type: "unpin" });
@@ -202,234 +209,115 @@ export function Sidebar({
     />
   );
 
-  if (collapsed) {
-    const hasPinned = pinned.length > 0;
-    const hasRecent = recent.length > 0;
-
-    return (
-      <aside className="sidebar sidebar--collapsed">
-        {/* Toggle */}
-        <button className="sb-col-toggle" onClick={onToggle} title={t("sidebar.expand")}>
-          ☰
-        </button>
-
-        {/* New chat */}
-        <button className="sb-col-new" onClick={() => onNew()} title={t("sidebar.newChat")}>
-          <Plus weight="bold" size={15} />
-        </button>
-
-        {/* Search */}
-        <button className="sb-col-search" onClick={() => onNavigate("library")} title={t("sidebar.search")}>
-          <MagnifyingGlass size={15} weight="bold" />
-        </button>
-
-        {/* Files (Library → Files tab) */}
-        <button className="sb-col-search" onClick={() => onNavigate("library")} title={t("sidebar.filesTooltip")}>
-          <Images size={15} weight="bold" />
-        </button>
-
-        {/* Chat chips */}
-        <div className="sb-col-list">
-          {hasPinned && (
-            <div className="sb-col-chips">
-              {pinned.map((s) => (
-                <ChatChip
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeId}
-                  streaming={streamingIds.has(s.id)}
-                  isDragOver={dragOverId === s.id}
-                  onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
-                  onDragStart={(e) => handleDragStart(e, s.id)}
-                  onDragOver={(e) => handleDragOver(e, s.id)}
-                  onDrop={(e) => handleDrop(e, s.id)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-            </div>
-          )}
-
-          {hasPinned && hasRecent && <div className="sb-col-divider" />}
-
-          {hasRecent && (
-            <div className="sb-col-chips">
-              {recent.slice(0, 8).map((s) => (
-                <ChatChip
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeId}
-                  streaming={streamingIds.has(s.id)}
-                  isDragOver={dragOverId === s.id}
-                  onSelect={() => { onSwitch(s.id); onNavigate("chat"); }}
-                  onDragStart={(e) => handleDragStart(e, s.id)}
-                  onDragOver={(e) => handleDragOver(e, s.id)}
-                  onDrop={(e) => handleDrop(e, s.id)}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Update chip */}
-        {update?.visible && <UpdateChip update={update} />}
-
-        {/* Bottom nav */}
-        <nav className="sb-col-foot">
-          <button
-            className={`sb-col-btn${activeView === "skills" ? " sb-col-btn--active" : ""}`}
-            onClick={() => onNavigate("skills")}
-            title={t("sidebar.skills")}
-          >
-            <Books size={16} />
-          </button>
-          <button
-            className={`sb-col-btn${activeView === "projects" ? " sb-col-btn--active" : ""}`}
-            onClick={() => onNavigate("projects")}
-            title={t("sidebar.projects")}
-          >
-            <FolderOpen size={16} />
-          </button>
-          <button
-            className={`sb-col-btn${activeView === "usage" ? " sb-col-btn--active" : ""}`}
-            onClick={() => onNavigate("usage")}
-            title={t("sidebar.usage")}
-          >
-            <ChartBar size={16} />
-          </button>
-          <button
-            className={`sb-col-btn${activeView === "settings" ? " sb-col-btn--active" : ""}`}
-            onClick={() => onNavigate("settings")}
-            title={t("sidebar.settings")}
-          >
-            <Gear size={16} />
-          </button>
-          <button
-            className="sb-col-avatar"
-            onClick={() => onNavigate("settings")}
-            title={userName || t("sidebar.profile")}
-          >
-            <AvatarCircle url={avatarUrl} name={userName} size={26} />
-          </button>
-        </nav>
-
-        {pendingDrop && (
-          <ConfirmDialog
-            title={pendingDrop.type === "unpin" ? t("sidebar.unpinConfirm") : t("sidebar.pinConfirm")}
-            message={
-               pendingDrop.type === "unpin" 
-                 ? t("sidebar.unpinMessage")
-                 : t("sidebar.pinMessage")
-            }
-            onConfirm={() => {
-               executeDrop(pendingDrop.draggedId, pendingDrop.targetId, true);
-               setPendingDrop(null);
-            }}
-            onCancel={() => {
-               setPendingDrop(null);
-            }}
-          />
-        )}
-      </aside>
-    );
-  }
-
   return (
-    <aside className={`sidebar${mobileOpen ? " sidebar--mobile-open" : ""}`}>
-      <div className="sb-top">
-        <div className="sb-logo">
-          <div
-            className={`sb-logo-wrap${logoDetached ? " sb-logo--detached" : ""}${isPatched ? " sb-logo--patched" : ""}`}
-            onClick={handleLogoClick}
-            style={{ cursor: isPatched || logoDetached ? "default" : "pointer" }}
-            title={isPatched ? "" : undefined}
-          >
-            <img className="sb-logo-mark" src="/dots.svg" alt={t("sidebar.appName")} />
-            {isPatched && <span className="sb-logo-patch" aria-hidden>🩹</span>}
-          </div>
-          <span>{t("sidebar.appName")}</span>
-          {logoDetached && !isPatched && (
-            <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title={t("sidebar.ghostWaiting")}>
-              +
-            </button>
-          )}
-        </div>
-        <button className="sb-icon-btn sb-hamburger" onClick={onToggle}>☰</button>
-      </div>
-
-      <div className="sb-body">
-        <nav className="sb-nav">
-          <button className="sb-nav-item sb-nav-item--primary" onClick={() => onNew()}>
-            <Plus weight="bold" />
-            <span>{t("sidebar.newChat")}</span>
-          </button>
-          <button
-            className={`sb-nav-item${activeView === "library" ? " active" : ""}`}
+    <>
+      <SideNav
+        collapsible={{
+          isCollapsed: collapsed,
+          onCollapsedChange: () => onToggle(),
+          hasButton: true,
+          buttonLabel: collapsed ? t("sidebar.expand") : t("sidebar.collapse"),
+        }}
+        header={
+          <SideNavHeading
+            heading={t("sidebar.appName")}
+            icon={
+              <span
+                className={`sb-logo-wrap${logoDetached ? " sb-logo--detached" : ""}${isPatched ? " sb-logo--patched" : ""}`}
+                onClick={handleLogoClick}
+                style={{ cursor: isPatched || logoDetached ? "default" : "pointer" }}
+              >
+                <img className="sb-logo-mark" src="/dots.svg" alt={t("sidebar.appName")} />
+                {isPatched && <span className="sb-logo-patch" aria-hidden>🩹</span>}
+              </span>
+            }
+            headerEndContent={
+              logoDetached && !isPatched ? (
+                <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title={t("sidebar.ghostWaiting")}>
+                  +
+                </button>
+              ) : undefined
+            }
+          />
+        }
+        topContent={
+          <Button
+            variant="primary"
+            label={t("sidebar.newChat")}
+            icon={<Plus weight="bold" />}
+            isIconOnly={collapsed}
+            width={collapsed ? undefined : "100%"}
+            onClick={() => onNew()}
+          />
+        }
+        footer={
+          collapsed ? undefined : (
+            <div className="sb-user" onClick={() => onNavigate("settings")}>
+              <Avatar src={avatarUrl ?? undefined} name={userName || undefined} size={32} />
+              <div className="sb-user-info">
+                <span className="sb-user-name">{userName || t("sidebar.userFallback")}</span>
+                <span className="sb-user-hint">{t("sidebar.settingsHint")}</span>
+              </div>
+              <span className="sb-user-gear"><Gear /></span>
+            </div>
+          )
+        }
+      >
+        <SideNavSection title={t("sidebar.navigation")} isHeaderHidden>
+          <SideNavItem
+            label={t("sidebar.searchTooltip")}
+            icon={MagnifyingGlass}
+            isSelected={activeView === "library"}
             onClick={() => onNavigate("library")}
-          >
-            <MagnifyingGlass />
-            <span>{t("sidebar.searchTooltip")}</span>
-          </button>
-          <button
-            className={`sb-nav-item${activeView === "projects" ? " active" : ""}`}
+          />
+          <SideNavItem
+            label={t("sidebar.projectsButton")}
+            icon={FolderOpen}
+            isSelected={activeView === "projects"}
             onClick={() => onNavigate("projects")}
-          >
-            <FolderOpen />
-            <span>{t("sidebar.projectsButton")}</span>
-          </button>
-          <button
-            className={`sb-nav-item${activeView === "skills" ? " active" : ""}`}
+          />
+          <SideNavItem
+            label={t("sidebar.skillsButton")}
+            icon={Books}
+            isSelected={activeView === "skills"}
             onClick={() => onNavigate("skills")}
-          >
-            <Books />
-            <span>{t("sidebar.skillsButton")}</span>
-          </button>
-          <button
-            className={`sb-nav-item${activeView === "usage" ? " active" : ""}`}
+          />
+          <SideNavItem
+            label={t("sidebar.usageButton")}
+            icon={ChartBar}
+            isSelected={activeView === "usage"}
             onClick={() => onNavigate("usage")}
-          >
-            <ChartBar />
-            <span>{t("sidebar.usageButton")}</span>
-          </button>
-        </nav>
+          />
+        </SideNavSection>
 
-        <div className="sb-groups">
-          {pinned.length > 0 && (
+        {!collapsed && (
+          <div className="sb-groups">
+            {pinned.length > 0 && (
+              <SidebarGroup
+                label={t("sidebar.pinned")}
+                count={pinned.length}
+                storageKey="aic-grp-pinned-v1"
+                defaultOpen
+              >
+                {pinned.map(renderChatItem)}
+              </SidebarGroup>
+            )}
+
             <SidebarGroup
-              label={t("sidebar.pinned")}
-              count={pinned.length}
-              storageKey="aic-grp-pinned-v1"
+              label={t("sidebar.recent")}
+              count={recent.length}
+              storageKey="aic-grp-recent-v1"
               defaultOpen
             >
-              {pinned.map(renderChatItem)}
+              {recent.length > 0
+                ? recent.map(renderChatItem)
+                : <p className="sb-group-empty">{t("sidebar.recentEmpty")}</p>}
             </SidebarGroup>
-          )}
-
-          <SidebarGroup
-            label={t("sidebar.recent")}
-            count={recent.length}
-            storageKey="aic-grp-recent-v1"
-            defaultOpen
-          >
-            {recent.length > 0
-              ? recent.map(renderChatItem)
-              : <p className="sb-group-empty">{t("sidebar.recentEmpty")}</p>}
-          </SidebarGroup>
-        </div>
-      </div>
-
-      {update?.visible && <UpdateBanner update={update} />}
-
-      <div className="sb-foot">
-        <div className="sb-user" onClick={() => onNavigate("settings")}>
-          <AvatarCircle url={avatarUrl} name={userName} size={30} />
-          <div className="sb-user-info">
-            <span className="sb-user-name">{userName || t("sidebar.userFallback")}</span>
-            <span className="sb-user-hint">{t("sidebar.settingsHint")}</span>
           </div>
-          <span className="sb-user-gear"><Gear /></span>
-        </div>
-      </div>
+        )}
+
+        {update?.visible && !collapsed && <UpdateBanner update={update} />}
+      </SideNav>
 
       {pendingDrop && (
         <ConfirmDialog
@@ -450,21 +338,29 @@ export function Sidebar({
       )}
 
       {ghostOpen && <GhostChat onClose={handleGhostClose} />}
-    </aside>
+    </>
   );
 }
 
 /* ── Update Banner (expanded sidebar) ───────────────────────────────────── */
 
-function UpdateBanner({ update }: { update: AppUpdate }) {
+export function UpdateBanner({ update }: { update: AppUpdate }) {
   const { t } = useTranslation();
   const { status, busy, install, dismiss } = update;
 
   if (status.state === "downloading") {
     return (
       <div className="sb-update sb-update--busy">
-        <ArrowClockwise className="spin" />
-        <span className="sb-update-msg">{t("sidebar.updateDownloading", { progress: status.progress })}</span>
+        <div className="sb-update-head">
+          <Spinner size="sm" />
+          <span>{t("sidebar.updateDownloading", { progress: status.progress })}</span>
+        </div>
+        <ProgressBar
+          label={t("sidebar.updateDownloading", { progress: status.progress })}
+          isLabelHidden
+          value={status.progress}
+          variant="accent"
+        />
       </div>
     );
   }
@@ -472,8 +368,11 @@ function UpdateBanner({ update }: { update: AppUpdate }) {
   if (status.state === "installing") {
     return (
       <div className="sb-update sb-update--busy">
-        <ArrowClockwise className="spin" />
-        <span className="sb-update-msg">{t("sidebar.updateInstalling")}</span>
+        <div className="sb-update-head">
+          <Spinner size="sm" />
+          <span>{t("sidebar.updateInstalling")}</span>
+        </div>
+        <ProgressBar label={t("sidebar.updateInstalling")} isLabelHidden isIndeterminate variant="accent" />
       </div>
     );
   }
@@ -481,16 +380,16 @@ function UpdateBanner({ update }: { update: AppUpdate }) {
   if (status.state === "error") {
     return (
       <div className="sb-update sb-update--error">
-        <button className="sb-update-x" onClick={dismiss} title={t("sidebar.updateLater")}><X /></button>
+        <span className="sb-update-x">
+          <IconButton size="sm" variant="ghost" icon={<X />} label={t("sidebar.updateLater")} onClick={dismiss} />
+        </span>
         <div className="sb-update-head">
           <WarningCircle />
           <span>{t("sidebar.updateFailed")}</span>
         </div>
         <div className="sb-update-msg">{status.message}</div>
         <div className="sb-update-actions">
-          <button className="sb-update-btn sb-update-btn--primary" onClick={() => void install()}>
-            {t("sidebar.updateRetry")}
-          </button>
+          <Button variant="primary" size="sm" label={t("sidebar.updateRetry")} onClick={() => void install()} />
         </div>
       </div>
     );
@@ -500,123 +399,29 @@ function UpdateBanner({ update }: { update: AppUpdate }) {
 
   return (
     <div className="sb-update sb-update--available">
+      <span className="sb-update-x">
+        <IconButton
+          size="sm"
+          variant="ghost"
+          icon={<X />}
+          label={t("sidebar.updateLater")}
+          onClick={dismiss}
+          isDisabled={busy}
+        />
+      </span>
       <div className="sb-update-head">
         <CloudArrowDown />
         <span>{t("sidebar.updateAvailable", { version: status.version })}</span>
       </div>
       <div className="sb-update-actions">
-        <button
-          className="sb-update-btn sb-update-btn--primary"
+        <Button
+          variant="primary"
+          size="sm"
+          label={t("sidebar.updateRestart")}
           onClick={() => void install()}
-          disabled={busy}
-        >
-          {t("sidebar.updateRestart")}
-        </button>
-        <button className="sb-update-btn" onClick={dismiss} disabled={busy}>
-          {t("sidebar.updateLater")}
-        </button>
+          isDisabled={busy}
+        />
       </div>
-    </div>
-  );
-}
-
-/* ── Update Chip (collapsed sidebar) ────────────────────────────────────── */
-
-function UpdateChip({ update }: { update: AppUpdate }) {
-  const { t } = useTranslation();
-  const { status, busy, install } = update;
-
-  const title =
-    status.state === "downloading"
-      ? t("sidebar.updateDownloading", { progress: status.progress })
-      : status.state === "installing"
-        ? t("sidebar.updateInstalling")
-        : status.state === "error"
-          ? t("sidebar.updateFailed")
-          : status.state === "available"
-            ? t("sidebar.updateAvailable", { version: status.version })
-            : "";
-
-  return (
-    <button
-      className={`sb-col-update${status.state === "error" ? " sb-col-update--error" : ""}`}
-      onClick={() => void install()}
-      disabled={busy}
-      title={title}
-    >
-      {status.state === "error" ? (
-        <WarningCircle size={16} />
-      ) : busy ? (
-        <ArrowClockwise size={16} className="spin" />
-      ) : (
-        <CloudArrowDown size={16} />
-      )}
-    </button>
-  );
-}
-
-/* ── Context Menu ───────────────────────────────────────────────────────── */
-
-interface ContextMenuProps {
-  x: number;
-  y: number;
-  pinned: boolean;
-  onPin: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}
-
-function ContextMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: ContextMenuProps) {
-  const { t } = useTranslation();
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    // pointerdown covers both mouse and touch dismissals.
-    document.addEventListener("pointerdown", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose]);
-
-  // Adjust so menu doesn't go off screen
-  const style: React.CSSProperties = {
-    position: "fixed",
-    top: y,
-    left: x,
-    zIndex: 9999,
-  };
-
-  return (
-    <div ref={ref} className="ctx-menu" style={style}>
-      <button
-        className="ctx-item"
-        onClick={() => { onPin(); onClose(); }}
-      >
-        <PushPin weight={pinned ? "fill" : "regular"} />
-        {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-      </button>
-      <button
-        className="ctx-item"
-        onClick={() => { onRename(); onClose(); }}
-      >
-        <PencilSimple />
-        {t("sidebar.rename")}
-      </button>
-      <div className="ctx-divider" />
-      <button
-        className="ctx-item ctx-item--danger"
-        onClick={() => { onDelete(); onClose(); }}
-      >
-        <Trash />
-        {t("sidebar.delete")}
-      </button>
     </div>
   );
 }
@@ -699,17 +504,12 @@ function ChatItem({
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [isPinning, setIsPinning] = useState(false);
-
-  // Right-click (desktop) or long-press (touch) opens the context menu.
-  const { bind: longPress, shouldSuppressClick } = useLongPress((x, y) => setMenu({ x, y }));
 
   const handleSelect = useCallback(() => {
     if (editing) return;
-    if (shouldSuppressClick()) return;
     onSelect();
-  }, [editing, shouldSuppressClick, onSelect]);
+  }, [editing, onSelect]);
 
   const handlePin = useCallback(() => {
     setIsPinning(true);
@@ -737,11 +537,34 @@ function ChatItem({
   }, [handleSave]);
 
   return (
-    <>
+    <ContextMenu
+      isDisabled={editing}
+      label={session.title}
+      menuContent={
+        <>
+          <ContextMenuItem
+            icon={<PushPin weight={session.pinned ? "fill" : "regular"} />}
+            label={session.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+            onClick={handlePin}
+          />
+          <ContextMenuItem
+            icon={<PencilSimple />}
+            label={t("sidebar.rename")}
+            onClick={handleStartEdit}
+          />
+          <Divider />
+          <ContextMenuItem
+            icon={<Trash />}
+            label={t("sidebar.delete")}
+            onClick={onDelete}
+            className="ctx-item--danger"
+          />
+        </>
+      }
+    >
       <div
         className={`sb-chat-item${active ? " active" : ""}${session.pinned ? " is-pinned" : ""}${isPinning ? " is-pinning" : ""}${isDragOver ? " is-drag-over" : ""}`}
         onClick={editing ? undefined : handleSelect}
-        {...(editing ? {} : longPress)}
         draggable={!editing}
         onDragStart={!editing ? onDragStart : undefined}
         onDragOver={!editing ? onDragOver : undefined}
@@ -802,72 +625,7 @@ function ChatItem({
           </>
         )}
       </div>
-
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          pinned={!!session.pinned}
-          onPin={handlePin}
-          onRename={handleStartEdit}
-          onDelete={onDelete}
-          onClose={() => setMenu(null)}
-        />
-      )}
-    </>
-  );
-}
-
-/* ── ChatChip (collapsed mode) ──────────────────────────────────────────── */
-
-const CHIP_COLORS = [
-  "sb-chip--a", "sb-chip--b", "sb-chip--c",
-  "sb-chip--d", "sb-chip--e", "sb-chip--f",
-];
-
-function getChipColor(title: string): string {
-  let h = 0;
-  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) | 0;
-  return CHIP_COLORS[Math.abs(h) % CHIP_COLORS.length]!;
-}
-
-function ChatChip({
-  session, active, streaming, isDragOver, onSelect,
-  onDragStart, onDragOver, onDrop, onDragEnd
-}: {
-  session: ChatSession;
-  active: boolean;
-  streaming?: boolean;
-  isDragOver?: boolean;
-  onSelect: () => void;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
-}) {
-  const initial = (session.title[0] ?? "?").toUpperCase();
-  const color = getChipColor(session.title);
-  
-  let className = `sb-chip ${color}`;
-  if (active) className += " sb-chip--active";
-  if (session.pinned) className += " sb-chip--pinned";
-  if (isDragOver) className += " sb-chip--drag-over";
-  if (streaming) className += " sb-chip--streaming";
-
-  return (
-    <button
-      className={className}
-      onClick={onSelect}
-      title={session.title}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
-    >
-      {initial}
-      {streaming && <span className="sb-chip-stream-dot" />}
-    </button>
+    </ContextMenu>
   );
 }
 
@@ -902,27 +660,6 @@ function SidebarGroup({
         <span className="sb-group-count">{count}</span>
       </button>
       {open && <div className="sb-group-body">{children}</div>}
-    </div>
-  );
-}
-
-/* ── AvatarCircle ───────────────────────────────────────────────────────── */
-
-export function AvatarCircle({ url, name, size = 30 }: {
-  url: string | null;
-  name: string;
-  size?: number;
-}) {
-  const letter = name ? name[0]!.toUpperCase() : "?";
-  return (
-    <div
-      className="sb-avatar"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
-    >
-      {url
-        ? <img src={url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : letter
-      }
     </div>
   );
 }

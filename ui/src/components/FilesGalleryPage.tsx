@@ -1,12 +1,16 @@
 /** Files gallery — every uploaded and model-generated file across all chats. */
 
 import { useMemo, useState } from "react";
-import { MagnifyingGlass, X, ArrowSquareOut, ChatCircle, Images } from "@phosphor-icons/react";
+import { ArrowSquareOut, ChatCircle, Images, X } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
 import { collectAllFiles, type GalleryFile } from "../utils/collectAllFiles";
 import { fileExtIcon } from "../utils/toolIcons";
 import { API_BASE, withToken } from "../utils/apiBase";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { Badge } from "@astryxdesign/core/Badge";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { TextInput } from "@astryxdesign/core/TextInput";
 
 interface FilesGalleryPageProps {
   sessions: ChatSession[];
@@ -60,39 +64,39 @@ export function FilesGalleryPage({
       {!embedded && (
         <div className="fg-head">
           <div className="fg-head-title"><Images size={20} weight="duotone" /> {t("filesGallery.title")}</div>
-          <button className="fg-close" onClick={onBack} title={t("filesGallery.close")}>
-            <X size={16} weight="bold" />
-          </button>
+          <Button variant="ghost" isIconOnly icon={<X size={16} weight="bold" />} label={t("filesGallery.close")} onClick={onBack} />
         </div>
       )}
 
       <div className="fg-toolbar">
         {!embedded && (
-          <div className="fg-search">
-            <MagnifyingGlass size={15} />
-            <input
-              value={internalQuery}
-              onChange={(e) => setInternalQuery(e.target.value)}
-              placeholder={t("filesGallery.search")}
-              autoFocus
-            />
-          </div>
+          <TextInput
+            label={t("filesGallery.search")}
+            value={internalQuery}
+            onChange={(value: string) => setInternalQuery(value)}
+            placeholder={t("filesGallery.search")}
+            isLabelHidden
+            hasAutoFocus
+          />
         )}
         <div className="fg-filters">
           {(["all", "attachment", "artifact"] as Filter[]).map((f) => (
-            <button
+            <Button
               key={f}
-              className={`fg-filter${filter === f ? " active" : ""}`}
+              variant={filter === f ? "primary" : "secondary"}
+              size="sm"
+              label={`${t(`filesGallery.filter.${f}`)} ${counts[f]}`}
               onClick={() => setFilter(f)}
-            >
-              {t(`filesGallery.filter.${f}`)} <span className="fg-filter-count">{counts[f]}</span>
-            </button>
+            />
           ))}
         </div>
       </div>
 
       {files.length === 0 ? (
-        <div className="fg-empty">{t("filesGallery.empty")}</div>
+        <EmptyState
+          icon={<Images size={40} weight="thin" />}
+          title={t("filesGallery.empty")}
+        />
       ) : (
         <div className="fg-grid">
           {files.map((f) => {
@@ -110,29 +114,30 @@ export function FilesGalleryPage({
                   ) : (
                     <span className="fg-thumb-ic">{fileExtIcon(f.ext)}</span>
                   )}
-                  <span className={`fg-badge fg-badge--${f.source}`}>
-                    {t(f.source === "attachment" ? "filesGallery.uploaded" : "filesGallery.created")}
-                  </span>
+                  <Badge
+                    variant={f.source === "attachment" ? "blue" : "green"}
+                    label={t(f.source === "attachment" ? "filesGallery.uploaded" : "filesGallery.created")}
+                  />
                 </div>
                 <div className="fg-meta">
                   <div className="fg-name">{f.name}</div>
                   <div className="fg-chat">{f.sessionTitle}</div>
                 </div>
                 <div className="fg-actions">
-                  <button
-                    className="fg-act"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label={t("filesGallery.open")}
+                    icon={<ArrowSquareOut size={14} />}
                     onClick={(e) => { e.stopPropagation(); onOpenFile(f.sessionId, f.path); }}
-                    title={t("filesGallery.open")}
-                  >
-                    <ArrowSquareOut size={14} /> {t("filesGallery.open")}
-                  </button>
-                  <button
-                    className="fg-act"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label={t("filesGallery.gotoChat")}
+                    icon={<ChatCircle size={14} />}
                     onClick={(e) => { e.stopPropagation(); onGotoChat(f.sessionId); }}
-                    title={t("filesGallery.gotoChat")}
-                  >
-                    <ChatCircle size={14} /> {t("filesGallery.gotoChat")}
-                  </button>
+                  />
                 </div>
               </div>
             );

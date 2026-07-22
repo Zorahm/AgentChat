@@ -4,12 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Plus, MagnifyingGlass, DotsThree, Trash, CaretRight, CaretLeft,
-  Folder, LinkSimple, CheckCircle, FileDoc, FileXls, FilePpt, FilePdf, PaintBrush, Sparkle,
+  Folder, LinkSimple, CheckCircle,
+  FileDoc, FileXls, FilePpt, FilePdf, FileCode, FileText, File,
+  PaintBrush, Sparkle,
 } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { ClickableCard } from "@astryxdesign/core/ClickableCard";
+import { Badge } from "@astryxdesign/core/Badge";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { TreeList } from "@astryxdesign/core/TreeList";
+import type { TreeListItemData } from "@astryxdesign/core/TreeList";
+import { Markdown } from "@astryxdesign/core/Markdown";
+import { latexMarkdownPlugins } from "../../utils/latexPlugins";
 import { API_BASE } from "../../utils/apiBase";
 import { playNotificationSound } from "../../utils/notify";
 import { basename } from "../../utils/basename";
-import { Markdown } from "../Markdown/Markdown";
 import { useTranslation } from "react-i18next";
 
 interface SkillInfo {
@@ -60,13 +71,6 @@ function fmtFileSize(bytes: number, t: Tx): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} ${t("skills.fileSizeMb")}`;
 }
 
-function fileExtClass(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (name === "SKILL.md" || ext === "md") return "md";
-  if (ext === "py") return "py";
-  return "";
-}
-
 const BADGE_COLORS = ["bg-1", "bg-2", "bg-3", "bg-4", "bg-5", "bg-6"];
 
 function getBadgeColor(name: string): string {
@@ -77,24 +81,62 @@ function getBadgeColor(name: string): string {
 
 /* ── File tree ──────────────────────────────────────────────────────────── */
 
+function fileIcon(name: string, isDir: boolean): ReactNode {
+  if (isDir) return <Folder size={14} weight="duotone" />;
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (name === "SKILL.md" || ext === "md") return <FileDoc size={14} weight="duotone" />;
+  if (ext === "py") return <FileCode size={14} weight="duotone" />;
+  if (ext === "json" || ext === "yaml" || ext === "yml" || ext === "toml") return <FileText size={14} weight="duotone" />;
+  if (ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx") return <FileCode size={14} weight="duotone" />;
+  if (ext === "xlsx" || ext === "xls" || ext === "csv") return <FileXls size={14} weight="duotone" />;
+  if (ext === "pptx" || ext === "ppt") return <FilePpt size={14} weight="duotone" />;
+  if (ext === "pdf") return <FilePdf size={14} weight="duotone" />;
+  if (ext === "docx" || ext === "doc") return <FileDoc size={14} weight="duotone" />;
+  return <File size={14} weight="duotone" />;
+}
+
+function buildTreeItems(entries: SkillFileEntry[], t: Tx): TreeListItemData[] {
+  if (entries.length === 0) return [];
+
+  const root: TreeListItemData[] = [];
+  const stack: TreeListItemData[] = [];
+
+  for (const f of entries) {
+    const item: TreeListItemData = {
+      id: f.path || `__root__/${f.name}`,
+      label: f.name,
+      startContent: fileIcon(f.name, f.is_dir),
+      endContent: !f.is_dir && f.size > 0
+        ? <span style={{ fontSize: 11, opacity: 0.5, fontFamily: "var(--font-mono)" }}>{fmtFileSize(f.size, t)}</span>
+        : f.is_dir && f.size > 0
+          ? <span style={{ fontSize: 11, opacity: 0.5 }}>{t("skills.fileCount", { count: f.size })}</span>
+          : undefined,
+    };
+
+    while (stack.length > f.depth) stack.pop();
+
+    if (stack.length === 0) {
+      root.push(item);
+    } else {
+      const parent = stack[stack.length - 1]!;
+      if (!parent.children) parent.children = [];
+      parent.children.push(item);
+    }
+
+    if (f.is_dir) stack.push(item);
+  }
+
+  return root;
+}
+
 function SkillTree({ files, t }: { files: SkillFileEntry[]; t: Tx }) {
   if (files.length === 0) {
     return <div className="sk2-tree"><div className="ln faint">{t("skills.emptyTree")}</div></div>;
   }
+  const items = buildTreeItems(files, t);
   return (
     <div className="sk2-tree">
-      {files.map((f) => {
-        const cls = f.is_dir ? "dir" : fileExtClass(f.name);
-        return (
-          <div className="ln" key={f.path || `__root__/${f.name}`} title={f.path || f.name}>
-            {Array.from({ length: f.depth }).map((_, i) => <span className="indent" key={i} />)}
-            <span className={`ic ${cls}`}>{f.is_dir ? "▾" : cls === "md" ? "¶" : "·"}</span>
-            <span className={`nm ${cls}`}>{f.name}{f.is_dir ? "/" : ""}</span>
-            {!f.is_dir && f.size > 0 && <span className="sz">{fmtFileSize(f.size, t)}</span>}
-            {f.is_dir && f.size > 0 && <span className="sz">{t("skills.fileCount", { count: f.size })}</span>}
-          </div>
-        );
-      })}
+      <TreeList items={items} density="compact" />
     </div>
   );
 }
@@ -110,22 +152,11 @@ interface SkillDetailPaneProps {
 
 function SkillDetailPane({ skill, content, files, onUninstall }: SkillDetailPaneProps) {
   const { t } = useTranslation();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
 
   useEffect(() => {
-    setMenuOpen(false);
     setFilesOpen(false);
   }, [skill.name]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const h = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest(".sk2-menu")) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [menuOpen]);
 
   return (
     <div className="sk2-detail-scroll">
@@ -134,16 +165,16 @@ function SkillDetailPane({ skill, content, files, onUninstall }: SkillDetailPane
           <h3>{skill.name}</h3>
           {skill.version && <span className="v">v{skill.version}</span>}
         </div>
-        <div className="sk2-menu" onClick={() => setMenuOpen((v) => !v)}>
-          <DotsThree size={20} weight="bold" />
-          {menuOpen && (
-            <div className="sk2-popover">
-              <div className="pitem" onClick={(e) => { e.stopPropagation(); onUninstall(skill.name); }}>
-                <Trash size={14} /> {t("skills.uninstall")}
-              </div>
-            </div>
-          )}
-        </div>
+        <MoreMenu
+          label={t("skills.actions")}
+          items={[
+            {
+              label: t("skills.uninstall"),
+              icon: <Trash size={14} />,
+              onClick: () => onUninstall(skill.name),
+            },
+          ]}
+        />
       </div>
 
       <div className="sk2-meta">
@@ -153,10 +184,13 @@ function SkillDetailPane({ skill, content, files, onUninstall }: SkillDetailPane
 
       {skill.description && <p className="sk2-desc">{skill.description}</p>}
 
-      <button className="sk2-files-toggle" onClick={() => setFilesOpen((v) => !v)}>
-        <CaretRight size={12} weight="bold" className={filesOpen ? "open" : ""} />
-        {t("skills.files")}{files ? ` · ${files.length}` : ""}
-      </button>
+      <Button
+        label={`${t("skills.files")}${files ? ` · ${files.length}` : ""}`}
+        variant="ghost"
+        icon={<CaretRight size={12} weight="bold" className={filesOpen ? "open" : ""} />}
+        onClick={() => setFilesOpen((v) => !v)}
+        className="sk2-files-toggle"
+      />
       {filesOpen && (
         files ? <SkillTree files={files} t={t} />
               : <div className="sk2-tree"><div className="ln faint">{t("skills.loadingFiles")}</div></div>
@@ -164,7 +198,7 @@ function SkillDetailPane({ skill, content, files, onUninstall }: SkillDetailPane
 
       <div className="sk2-render">
         {content !== undefined ? (
-          <Markdown text={content} className="sk2-readme" stripFrontmatter breaks={false} />
+          <Markdown className="sk2-readme" inlinePlugins={latexMarkdownPlugins}>{content}</Markdown>
         ) : (
           <div className="sk2-readme faint">{t("skills.loadingContent")}</div>
         )}
@@ -204,37 +238,34 @@ function AddSkillPane({
         {CATALOG.map((c) => {
           const installed = installedKeys.has(c.key);
           const busy = installingKey === c.key;
+          const tooltip = [
+            t("skills.catalogAuthor", { author: c.author }),
+            c.requires ? `${t("skills.requires")}: ${c.requires}` : null,
+          ].filter(Boolean).join(" · ");
           return (
-            <div className={`sk2-cat-card${installed ? " installed" : ""}`} key={c.key}>
-              <div className="sk2-cat-ic">{c.icon}</div>
-              <div className="sk2-cat-body">
-                <div className="sk2-cat-label">{t(`skills.catalog.${c.key}.label`)}</div>
-                <div className="sk2-cat-author">{t("skills.catalogAuthor", { author: c.author })}</div>
-                <div className="sk2-cat-desc">{t(`skills.catalog.${c.key}.desc`)}</div>
-                {c.requires && (
-                  <div className="sk2-cat-req">
-                    <span className="sk2-cat-req-lbl">{t("skills.requires")}:</span> {c.requires}
-                    {" · "}
-                    <button
-                      className="sk2-cat-req-link"
-                      onClick={() => window.dispatchEvent(new CustomEvent("navigate", { detail: "settings:terminal" }))}
-                    >
-                      {t("skills.requiresInstall")}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button
-                className={`sk2-cat-btn${installed ? " done" : ""}`}
-                disabled={installed || busy}
+            // ClickableCard's BaseProps deliberately omits `title` (Astryx calls it
+            // a footgun) — wrap it so the author/requires hint is still a native
+            // hover tooltip instead of permanent on-card text.
+            <div key={c.key} title={tooltip}>
+              <ClickableCard
+                label={`${t(`skills.catalog.${c.key}.label`)} — ${installed ? t("skills.installed") : t("skills.install")}`}
                 onClick={() => onInstallCatalog(c.key)}
+                isDisabled={installed || busy}
+                className={`sk2-cat-card${installed ? " installed" : ""}`}
               >
-                {installed
-                  ? <><CheckCircle size={14} weight="fill" /> {t("skills.installed")}</>
-                  : busy
-                    ? `${t("skills.installing")}`
-                    : <><Plus size={14} weight="bold" /> {t("skills.install")}</>}
-              </button>
+                <div className="sk2-cat-ic">{c.icon}</div>
+                <div className="sk2-cat-body">
+                  <div className="sk2-cat-label">{t(`skills.catalog.${c.key}.label`)}</div>
+                  <div className="sk2-cat-desc">{t(`skills.catalog.${c.key}.desc`)}</div>
+                </div>
+                <div className="sk2-cat-status">
+                  {installed
+                    ? <CheckCircle size={16} weight="fill" />
+                    : busy
+                      ? <span className="sk2-cat-spin">⟳</span>
+                      : <Plus size={14} weight="bold" />}
+                </div>
+              </ClickableCard>
             </div>
           );
         })}
@@ -244,26 +275,38 @@ function AddSkillPane({
       <p className="sk2-add-sub">{t("skills.installDescription")}</p>
       <div className="sk2-url-row">
         <div className={`sk2-url${valid ? " detected" : ""}`}>
-          <span className="lead"><LinkSimple size={14} weight="bold" /></span>
-          <input
+          <TextInput
+            label={t("skills.installPlaceholder")}
+            isLabelHidden
             type="text"
             placeholder={t("skills.installPlaceholder")}
             value={source}
-            onChange={(e) => setSource(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !installing && valid && onInstallUrl()}
-            disabled={installing}
+            onChange={(v) => setSource(v)}
+            isDisabled={installing}
+            startIcon={<LinkSimple size={14} weight="bold" />}
+            className="sk2-url-input"
           />
-          <span className="ok">{t("skills.urlFound")}</span>
+          {valid && <span className="ok">{t("skills.urlFound")}</span>}
         </div>
-        <button className="sk2-url-btn" onClick={onInstallUrl} disabled={installing || !valid}>
-          <Plus size={14} weight="bold" /> {t("skills.install")}
-        </button>
+        <Button
+          label={t("skills.install")}
+          variant="primary"
+          icon={<Plus size={14} weight="bold" />}
+          onClick={onInstallUrl}
+          isDisabled={installing || !valid}
+          isLoading={installing}
+          className="sk2-url-btn"
+        />
       </div>
       <div className="sk2-add-hints">
         <span>{t("skills.hintOwner")}</span>
-        <button type="button" className="sk2-link-btn" onClick={onPickFile} disabled={installing}>
-          {t("skills.orSelectFile")}
-        </button>
+        <Button
+          label={t("skills.orSelectFile")}
+          variant="ghost"
+          onClick={onPickFile}
+          isDisabled={installing}
+          className="sk2-link-btn"
+        />
         <span>{t("skills.dragHere")}</span>
       </div>
 
@@ -479,37 +522,55 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
       {/* Left rail — installed list */}
       <aside className="sk2-list">
         <div className="sk2-list-head">
-          {onClose && <button className="sk2-back" onClick={onClose} title={t("skills.back")}>‹</button>}
+          {onClose && <IconButton
+            label={t("skills.back")}
+            icon={<span>‹</span>}
+            variant="ghost"
+            onClick={onClose}
+            className="sk2-back"
+          />}
           <span className="sk2-list-title">{t("skills.title")}</span>
-          <button
-            className={`sk2-add-btn${selected === null ? " active" : ""}`}
+          <IconButton
+            label={t("skills.addTitle")}
+            icon={<Plus size={16} weight="bold" />}
+            variant={selected === null ? "primary" : "secondary"}
             onClick={() => { setSelected(null); setError(null); setView("detail"); }}
-            title={t("skills.addTitle")}
-          >
-            <Plus size={16} weight="bold" />
-          </button>
+            className={`sk2-add-btn${selected === null ? " active" : ""}`}
+          />
         </div>
         <div className="sk2-search">
-          <MagnifyingGlass size={13} />
-          <input
+          <TextInput
+            label={t("skills.searchPlaceholder")}
+            isLabelHidden
             placeholder={t("skills.searchPlaceholder")}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(v) => setSearch(v)}
+            startIcon={<MagnifyingGlass size={13} />}
+            className="sk2-search-input"
           />
         </div>
         <div className="sk2-list-scroll">
           {filtered.map((s) => (
-            <button
+            <Button
               key={s.name}
-              className={`sk2-row${selected === s.name ? " active" : ""}`}
+              label={s.name}
+              variant={selected === s.name ? "primary" : "ghost"}
               onClick={() => { setSelected(s.name); setView("detail"); }}
+              className={`sk2-row${selected === s.name ? " active" : ""}`}
+              width="100%"
             >
-              <span className={`sk2-row-badge ${getBadgeColor(s.name)}`}>{s.name[0]?.toUpperCase() ?? "?"}</span>
-              <span className="sk2-row-info">
-                <span className="sk2-row-name">{s.name}</span>
-                {s.description && <span className="sk2-row-desc">{s.description}</span>}
+              <span className="sk2-row-content">
+                <Badge
+                  label={s.name[0]?.toUpperCase() ?? "?"}
+                  variant="blue"
+                  className={`sk2-row-badge ${getBadgeColor(s.name)}`}
+                />
+                <span className="sk2-row-info">
+                  <span className="sk2-row-name">{s.name}</span>
+                  {s.description && <span className="sk2-row-desc">{s.description}</span>}
+                </span>
               </span>
-            </button>
+            </Button>
           ))}
           {filtered.length === 0 && (
             <div className="sk2-list-empty">{search ? t("skills.emptySearch") : t("skills.emptyAll")}</div>
@@ -522,9 +583,13 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
           (see CSS) rather than stacked underneath it, with its own back bar. */}
       <section className="sk2-detail">
         <div className="sk2-detail-mobbar">
-          <button className="sk2-mob-back" onClick={() => setView("list")} aria-label={t("skills.back")} title={t("skills.back")}>
-            <CaretLeft size={20} weight="bold" />
-          </button>
+          <IconButton
+            label={t("skills.back")}
+            icon={<CaretLeft size={20} weight="bold" />}
+            variant="ghost"
+            onClick={() => setView("list")}
+            className="sk2-mob-back"
+          />
           <span className="sk2-detail-mobbar-title">{activeSkill ? activeSkill.name : t("skills.addTitle")}</span>
         </div>
         {activeSkill ? (

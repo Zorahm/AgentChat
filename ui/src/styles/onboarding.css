@@ -78,22 +78,6 @@
   font-weight: 600;
 }
 
-.ob-rail-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid var(--line-2);
-  background: var(--surface);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  flex-shrink: 0;
-  color: inherit;
-}
-
 .ob-rail-step.active .ob-rail-badge {
   background: var(--ink);
   border-color: var(--ink);
@@ -195,10 +179,7 @@
   font-weight: 600;
   color: var(--ink-soft);
   margin: 0 0 6px;
-}
-
-.ob-input,
-.ob-select {
+}.ob-input{
   width: 100%;
   padding: 11px 14px;
   background: var(--paper);
@@ -211,10 +192,7 @@
   transition: border-color 0.15s;
 }
 
-.ob-input::placeholder { color: var(--faint); }
-
-.ob-input:focus,
-.ob-select:focus {
+.ob-input::placeholder { color: var(--faint); }.ob-input:focus{
   outline: none;
   border-color: var(--ink);
 }
@@ -258,11 +236,6 @@
   background: var(--surface-2);
   color: var(--ink);
   border-color: var(--ink-soft);
-}
-
-.ob-btn--small {
-  padding: 5px 12px;
-  font-size: 12px;
 }
 
 /* ── Shell choice ── */
@@ -332,23 +305,6 @@
   background: var(--ok-soft);
 }
 
-.ob-dep-recheck {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--line-2);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.ob-dep-recheck:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
-.ob-dep-recheck:disabled { opacity: 0.5; cursor: default; }
-
 .ob-dep-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -403,18 +359,6 @@
   gap: 10px;
   margin-top: 14px;
 }
-
-.ob-log-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  font-family: var(--font-body);
-  text-decoration: underline;
-  padding: 4px;
-}
-.ob-log-toggle:hover { color: var(--ink-soft); }
 
 /* ── WSL credentials (slot inside the dependency card) ── */
 
@@ -493,8 +437,6 @@
 .mc-choice:hover,
 .mc-choice:active { border-color: var(--accent); }
 .mc-choice > svg { color: var(--accent); }
-.mc-choice-title { font-weight: 600; font-size: 15px; }
-.mc-choice-sub { font-size: 12px; color: var(--muted); }
 
 /* Scanning: page background is stripped to transparent (set inline in JS) so
    the native camera shows through; only this overlay is painted. */
@@ -521,7 +463,6 @@
   font-size: 14px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
-.mc-scan-cancel { background: rgba(0, 0, 0, 0.6); color: #fff; }
 
 /* Connecting: shown inside the normal card while we verify the backend. */
 .mc-connecting {

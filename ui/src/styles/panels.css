@@ -34,17 +34,6 @@
   display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1;
 }
 
-.ap-tab-btn {
-  width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent;
-  background: transparent; color: var(--muted);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s;
-}
-.ap-tab-btn:hover { background: var(--hover); color: var(--ink-2); }
-.ap-tab-btn.active {
-  background: var(--surface-2); color: var(--ink);
-  border-color: var(--line-2);
-}
 
 .ap-head-name {
   font-size: 13px; font-weight: 500; color: var(--ink);
@@ -58,25 +47,7 @@
 }
 
 /* Install-skill button — shown only when previewing a SKILL.md */
-.ap-skill-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-right: 5px; padding: 5px 11px;
-  border: 1px solid var(--ink); border-radius: 7px;
-  background: var(--ink); color: var(--bg);
-  cursor: pointer; white-space: nowrap;
-  font-size: 12.5px; font-weight: 600; font-family: var(--font-body);
-  transition: opacity .12s, background .12s, color .12s, border-color .12s;
-}
-.ap-skill-btn:hover:not(:disabled) { opacity: .88; }
-.ap-skill-btn:disabled { cursor: default; }
-.ap-skill-btn--done {
-  background: transparent; color: var(--ok, #4caf50); opacity: 1;
-  border-color: color-mix(in srgb, var(--ok, #4caf50) 40%, var(--line-2));
-}
-.ap-skill-btn--error {
-  background: transparent; color: var(--err);
-  border-color: var(--err-line, var(--err));
-}
+/* (Now uses Astryx Button component) */
 
 /* Download / Copy styled buttons */
 .ap-copy-btn {
@@ -89,36 +60,12 @@
   font-family: var(--font-body);
   white-space: nowrap;
 }
-.ap-copy-btn:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
-.ap-copy-btn:disabled { opacity: .4; cursor: default; }
 
 /* Split button: Download + dropdown arrow */
 .ap-split-btn {
   display: inline-flex; align-items: center;
   border: 1px solid var(--line-2); border-radius: 7px;
   overflow: hidden;
-}
-.ap-split-btn__main, .ap-split-btn__arrow {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: transparent; border: none; cursor: pointer;
-  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
-  font-family: var(--font-body);
-  white-space: nowrap; transition: background .12s, color .12s;
-}
-.ap-split-btn__main {
-  padding: 4px 4px 4px 10px;
-}
-.ap-split-btn__arrow {
-  padding: 4px 6px;
-}
-.ap-split-btn__main:hover:not(:disabled), .ap-split-btn__arrow:hover:not(:disabled) {
-  color: var(--ink); background: var(--hover);
-}
-.ap-split-btn__main:disabled, .ap-split-btn__arrow:disabled {
-  opacity: .4; cursor: default;
-}
-.ap-split-btn__main:disabled:hover, .ap-split-btn__arrow:disabled:hover {
-  background: transparent; color: var(--ink-2);
 }
 
 /* Dropdown wrap (position anchor for the dropdown menu) */
@@ -139,39 +86,14 @@
 .ap-drop-item:hover { background: var(--hover); }
 
 /* Icon-only buttons (refresh, close) */
-.ap-icon-btn {
-  width: 28px; height: 28px; border-radius: 6px; border: none;
-  background: transparent; color: var(--muted);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s;
-}
-.ap-icon-btn:hover { background: var(--hover); color: var(--ink); }
-.ap-icon-btn:disabled { opacity: .4; cursor: default; }
-.ap-icon-btn--close:hover { color: var(--err); }
+/* (Now uses Astryx IconButton component) */
 
 .art-panel-placeholder {
   flex: 1; display: flex; align-items: center; justify-content: center;
   color: var(--faint); font-size: 14px; text-align: center; padding: 32px;
   font-style: italic;
 }
-
-.art-live-badge {
-  font-family: var(--font-mono); font-size: 10px; color: var(--running);
-  background: #fcf8ef; border: 1px solid #e8d3a3;
-  padding: 2px 8px; border-radius: 99px; margin-right: 4px;
-  animation: pulse 1.2s ease-in-out infinite;
-}
 @keyframes pulse { 50% { opacity: .4; } }
-
-.art-icon-btn {
-  width: 28px; height: 28px; border-radius: var(--radius-sm); border: none;
-  background: transparent; color: var(--muted);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 14px; cursor: pointer; flex-shrink: 0;
-}
-.art-icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-.art-icon-btn:disabled { opacity: .35; cursor: default; }
-.art-icon-btn--close:hover { color: var(--err) !important; }
 
 /* content area */
 .art-content {
@@ -271,13 +193,7 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .azm-tabs { display: inline-flex; gap: 2px; flex-shrink: 0; }
-.azm-tab {
-  padding: 3px 10px; border: none; background: transparent; cursor: pointer;
-  border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--muted);
-  font-family: var(--font-body); transition: background .12s, color .12s;
-}
-.azm-tab:hover { color: var(--ink); }
-.azm-tab.active { background: var(--ink); color: var(--bg); }
+/* .azm-tab — now uses Astryx Button component */
 
 .azm-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .azm-md { padding: 18px 20px; }
@@ -331,31 +247,11 @@
   background: var(--surface);
 }
 
-/* skeleton placeholder while the widget HTML is still being generated */
+/* skeleton placeholder while the widget HTML is still being generated —
+   rows are Astryx Skeleton components; this just lays them out. */
 .widget-skeleton {
   display: flex; flex-direction: column; gap: 12px;
   padding: 16px;
-}
-.widget-skel {
-  border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--hover) 25%,
-    var(--surface-2) 37%,
-    var(--hover) 63%
-  );
-  background-size: 400% 100%;
-  animation: widget-shimmer 1.4s ease-in-out infinite;
-}
-.widget-skel-bar { height: 14px; }
-.widget-skel-chart { height: 200px; border-radius: var(--radius); }
-.widget-skel-row { height: 11px; }
-@keyframes widget-shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: 0 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .widget-skel { animation: none; opacity: 0.7; }
 }
 
 /* ── File live preview (old panel, kept for fallback) ──────────────────── */
@@ -363,62 +259,17 @@
   display: flex; flex-direction: column;
   background: var(--surface-2); border-left: 1px solid var(--line); min-width: 0;
 }
-.pv-placeholder {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  color: var(--faint); font-size: 14px; text-align: center; padding: 24px; font-style: italic;
-}
-.pv-tabs {
-  display: flex; border-bottom: 1px solid var(--line);
-  background: var(--surface); overflow-x: auto; scrollbar-width: none;
-}
-.pv-tab {
-  padding: 8px 14px; font-family: var(--font-mono); font-size: 11px;
-  border-right: 1px solid var(--line); cursor: pointer;
-  color: var(--muted); max-width: 140px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
-}
 .pv-tab.active { background: var(--surface); color: var(--ink); font-weight: 500; }
 .pv-tab .done-mark { color: var(--ok); }
 .pv-tab .dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--running);
   display: inline-block; animation: pulse 1.2s ease-in-out infinite;
 }
-.pv-head {
-  padding: 8px 14px; display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: 11px;
-  background: var(--surface-2); color: var(--muted);
-}
-.pv-writing { color: var(--running); display: flex; align-items: center; gap: 6px; }
-.pv-code {
-  flex: 1; padding: 14px 0; font-family: var(--font-mono); font-size: 11.5px;
-  line-height: 1.7; overflow-y: auto; background: var(--surface);
-}
-.pv-ln { display: flex; gap: 14px; padding: 0 16px; }
-.pv-lnno { color: var(--faint); width: 20px; text-align: right; user-select: none; flex-shrink: 0; }
-.pv-foot {
-  padding: 6px 14px; border-top: 1px solid var(--line);
-  font-family: var(--font-mono); font-size: 10px; color: var(--faint);
-  display: flex; justify-content: space-between; background: var(--surface-2);
-}
 
 /* ── Skills manager (sk) ─────────────────────────────────────────────── */
 .sk {
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden; background: var(--bg);
-}
-
-.sk-back {
-  background: none; border: none; cursor: pointer;
-  font-family: var(--font-body); font-size: 13px; font-weight: 600;
-  color: var(--ink); padding: 6px 10px; border-radius: 6px;
-  flex-shrink: 0;
-}
-.sk-back:hover { background: var(--hover); }
-
-.sk-top {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 18px; padding: 22px 26px 18px;
-  border-bottom: 1px solid var(--line); flex-shrink: 0;
 }
 .sk-top h3 {
   font-family: var(--font-hand); font-weight: 400; font-size: 28px;
@@ -430,44 +281,9 @@
 }
 .sk-top .lede { color: var(--muted); font-size: 13.5px; margin: 0; max-width: 520px; }
 .sk-top .actions { display: flex; gap: 8px; align-items: center; }
-
-.pill-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border: 1px solid var(--line-2);
-  background: var(--surface); border-radius: 8px;
-  font-size: 13px; color: var(--ink-2); font-weight: 500;
-  cursor: pointer; font-family: var(--font-body);
-}
-.pill-btn:hover { background: var(--hover); color: var(--ink); }
 .pill-btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
 .pill-btn.primary:hover { background: #000; }
-.pill-btn:disabled { opacity: .45; cursor: default; }
-
-.sk-install {
-  padding: 18px 26px 20px; background: var(--surface-2);
-  border-bottom: 1px solid var(--line); flex-shrink: 0;
-}
-
-.sk-segmented {
-  display: inline-flex; gap: 2px;
-  background: var(--bg); border: 1px solid var(--line);
-  border-radius: 8px; padding: 3px; margin-bottom: 12px;
-}
-.sk-seg {
-  padding: 6px 12px; border-radius: 6px;
-  font-size: 12.5px; color: var(--muted); font-weight: 500;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
-}
 .sk-seg.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(20,20,18,.06); }
-
-.sk-source { display: flex; gap: 8px; align-items: stretch; }
-.sk-source-input {
-  flex: 1; display: flex; align-items: center; gap: 10px;
-  padding: 0 14px; background: var(--surface);
-  border: 1px solid var(--line-2); border-radius: 10px;
-  min-height: 42px; font-size: 14px; transition: border-color .15s;
-}
-.sk-source-input:focus-within { border-color: var(--ink-2); }
 .sk-source-input .lead {
   font-family: var(--font-mono); font-size: 12px; color: var(--faint);
   border-right: 1px solid var(--line); padding-right: 10px;
@@ -477,131 +293,26 @@
   flex: 1; font: inherit; color: var(--ink);
   font-family: var(--font-mono); font-size: 13.5px;
 }
-
-.sk-progress {
-  margin-top: 12px; display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: 8px; font-size: 13px;
-}
-.sk-spin {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid var(--line-2); border-top-color: var(--accent);
-  animation: sk-spin 1s linear infinite; flex-shrink: 0;
-}
 @keyframes sk-spin { to { transform: rotate(360deg); } }
-.sk-steps { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
-
-.sk-error {
-  margin-top: 12px; color: var(--err); font-size: 13px;
-  padding: 8px 12px; background: #fdf2f2; border: 1px solid #f0c4c4;
-  border-radius: var(--radius-sm);
-}
-
-.sk-tools {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 26px; border-bottom: 1px solid var(--line); flex-shrink: 0;
-}
-.sk-search {
-  flex: 1; max-width: 340px; display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px;
-  background: var(--surface-2); font-size: 13px;
-}
 .sk-search input {
   border: none; background: transparent; outline: none; flex: 1;
   font: inherit; color: var(--ink);
 }
 .sk-search input::placeholder { color: var(--faint); }
 .sk-search svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--muted); }
-
-.sk-list {
-  flex: 1; overflow-y: auto; padding: 8px; background: var(--bg);
-}
-.sk-card {
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 10px; margin-bottom: 8px; overflow: hidden;
-  transition: border-color .15s, box-shadow .15s;
-}
-.sk-card:last-child { margin-bottom: 0; }
-.sk-card:hover { border-color: var(--line-2); box-shadow: 0 2px 6px -2px rgba(20,20,18,.06); }
 .sk-card.expanded { box-shadow: 0 4px 16px -6px rgba(20,20,18,.10); border-color: var(--line-2); }
-
-.skc-head {
-  display: grid;
-  grid-template-columns: 42px 1fr auto auto;
-  align-items: center; gap: 14px;
-  padding: 14px 16px; cursor: pointer;
-}
-.skc-badge {
-  width: 42px; height: 42px; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-hand); font-size: 20px; color: #fff;
-  box-shadow: inset 0 -1px 1px rgba(0,0,0,.08); flex-shrink: 0;
-}
-.bg-h-1 { background: linear-gradient(135deg, #c4a484, #8b6f4e); }
-.bg-h-2 { background: linear-gradient(135deg, #8ba89a, #5a7a6a); }
-.bg-h-3 { background: linear-gradient(135deg, #b08aaa, #7c5a8a); }
-.bg-h-4 { background: linear-gradient(135deg, #c79b6b, #a07040); }
-.bg-h-5 { background: linear-gradient(135deg, #6b8aa8, #45607a); }
-.bg-h-6 { background: linear-gradient(135deg, #b8a86c, #8a7a40); }
-
-.skc-info { min-width: 0; }
-.skc-name {
-  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-  font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.2;
-}
 .skc-name .version {
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
   font-weight: 400; letter-spacing: .3px;
 }
 .skc-name .author { font-size: 12px; color: var(--muted); font-weight: 400; }
-.skc-desc {
-  font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 3px;
-  overflow: hidden; text-overflow: ellipsis;
-  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
-}
-
-.skc-source {
-  display: flex; align-items: center; gap: 5px;
-  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
-  padding: 4px 8px; border-radius: 6px;
-  cursor: pointer; text-decoration: none;
-}
-.skc-source:hover { background: var(--hover); color: var(--ink-2); }
 .skc-source .gh { font-size: 8px; }
-
-.skc-menu {
-  width: 30px; height: 30px; border-radius: 7px;
-  color: var(--muted); font-size: 16px;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; position: relative;
-}
-.skc-menu:hover { background: var(--hover); color: var(--ink); }
-
-.skc-popover {
-  position: absolute; top: 100%; right: 0; margin-top: 4px;
-  width: 210px; background: var(--surface);
-  border: 1px solid var(--line-2); border-radius: 8px;
-  box-shadow: 0 10px 28px -10px rgba(20,20,18,.18), 0 0 0 1px var(--line);
-  overflow: hidden; z-index: 5;
-}
-.pop-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px; font-size: 13px; color: var(--ink-2); cursor: pointer;
-}
-.pop-item:hover { background: var(--hover); color: var(--ink); }
 .pop-item .ic { width: 16px; color: var(--muted); display: flex; justify-content: center; flex-shrink: 0; }
-
-.skc-body {
-  border-top: 1px solid var(--line); background: var(--surface-2);
-  padding: 16px 20px 18px;
-  display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px;
-}
 .skc-body h6 {
   font-family: var(--font-mono); font-size: 10px; color: var(--faint);
   letter-spacing: 1px; text-transform: uppercase;
   margin: 0 0 8px; font-weight: 500;
 }
-.skc-readme { font-size: 13px; color: var(--ink-2); line-height: 1.55; }
 .skc-readme p { margin: 0 0 8px; }
 .skc-readme code {
   font-family: var(--font-mono); font-size: 12px;
@@ -609,46 +320,18 @@
   padding: 1px 5px; border-radius: 4px; color: var(--ink);
 }
 .skc-readme .more { font-size: 12px; color: var(--accent); cursor: pointer; font-weight: 500; }
-
-.skc-stat {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px;
-}
-.skc-stat:last-child { border-bottom: none; }
 .skc-stat .key { color: var(--muted); }
 .skc-stat .val { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
 .skc-stat .val.linked { color: var(--accent); cursor: pointer; }
-
-.sk-empty {
-  padding: 40px 20px; text-align: center;
-  color: var(--faint); font-size: 13px; font-style: italic;
-}
 
 /* ── Skill detail view ────────────────────────────────────────────────── */
 .sk-detail {
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
 }
-.sk-detail-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 20px; border-bottom: 1px solid var(--line);
-  flex-shrink: 0; background: var(--surface);
-}
-.sk-detail-back {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: none; border: none; cursor: pointer;
-  font-size: 13px; font-weight: 600; color: var(--ink-2);
-  padding: 5px 8px; border-radius: 6px;
-  font-family: var(--font-body);
-}
-.sk-detail-back:hover { background: var(--hover); color: var(--ink); }
 .sk-detail-head h3 {
   font-family: var(--font-hand); font-weight: 400; font-size: 22px;
   margin: 0; letter-spacing: -.2px;
-}
-
-.sk-detail-body {
-  flex: 1; display: flex; overflow: hidden; min-height: 0;
 }
 
 /* File tree — left pane */
@@ -658,53 +341,14 @@
   display: flex; flex-direction: column;
   background: var(--surface-2); flex-shrink: 0;
 }
-.sk-tree-head {
-  font-family: var(--font-mono); font-size: 10px;
-  text-transform: uppercase; letter-spacing: 1px;
-  color: var(--faint); font-weight: 600;
-  padding: 10px 12px 6px; flex-shrink: 0;
-}
-.sk-tree-list {
-  flex: 1; overflow-y: auto; padding: 2px 0;
-}
-.sk-tree-item {
-  display: flex; align-items: center; gap: 5px;
-  padding: 3px 8px 3px 0; font-size: 12.5px;
-  color: var(--ink-2); cursor: default;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sk-tree-item:hover { background: var(--hover); }
 .sk-tree-item.dir { font-weight: 500; color: var(--ink); }
-.sk-tree-ic { flex-shrink: 0; }
 .sk-tree-ic.dir { color: var(--accent); }
 .sk-tree-ic.file { color: var(--muted); }
-.sk-tree-name {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
-}
-.sk-tree-size {
-  font-family: var(--font-mono); font-size: 10px;
-  color: var(--faint); flex-shrink: 0; margin-left: 4px;
-}
-.sk-tree-empty {
-  padding: 20px 12px; text-align: center;
-  color: var(--faint); font-size: 12px; font-style: italic;
-}
 
 /* SKILL.md render — right pane */
 .sk-render {
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; overflow: hidden; background: var(--surface);
-}
-.sk-render-head {
-  font-family: var(--font-mono); font-size: 10px;
-  text-transform: uppercase; letter-spacing: 1px;
-  color: var(--faint); font-weight: 600;
-  padding: 10px 20px 6px; flex-shrink: 0;
-  border-bottom: 1px solid var(--line);
-}
-.sk-render-body {
-  flex: 1; overflow-y: auto; padding: 20px 24px;
-  font-size: 14px; line-height: 1.65; color: var(--ink-2);
 }
 .sk-render-body h1 {
   font-family: var(--font-hand); font-weight: 400; font-size: 26px;
@@ -743,14 +387,6 @@
   border: 1px solid var(--line); padding: 6px 10px; font-size: 13px;
 }
 .sk-render-body th { background: var(--surface-2); font-weight: 600; }
-.sk-render-loading {
-  display: flex; align-items: center; justify-content: center;
-  height: 100%; color: var(--faint); font-size: 13px;
-}
-.sk-render-empty {
-  display: flex; align-items: center; justify-content: center;
-  height: 100%; color: var(--faint); font-size: 13px; font-style: italic;
-}
 
 /* ── Files panel (general overview) ───────────────────────────────────── */
 .files-panel {
@@ -766,12 +402,7 @@
   background: var(--surface-2);
 }
 .fp-head-title { font-size: 14px; font-weight: 500; color: var(--ink); }
-.fp-head-close {
-  width: 28px; height: 28px; border: none; background: transparent;
-  color: var(--muted); cursor: pointer; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-}
-.fp-head-close:hover { background: var(--hover); color: var(--ink); }
+/* .fp-head-close — now uses Astryx IconButton component */
 .fp-scroll {
   flex: 1; overflow-y: auto; padding: 4px 0;
 }

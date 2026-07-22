@@ -29,26 +29,8 @@
   margin-left: auto; flex-shrink: 0;
   display: inline-flex; align-items: center; gap: 8px;
 }
-.art-card-btn {
-  flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 16px;
-  border: 1px solid var(--line-2); border-radius: 10px;
-  background: var(--surface); color: var(--ink);
-  font-size: 13px; font-weight: 600; cursor: pointer;
-  transition: background .12s, border-color .12s, opacity .12s;
-  white-space: nowrap;
-}
-.art-card-btn--icon { padding: 9px 10px; }
-.art-card-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
-.art-card-btn:hover:not(:disabled) { background: var(--hover); border-color: var(--accent); }
-.art-card-btn:disabled { opacity: .7; cursor: default; }
-.art-card-btn--err { color: var(--err); border-color: var(--err-line, var(--err)); }
-.art-card-btn-spin { animation: art-card-spin .9s linear infinite; }
-@keyframes art-card-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 480px) {
   .art-card { padding: 12px 12px; gap: 10px; }
   .art-card-icon { width: 38px; height: 38px; }
-  .art-card-btn { padding: 8px 12px; font-size: 12.5px; gap: 5px; }
 }

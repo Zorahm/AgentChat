@@ -5,29 +5,6 @@
   gap: 16px; margin-bottom: 16px;
 }
 .st2-models-head .st2-h, .st2-models-head .st2-sub { margin-bottom: 0; }
-.st2-models-head .st2-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  flex-shrink: 0;
-}
-.st2-models-head .st2-btn svg.spin {
-  animation: st2-spin 1s linear infinite;
-}
-
-.st2-models-select {
-  font-family: var(--font-mono); font-size: 13px;
-  border: 1px solid var(--line-2); background: var(--paper, var(--surface));
-  padding: 8px 12px; width: 100%; max-width: 420px;
-  outline: none; color: var(--ink);
-  border-radius: 8px;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
-  transition: border-color .15s;
-}
-.st2-models-select:focus { border-color: var(--ink); }
 .st2-models-select optgroup {
   font-family: var(--font-mono); font-size: 11px;
   color: var(--muted); font-weight: 600;
@@ -116,15 +93,6 @@
   border-radius: 7px;
   padding: 2px;
 }
-.st2-iter-preset {
-  appearance: none; border: none; background: transparent;
-  font-family: var(--font-mono); font-size: 12px;
-  padding: 5px 11px; border-radius: 5px;
-  color: var(--muted); cursor: pointer;
-  font-weight: 500;
-  transition: background .12s, color .12s;
-}
-.st2-iter-preset:hover { color: var(--ink); }
 .st2-iter-preset.active {
   background: var(--surface, var(--paper));
   color: var(--ink);

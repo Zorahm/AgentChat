@@ -11,6 +11,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowClockwise, CheckCircle, XCircle } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
 
 export interface DepItem {
   key: string;
@@ -64,7 +66,7 @@ export function DependencyCard({
   const open = logOpen;
 
   return (
-    <div className="ob-dep-card">
+    <Card>
       <div className="ob-dep-head">
         <span className="ob-dep-title">{title}</span>
         <span className={`ob-dep-summary${allOk ? " ok" : ""}`}>
@@ -72,14 +74,14 @@ export function DependencyCard({
             ? t("onboarding.allSet")
             : t("onboarding.depsReady", { ready, total: items.length })}
         </span>
-        <button
-          className="ob-dep-recheck"
+        <Button
+          variant="ghost"
+          isIconOnly
+          icon={<ArrowClockwise size={14} className={rechecking ? "ob-spin" : undefined} />}
+          label={t("onboarding.recheck")}
           onClick={onRecheck}
-          disabled={rechecking}
-          title={t("onboarding.recheck")}
-        >
-          <ArrowClockwise size={14} className={rechecking ? "ob-spin" : undefined} />
-        </button>
+          isDisabled={rechecking}
+        />
       </div>
 
       <div className="ob-dep-list">
@@ -100,19 +102,24 @@ export function DependencyCard({
         {allOk ? (
           <span className="ob-success ob-success--inline">{t("onboarding.allSet")}</span>
         ) : showInstall && onInstall ? (
-          <button className="ob-btn" onClick={onInstall} disabled={installDisabled}>
-            {installLabel}
-          </button>
+          <Button
+            variant="primary"
+            label={installLabel ?? t("onboarding.install")}
+            onClick={onInstall}
+            isDisabled={installDisabled}
+          />
         ) : null}
         {secondaryActions}
         {(log || installing) && (
-          <button className="ob-log-toggle" onClick={() => setLogOpen((o) => !o)}>
-            {open ? t("onboarding.hideLog") : t("onboarding.showLog")}
-          </button>
+          <Button
+            variant="ghost"
+            label={open ? t("onboarding.hideLog") : t("onboarding.showLog")}
+            onClick={() => setLogOpen((o) => !o)}
+          />
         )}
       </div>
 
       {log && open && <pre className="ob-log">{log}</pre>}
-    </div>
+    </Card>
   );
 }

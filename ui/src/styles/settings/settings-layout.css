@@ -37,15 +37,6 @@
   width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
 }
 
-.st2-back {
-  display: block; width: 100%; text-align: left;
-  background: none; border: none; cursor: pointer;
-  font-family: var(--font-body); font-size: 13px; font-weight: 600;
-  color: var(--ink); padding: 8px 12px; margin-bottom: 6px;
-  border-radius: 6px;
-}
-.st2-back:hover { background: var(--paper); }
-
 .st2-group {
   font-family: var(--font-mono);
   font-size: 10px;

@@ -28,8 +28,15 @@
 /* ── Message stream ────────────────────────────────────────────────────── */
 .chat-scroll {
   flex: 1; min-height: 0;
-  padding: 32px 64px 16px;
+  padding: 32px 24px 16px;
   overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+/* Centered reading column, same fixed width as .composer-shell so the whole
+ * conversation (not just the composer) reads as one aligned column instead
+ * of assistant text hugging the left edge on wide screens. */
+.chat-scroll-inner {
+  width: 640px; max-width: 100%; margin: 0 auto;
   display: flex; flex-direction: column; gap: 24px;
 }
 
@@ -38,10 +45,10 @@
   align-self: flex-end; align-items: flex-end;
   max-width: 560px;
 }
+/* The Astryx <ChatMessageBubble variant="filled"> provides the bubble bg,
+   padding and radius now — this inner node only carries typography + collapse. */
 .msg-user-bubble {
-  background: var(--user-bg); color: #fff;
-  padding: 11px 16px;
-  border-radius: 18px 18px 4px 18px;
+  color: inherit;
   font-size: 16px; line-height: 1.55;
 }
 .msg-user-bubble strong, .msg-user-bubble b { font-weight: 600; }
@@ -58,7 +65,7 @@
   content: "";
   position: absolute; bottom: 0; left: 0; right: 0;
   height: 2em;
-  background: linear-gradient(transparent, var(--user-bg));
+  background: linear-gradient(transparent, var(--color-background-body));
   pointer-events: none;
 }
 .msg-assistant {
@@ -76,23 +83,6 @@
 .msg:focus-within .msg-actions { opacity: 1; }
 
 .msg-actions--compact {}
-
-.msg-act-btn {
-  width: 30px; height: 30px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 15px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0;
-}
-.msg-act-btn:hover:not(:disabled) {
-  background: var(--hover); color: var(--ink);
-}
-.msg-act-btn:disabled {
-  opacity: .35; cursor: not-allowed;
-}
 
 /* ── Inline editor for user message ──────────────────────────────── */
 .msg-user--editing {
@@ -125,54 +115,12 @@
   display: flex; justify-content: flex-end; gap: 8px;
   margin-top: 8px;
 }
-.msg-edit-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 30px; padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, opacity .15s;
-}
-.msg-edit-btn:hover:not(:disabled) {
-  background: var(--hover);
-}
-.msg-edit-btn--primary {
-  background: var(--user-bg);
-  color: #fff;
-  border-color: transparent;
-}
-.msg-edit-btn--primary:hover:not(:disabled) {
-  background: var(--user-bg);
-  filter: brightness(1.08);
-}
-.msg-edit-btn:disabled {
-  opacity: .4; cursor: not-allowed;
-}
 
 /* ── Variant navigation ──────────────────────────────────────────── */
 .msg-variant-nav {
   display: flex; align-items: center; gap: 6px;
   height: 24px;
   margin-bottom: 4px;
-}
-.msg-variant-arrow {
-  width: 22px; height: 22px;
-  border-radius: 5px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 11px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0;
-}
-.msg-variant-arrow:hover:not(:disabled) {
-  background: var(--hover); color: var(--ink);
-}
-.msg-variant-arrow:disabled {
-  opacity: .35; cursor: default;
 }
 .msg-variant-label {
   font-family: var(--font-mono);
@@ -190,19 +138,6 @@
 .msg-user-foot .msg-actions {
   margin-left: auto;
 }
-.msg-user-time {
-  font-size: 11px; opacity: .55;
-  color: var(--muted);
-}
-
-/* ── Per-message usage/cost line ──────────────────────────── */
-.msg-usage {
-  font-size: 11px;
-  opacity: .5;
-  color: var(--muted);
-  margin-top: 4px;
-  user-select: none;
-}
 
 /* ── User message expand/collapse ──────────────────────────── */
 .msg-expand-btn {
@@ -213,10 +148,9 @@
   border-radius: 6px; align-self: flex-start;
   transition: background .15s;
 }
-.msg-expand-btn:hover { background: var(--accent-soft); }
 .msg-expand-btn svg { display: block; }
 
-/* ── Markdown: typography lives in styles/markdown.css under .md ──────── */
+/* ── Markdown: typography comes entirely from Astryx's <Markdown/> (@astryxdesign/core/Markdown) ── */
 
 /* error message */
 .msg-error { color: var(--err); font-size: 13px; padding: 10px 14px;
@@ -327,15 +261,6 @@
   padding: 14px 16px 22px; flex-shrink: 0;
   background: var(--bg);
 }
-.composer-box {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 2px 8px -3px rgba(20,20,18,.06);
-  transition: border-color .15s;
-}
-.composer-box:focus-within { border-color: var(--ink-2); }
 .composer-box--dragging { border-color: transparent; }
 
 /* Claude-style drop overlay covering the whole composer while dragging files. */
@@ -349,10 +274,13 @@
   pointer-events: none;
 }
 
-/* In an active chat, keep the composer at a sane width and centered instead
- * of stretching across the full (wide) chat width. Welcome screen unaffected. */
+/* In an active chat, keep the composer at a fixed width and centered instead
+ * of stretching/shrinking with the chat column (e.g. when the artifacts/file
+ * side panel opens or closes). Welcome screen unaffected.
+ * .composer-shell is our wrapper div around the Astryx <ChatComposer/>, which
+ * otherwise fills 100% of its container's width. */
 .chat:not(.chat--welcome) .composer { padding: 14px 16px 22px; }
-.chat:not(.chat--welcome) .composer-box { max-width: 720px; margin: 0 auto; }
+.chat:not(.chat--welcome) .composer-shell { width: 640px; max-width: 100%; margin: 0 auto; }
 
 /* Editor + overlay-placeholder base styling lives in composer.css
  * (.composer-editor / .composer-wrap / .composer-ph). */
@@ -361,9 +289,7 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px 10px 12px;
 }
-.composer-left { display: flex; gap: 2px; align-items: center; }
-.composer-right { display: flex; align-items: center; gap: 6px; }
-.composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-left: 6px; }
+.composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-right: 6px; white-space: nowrap; }
 .composer-disclaimer {
   text-align: center; font-size: 11px; color: var(--faint);
   margin: 8px 0 0; padding: 0 12px; line-height: 1.4;
@@ -445,7 +371,7 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20), 0 0 0 1px var(--line);
+  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20);
   padding: 6px; z-index: 40;
 }
 .composer-plus-menu--down { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 8px; }
@@ -458,40 +384,22 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 }
 .cpm-item:hover { background: var(--hover); }
 .cpm-item svg { width: 17px; height: 17px; flex-shrink: 0; }
-
-.cpm-mcp { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
-.cpm-mcp-head {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 10px 6px; font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
-}
-.cpm-mcp-empty { padding: 6px 10px; font-size: 12px; color: var(--muted); }
 .cpm-mcp-item {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px;
 }
 .cpm-mcp-item:hover { background: var(--hover); }
-.cpm-mcp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cpm-mcp-tools { font-size: 11px; color: var(--muted); min-width: 14px; text-align: right; }
 
-/* web search section in the "+" menu */
+/* web search section in the "+" menu — rows are Astryx DropdownMenuItem now
+ * (label/description/endContent are its own slots, not custom spans), these
+ * classes only add color/hover polish on top. */
 .cpm-section { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
-.cpm-item-label { flex: 1; min-width: 0; }
 .cpm-item--on { color: var(--accent); }
 .cpm-item--on svg { color: var(--accent); }
 .cpm-check { width: 15px; height: 15px; color: var(--accent); flex-shrink: 0; }
 .cpm-sub { display: flex; flex-direction: column; padding: 2px 0 2px 10px; }
-.cpm-subitem {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; text-align: left; background: none; border: none;
-  border-radius: 7px; color: var(--ink-2); padding: 6px 10px 6px 28px;
-  font-size: 12.5px; cursor: pointer;
-}
-.cpm-subitem:hover:not(:disabled) { background: var(--hover); }
-.cpm-subitem:disabled { opacity: .5; cursor: not-allowed; }
 .cpm-subitem.sel { color: var(--ink); }
-.cpm-sub-label { flex: 1; }
-.cpm-sub-reason { font-size: 10px; color: var(--faint); }
 
 /* web search: row = toggle, caret = inline mode settings */
 .cpm-ws-row { display: flex; align-items: center; }
@@ -507,33 +415,15 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 
 /* connectors: row = side flyout of MCP servers */
 .cpm-connectors { position: relative; }
-.cpm-arr { width: 14px; height: 14px; color: var(--faint); flex-shrink: 0; margin-left: 2px; display: block; }
-.cpm-count {
-  font-size: 11px; color: var(--muted);
-  background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: 6px; padding: 0 6px; line-height: 16px; flex-shrink: 0;
-}
 .cpm-flyout {
   position: absolute; left: calc(100% + 6px); top: 0; z-index: 50;
   min-width: 230px; max-height: 320px; overflow-y: auto;
   background: var(--surface); border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20), 0 0 0 1px var(--line);
+  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20);
   padding: 6px;
 }
 .cpm-flyout-empty { padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
-.cpm-flyout-manage {
-  display: flex; width: 100%; text-align: left;
-  background: none; border: none; border-top: 1px solid var(--line);
-  margin-top: 4px; padding: 8px 10px; color: var(--muted);
-  font-size: 12.5px; cursor: pointer;
-}
-.cpm-flyout-manage:hover { background: var(--hover); color: var(--ink); border-radius: 7px; }
-
-.mcp-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.mcp-chip-dot--running { background: #4ade80; }
-.mcp-chip-dot--error   { background: #f87171; }
-.mcp-chip-dot--stopped { background: var(--faint, #9ca3af); }
 
 /* ── Mobile "+" sheet — Claude-style (quick actions + card rows) ─────────
  * Reuses the same WebSearchMenuSection/ResearchMenuSection/McpMenuSection
@@ -628,15 +518,6 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 }
 .icon-btn svg { width: 18px; height: 18px; }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
-
-.send-btn {
-  width: 32px; height: 32px; border-radius: 8px; border: none;
-  background: var(--ink); color: var(--on-ink);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; cursor: pointer; font-family: var(--font-body);
-}
-.send-btn:hover { background: var(--ink-hover); }
-.send-btn:disabled { background: var(--disabled-bg); cursor: not-allowed; }
 .send-btn .kbd { display: none; }
 
 /* ── Welcome screen (empty chat) ──────────────────────────────────────── */
@@ -734,11 +615,6 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
   justify-content: center;
 }
 .chat--welcome .composer-hint { display: none; }
-.composer-hint {
-  margin-top: 8px;
-  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
-  letter-spacing: .2px;
-}
 .composer-hint kbd {
   border: 1px solid var(--line-2); background: var(--surface-2);
   padding: 1px 5px; border-radius: 4px;
@@ -766,15 +642,3 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 .iter-exhausted-actions {
   display: flex; gap: 8px; flex-wrap: wrap;
 }
-.iter-exhausted-btn {
-  font-size: 12px; font-weight: 500;
-  padding: 5px 12px; border-radius: 6px;
-  border: 1px solid var(--line); background: var(--surface-2);
-  color: var(--ink); cursor: pointer; transition: background .12s;
-}
-.iter-exhausted-btn:hover { background: var(--hover); }
-.iter-exhausted-btn--primary {
-  background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.4);
-  color: var(--ink);
-}
-.iter-exhausted-btn--primary:hover { background: rgba(234, 179, 8, 0.25); }

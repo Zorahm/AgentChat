@@ -1,19 +1,23 @@
-/** @-mention suggestion for Composer.
+/** @-mention items for the Astryx ChatComposer `@` trigger.
  *
  * Two item kinds:
- *   - action  → file picker (no chip is inserted; calls onAttachFile)
- *   - skill   → typeahead of installed skills; inserts a mention chip
- *               with id/label `skill:NAME` so the agent's read_skill tool
- *               can pick it up from submitted text as `@skill:NAME`.
+ *   - action  → file picker (no token inserted; the composer calls the picker)
+ *   - skill   → inserts a token whose serialized value is `@skill:NAME`, so the
+ *               agent's read_skill tool can pick it up from the submitted text.
  */
 
 import i18n from "i18next";
 import { API_BASE } from "./apiBase";
-import { ReactRenderer } from "@tiptap/react";
-import { MentionPopup, type MentionItemData } from "../components/Chat/MentionPopup";
+import type { SearchableItem } from "@astryxdesign/core/Typeahead";
 
-export interface MentionDeps {
-  onAttachFile: () => void;
+/** Sentinel id for the "attach file" action item (inserts no token). */
+export const ATTACH_FILE_ID = "__attach_file__";
+
+/** Auxiliary payload carried on each mention item. */
+export interface MentionAux {
+  kind: "action" | "skill";
+  desc: string;
+  type: "file" | "skill";
 }
 
 interface SkillEntry {
@@ -26,6 +30,22 @@ export function capitalizeFirst(s: string): string {
   return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+/** Longest a mention item's description may be before eliding. SKILL.md
+ *  descriptions are written for the model, not this menu — some run well
+ *  past a full line. Astryx's trigger-menu row has no `min-width: 0`, so an
+ *  unwrapped long description forces its own intrinsic width onto the whole
+ *  popover (it renders full-width, pinned to the viewport's top-left instead
+ *  of anchored to the caret). Capping the string here is the workaround. */
+const MENTION_DESC_MAX = 90;
+
+/** Trim a description to MENTION_DESC_MAX chars, breaking on the last space. */
+function truncateDesc(s: string): string {
+  if (s.length <= MENTION_DESC_MAX) return s;
+  const cut = s.slice(0, MENTION_DESC_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
 /** Split a mention label like "skill:foo" into its type and a human display
  *  text ("Foo"). Labels without a "type:" prefix are treated as files. */
 export function mentionDisplay(label: string): { type: string; text: string } {
@@ -34,31 +54,6 @@ export function mentionDisplay(label: string): { type: string; text: string } {
   const type = hasType ? parts[0]! : "file";
   const raw = hasType ? parts.slice(1).join(":") : label;
   return { type, text: capitalizeFirst(raw) };
-}
-
-interface ActionItem extends MentionItemData {
-  kind: "action";
-  action: "attach-file";
-}
-
-interface SkillItem extends MentionItemData {
-  kind: "skill";
-  skillName: string;
-}
-
-type Item = ActionItem | SkillItem;
-
-/** Built fresh per query so it picks up the current UI language. */
-function actionFileItem(): ActionItem {
-  return {
-    key: "action:file",
-    kind: "action",
-    action: "attach-file",
-    label: i18n.t("chat.mention.file"),
-    desc: i18n.t("chat.mention.fileDesc"),
-    type: "file",
-    kbd: "",
-  };
 }
 
 // ── Skills cache ───────────────────────────────────────────────────────────
@@ -83,170 +78,55 @@ async function getSkills(): Promise<SkillEntry[]> {
   return skillsCache;
 }
 
-function buildItems(query: string, skills: SkillEntry[]): Item[] {
-  const q = query.trim().toLowerCase();
-  const items: Item[] = [];
-
-  // Action item: shown when query is empty or matches its label/keywords.
-  // Both language keywords stay matchable regardless of the active locale.
-  const actionFile = actionFileItem();
-  if (!q || "файл".includes(q) || "file".includes(q) || actionFile.label.toLowerCase().includes(q)) {
-    items.push(actionFile);
-  }
-
+/** Build the mention menu items: an "attach file" action first, then every
+ *  installed skill. Consumed by the composer's `@` trigger via a static
+ *  Typeahead source (which filters by `label` as the user types). */
+export async function getMentionItems(): Promise<SearchableItem<MentionAux>[]> {
+  const skills = await getSkills();
+  const items: SearchableItem<MentionAux>[] = [
+    {
+      id: ATTACH_FILE_ID,
+      label: i18n.t("chat.mention.file"),
+      auxiliaryData: { kind: "action", type: "file", desc: i18n.t("chat.mention.fileDesc") },
+    },
+  ];
   for (const s of skills) {
-    if (
-      !q ||
-      s.name.toLowerCase().includes(q) ||
-      s.description.toLowerCase().includes(q)
-    ) {
-      items.push({
-        key: `skill:${s.name}`,
+    items.push({
+      id: s.name,
+      label: capitalizeFirst(s.name),
+      auxiliaryData: {
         kind: "skill",
-        skillName: s.name,
-        label: capitalizeFirst(s.name),
-        desc: s.description || i18n.t("chat.mention.skillDesc"),
         type: "skill",
-      });
-    }
+        desc: truncateDesc(s.description || i18n.t("chat.mention.skillDesc")),
+      },
+    });
   }
-
   return items;
 }
 
-// ── Popup rendering via ReactRenderer ──────────────────────────────────────
-
-function positionPopup(popup: HTMLElement, anchor: DOMRect | null) {
-  const pad = 8;
-  const pw = popup.offsetWidth || 280;
-  const ph = popup.offsetHeight || 240;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  let left = anchor ? anchor.left : pad;
-  let top = anchor ? anchor.bottom + 4 : pad;
-
-  if (left + pw + pad > vw) left = Math.max(pad, vw - pw - pad);
-  if (top + ph + pad > vh && anchor) {
-    const above = anchor.top - ph - 4;
-    top = above >= pad ? above : Math.max(pad, vh - ph - pad);
-  }
-  popup.style.left = `${Math.round(left)}px`;
-  popup.style.top = `${Math.round(top)}px`;
-}
-
-// ── Composer Suggestion config ─────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function buildMentionSuggestion(deps: MentionDeps): any {
-  return {
-    char: "@",
-    allowSpaces: false,
-
-    items: async ({ query }: { query: string }) => {
-      const skills = await getSkills();
-      return buildItems(query, skills);
-    },
-
-    command: ({
-      editor,
-      range,
-      props,
-    }: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      editor: { chain: () => any };
-      range: { from: number; to: number };
-      props: Item;
-    }) => {
-      if (props.kind === "action" && props.action === "attach-file") {
-        editor
-          .chain()
-          .focus()
-          .deleteRange(range)
-          .run();
-        deps.onAttachFile();
-        return;
+/** Render a submitted message's text as display HTML, turning `@type:name`
+ *  tokens into styled mention chips (mirrors the old composer getHTML output so
+ *  message bubbles look identical). */
+export function textToDisplayHtml(text: string): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const mention = /@([A-Za-z][\w-]*):([^\s@]+)/g;
+  return text
+    .split("\n")
+    .map((line) => {
+      let out = "";
+      let last = 0;
+      let m: RegExpExecArray | null;
+      mention.lastIndex = 0;
+      while ((m = mention.exec(line))) {
+        out += esc(line.slice(last, m.index));
+        const type = m[1]!;
+        const name = m[2]!;
+        out += `<span class="mention-chip mention-chip--${esc(type)}">@${esc(capitalizeFirst(name))}</span>`;
+        last = m.index + m[0].length;
       }
-      if (props.kind === "skill") {
-        editor
-          .chain()
-          .focus()
-          .insertContentAt(range, [
-            {
-              type: "mention",
-              attrs: { id: `skill:${props.skillName}`, label: `skill:${props.skillName}` },
-            },
-            { type: "text", text: " " },
-          ])
-          .run();
-      }
-    },
-
-    render: () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let renderer: ReactRenderer<any> | null = null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let currentProps: any = null;
-
-      return {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onStart(props: any) {
-          currentProps = props;
-
-          renderer = new ReactRenderer(MentionPopup, {
-            props,
-            editor: props.editor,
-          });
-
-          const popup = renderer.element as HTMLElement;
-          popup.style.position = "fixed";
-          popup.style.zIndex = "200";
-          document.body.appendChild(popup);
-
-          positionPopup(popup, props.clientRect?.() ?? null);
-        },
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onUpdate(props: any) {
-          currentProps = props;
-          renderer?.updateProps(props);
-
-          if (renderer) {
-            positionPopup(
-              renderer.element as HTMLElement,
-              props.clientRect?.() ?? null,
-            );
-          }
-        },
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onKeyDown(props: any) {
-          if (renderer?.ref) {
-            return renderer.ref.onKeyDown(props);
-          }
-          return false;
-        },
-
-        onExit() {
-          renderer?.destroy();
-          renderer = null;
-          currentProps = null;
-        },
-      };
-    },
-  };
-}
-
-/** Extract plain text from Composer JSON, mentions become @label. */
-export function extractText(json: Record<string, unknown>): string {
-  if (json.type === "text") return String(json.text ?? "");
-  if (json.type === "mention") {
-    const attrs = json.attrs as Record<string, string> | undefined;
-    return `@${attrs?.label ?? "mention"}`;
-  }
-  const children = json.content as Array<Record<string, unknown>> | undefined;
-  if (!children) return "";
-  const inner = children.map(extractText).join("");
-  if (json.type === "paragraph") return inner + "\n";
-  return inner;
+      out += esc(line.slice(last));
+      return `<p>${out || "<br>"}</p>`;
+    })
+    .join("");
 }

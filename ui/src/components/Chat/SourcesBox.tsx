@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { Globe } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
 import { useTranslation } from "react-i18next";
 import type { SourceAgg } from "../../utils/research";
 import { openExternal } from "../../utils/openExternal";
@@ -21,18 +22,21 @@ export function SourcesBox({ agg, topN = 5 }: SourcesBoxProps) {
   return (
     <div className="rp-sources">
       {top.map((d) => (
-        <button
+        <Button
           key={d.domain}
-          className="rp-source-row"
+          label={d.domain}
           onClick={() => openExternal(`https://${d.domain}`)}
-          title={d.domain}
+          tooltip={d.domain}
+          variant="ghost"
+          size="sm"
+          className="rp-source-row"
         >
           <SourceFavicon domain={d.domain} />
           <span className="rp-source-domain">{d.domain}</span>
           <span className="rp-source-count">
             {t("chat.research.card.sources", { count: d.count })}
           </span>
-        </button>
+        </Button>
       ))}
       {otherCount > 0 && (
         <div className="rp-source-more">

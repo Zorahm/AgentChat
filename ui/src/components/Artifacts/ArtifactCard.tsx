@@ -1,7 +1,9 @@
 /** Artifact card — Claude-style file card. */
 
 import { useState } from "react";
-import { DownloadSimple, FloppyDisk, SpinnerGap } from "@phosphor-icons/react";
+import { DownloadSimple, FloppyDisk } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import type { Artifact } from "../../types/artifact";
 import { basename } from "../../utils/basename";
 import { fileExtIcon, fileExtKind } from "../../utils/toolIcons";
@@ -60,25 +62,27 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
       </div>
       <div className="art-card-actions">
         {canSaveAs() && (
-          <button
-            className="art-card-btn art-card-btn--icon"
+          <IconButton
+            label={t("artifacts.saveAs")}
+            icon={<FloppyDisk weight="bold" />}
             onClick={handleSaveAs}
-            disabled={busy}
-            title={t("artifacts.saveAs")}
-            aria-label={t("artifacts.saveAs")}
-          >
-            <FloppyDisk weight="bold" />
-          </button>
+            isDisabled={busy}
+            tooltip={t("artifacts.saveAs")}
+            size="sm"
+            variant="ghost"
+          />
         )}
-        <button
-          className={`art-card-btn${error ? " art-card-btn--err" : ""}`}
+        <Button
+          label={error ? t("artifacts.downloadFailed") : t("artifacts.downloadAndOpen")}
+          icon={<DownloadSimple weight="bold" />}
           onClick={handleDownload}
-          disabled={busy}
-          title={error ? t("artifacts.downloadFailed") : t("artifacts.downloadAndOpen")}
+          isDisabled={busy}
+          isLoading={busy}
+          size="sm"
+          variant={error ? "destructive" : "secondary"}
         >
-          {busy ? <SpinnerGap className="art-card-btn-spin" weight="bold" /> : <DownloadSimple weight="bold" />}
-          <span>{error ? t("artifacts.downloadFailed") : t("artifacts.downloadAndOpen")}</span>
-        </button>
+          {error ? t("artifacts.downloadFailed") : t("artifacts.downloadAndOpen")}
+        </Button>
       </div>
     </div>
   );

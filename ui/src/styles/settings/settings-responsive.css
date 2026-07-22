@@ -164,13 +164,6 @@
     font-size: 13px;
   }
 
-  /* ── Buttons & controls ───────────────────────────────────────────────── */
-
-  .st2-btn {
-    padding: 5px 14px;
-    font-size: 13px;
-  }
-
   .st2-models-head {
     flex-direction: column;
     align-items: stretch;
@@ -451,10 +444,6 @@
     align-items: flex-start;
   }
 
-  .st2-mh-refresh {
-    align-self: auto;
-    margin-left: 0;
-  }
 }
 
 /* ── Extra small devices (< 480px) ─────────────────────────────────────── */
@@ -469,11 +458,6 @@
   }
 
   .st2-sub {
-    font-size: 12px;
-  }
-
-  .st2-btn {
-    padding: 8px 12px;
     font-size: 12px;
   }
 
@@ -586,7 +570,6 @@
   }
 
   /* Remove hover effects on touch */
-  .st2-btn:hover,
   .st2-nav-item:hover,
   .theme-card:hover {
     transform: none;

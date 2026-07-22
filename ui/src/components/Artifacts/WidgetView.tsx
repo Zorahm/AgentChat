@@ -4,6 +4,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AppWindow } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Card } from "@astryxdesign/core/Card";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { buildWidgetDocument } from "../../utils/widgetTheme";
 
@@ -42,7 +44,7 @@ export function WidgetView({ html, title }: WidgetViewProps) {
   }, [id]);
 
   return (
-    <div className="widget-card">
+    <Card className="widget-card" padding={0}>
       <div className="widget-head">
         <AppWindow size={14} weight="bold" />
         <span className="widget-title">{title?.trim() || t("widget.defaultTitle")}</span>
@@ -55,7 +57,7 @@ export function WidgetView({ html, title }: WidgetViewProps) {
         title={title?.trim() || t("widget.defaultTitle")}
         style={{ height }}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -65,18 +67,18 @@ export function WidgetView({ html, title }: WidgetViewProps) {
 export function WidgetSkeleton({ title }: { title?: string }) {
   const { t } = useTranslation();
   return (
-    <div className="widget-card widget-card--loading" aria-busy="true" role="status">
+    <Card className="widget-card widget-card--loading" padding={0} aria-busy="true" role="status">
       <div className="widget-head">
         <AppWindow size={14} weight="bold" />
         <span className="widget-title">{title?.trim() || t("widget.building")}</span>
       </div>
       <div className="widget-skeleton">
-        <div className="widget-skel widget-skel-bar" style={{ width: "38%" }} />
-        <div className="widget-skel widget-skel-chart" />
-        <div className="widget-skel widget-skel-row" style={{ width: "92%" }} />
-        <div className="widget-skel widget-skel-row" style={{ width: "78%" }} />
-        <div className="widget-skel widget-skel-row" style={{ width: "60%" }} />
+        <Skeleton width="38%" height={14} radius={1} index={0} />
+        <Skeleton height={200} radius={2} index={1} />
+        <Skeleton width="92%" height={11} radius={1} index={2} />
+        <Skeleton width="78%" height={11} radius={1} index={3} />
+        <Skeleton width="60%" height={11} radius={1} index={4} />
       </div>
-    </div>
+    </Card>
   );
 }

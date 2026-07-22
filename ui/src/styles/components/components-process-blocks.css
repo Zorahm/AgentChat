@@ -1,6 +1,11 @@
 /* Components — Process blocks
    Tool calls, bash steps, thinking steps, MCP steps, write/edit file, inline preview */
 
+/* Astryx's ChatToolCalls sits its expanded row detail flush against the row
+   above with no breathing room — a small top gap here (our own wrapper, not
+   an Astryx internal) keeps it from looking cramped. */
+.tc-result-detail { margin-top: 6px; }
+
 /* ── Tool call block ───────────────────────────────────────────────────── */
 .tc {
   border: 1px solid var(--line);
@@ -10,28 +15,9 @@
   font-size: 13px; overflow: hidden;
   transition: border-color .15s;
 }
-.tc--running { border-color: var(--running-line); background: var(--running-soft); }
-.tc--error   { border-color: var(--err-line); background: var(--err-soft); }
-.tc--success { border-color: var(--line); }
-
-.tc-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px 8px 10px; cursor: pointer; user-select: none;
-}
 .tc.expanded .tc-head { border-bottom: 1px solid var(--line); }
-
-.tc-icn {
-  width: 24px; height: 24px; border-radius: var(--radius-sm);
-  background: var(--surface-2); border: 1px solid var(--line);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
-  color: var(--ink-2); flex-shrink: 0;
-}
 .tc--running .tc-icn { background: var(--running-soft-2); border-color: var(--running-line); color: var(--running); }
 .tc--error   .tc-icn { background: var(--err-soft-2); border-color: var(--err-line); color: var(--err); }
-
-.tc-name { flex: 1; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tc-status { font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .tc--running .tc-status { color: var(--running); }
 .tc--running .tc-status::before {
   content: ""; width: 6px; height: 6px; border-radius: 50%;
@@ -39,32 +25,8 @@
 }
 .tc--success .tc-status { color: var(--ok); }
 .tc--error   .tc-status { color: var(--err); }
-.tc-chev { color: var(--faint); font-size: 11px; }
-
-.tc-preview {
-  padding: 0 12px 8px 10px; margin-top: -4px;
-  font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  cursor: pointer; user-select: none;
-}
 .tc--running .tc-preview { color: var(--running); }
-
-.tc-body { background: var(--surface-2); }
-.tc-tabs {
-  display: flex; border-bottom: 1px solid var(--line); padding: 0 12px; gap: 0;
-}
-.tc-tab {
-  padding: 8px 12px; font-family: var(--font-mono); font-size: 11px;
-  color: var(--muted); cursor: pointer; border: none; background: none;
-  text-transform: uppercase; letter-spacing: .8px;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
 .tc-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
-.tc-pre {
-  margin: 0; padding: 12px 14px; font-family: var(--font-mono);
-  font-size: 11.5px; line-height: 1.6; color: var(--ink-2);
-  white-space: pre-wrap; word-break: break-all;
-}
 
 /* Inline tool call (inside process block) — flat row, expands on click */
 .tc--inline {
@@ -94,65 +56,9 @@
   transition: border-color .15s, background .15s;
 }
 .bash-step.expanded { border-color: var(--line-2); background: var(--surface); }
-
-.bash-head {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 9px;
-  cursor: pointer; user-select: none;
-  font-size: 13px; border-radius: 7px;
-}
-.bash-head:hover { background: var(--surface-2); }
-
-.bash-head-tag {
-  font-family: var(--font-mono); font-size: 10.5px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  color: var(--ink-soft);
-  padding: 1px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-.bash-head-cmd {
-  font-family: var(--font-mono); font-size: 12px;
-  color: var(--ink);
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.bash-status { font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .bash-status.err { color: var(--err); }
 .bash-status.running { color: var(--running); animation: spin .8s linear infinite; display: inline-block; }
-.bash-chev { display: inline-flex; align-items: center; color: var(--muted); flex-shrink: 0; }
-
-.bash-body {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 10px;
-  background: #1e1d1b;
-  border-top: 1px solid var(--line-2);
-}
-
-.bash-card {
-  background: #2a2826;
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.bash-card-lbl {
-  font-family: var(--font-mono); font-size: 10.5px;
-  padding: 8px 12px 4px;
-  color: rgba(255,255,255,0.55);
-  letter-spacing: 0.3px;
-}
-.bash-card-content { background: transparent; }
 .bash-card-content pre { background: transparent !important; }
-
-.bash-output {
-  font-family: var(--font-mono); font-size: 12px;
-  color: #e8e3db;
-  padding: 0 12px 10px;
-  white-space: pre-wrap; word-break: break-word;
-  max-height: 320px; overflow-y: auto;
-  margin: 0;
-}
 
 /* ── Thinking step (inside ProcessBlock) ────────────────────────────── */
 .thinking-head {
@@ -166,13 +72,8 @@
   color: var(--accent);
 }
 .thinking-ic svg { width: 100%; height: 100%; }
-.thinking-spin { animation: spin .8s linear infinite; }
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 .thinking-lbl { font-weight: 500; color: var(--ink-2); }
-.thinking-meta {
-  font-family: var(--font-mono); font-size: 11px; color: var(--faint);
-}
-.thinking-meta::before { content: "·"; margin: 0 6px; color: var(--faint); }
 .thinking-chev {
   color: var(--faint);
   display: inline-flex; align-items: center;
@@ -225,7 +126,6 @@
   line-height: 1.6; padding-top: 1px;
 }
 .thinking-step--tool { align-items: stretch; }
-.thinking-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
 /* ── Reasoning / thought step ─────────────────────────────────────── */
 /* smooth appearance as the thinking process shows up */
@@ -277,12 +177,6 @@
   font-size: 13px; color: var(--muted); font-family: var(--font-body);
   line-height: 20px;
 }
-.skill-read-label--link {
-  cursor: pointer; color: var(--ink-2);
-  text-decoration: underline dotted; text-underline-offset: 3px;
-  transition: color .15s;
-}
-.skill-read-label--link:hover { color: var(--accent); }
 
 .skill-read-duration {
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
@@ -308,29 +202,9 @@
   font-size: 13px; border-radius: 7px;
 }
 .mcp-head:hover { background: var(--surface-2); }
-
-.mcp-head-badge {
-  font-family: var(--font-mono); font-size: 10.5px;
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  color: var(--accent);
-  padding: 2px 7px; border-radius: 6px;
-  flex-shrink: 0; letter-spacing: .2px;
-  max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.mcp-head-tool {
-  font-family: var(--font-mono); font-size: 12px;
-  color: var(--ink);
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.mcp-status { font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .mcp-status.err { color: var(--err); }
 .mcp-status.running { color: var(--running); animation: spin .8s linear infinite; display: inline-block; }
 .mcp-status.cancelled { color: var(--muted); }
-.mcp-chev { display: inline-flex; align-items: center; color: var(--muted); flex-shrink: 0; }
 
 /* mode tag inside the web-search step + the native chip */
 .ws-mode-tag {
@@ -352,30 +226,9 @@
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 13px; color: var(--muted);
 }
-.tc-write-badge {
-  font-family: var(--font-mono); font-size: 11px;
-  background: var(--surface-2); border: 1px solid var(--line);
-  padding: 1px 8px; border-radius: 4px; color: var(--ink);
-  cursor: pointer;
-}
-.tc-write-badge:hover { background: var(--hover); border-color: var(--accent); color: var(--accent); }
-.tc-write-err { color: var(--err); font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Edit-file step diff badge */
 .tc-edit-stats { display: flex; gap: 4px; font-family: var(--font-mono); font-size: 11px; }
-.tc-edit-add { color: #4caf50; }
-.tc-edit-del { color: var(--err); }
-
-.live-code-block {
-  margin-top: 8px; background: #1e1e1e; border-radius: 8px; overflow: hidden;
-}
-.live-code-lang {
-  padding: 7px 14px 2px; color: #666;
-  font-family: var(--font-mono); font-size: 11px;
-}
-.live-code-scroll {
-  max-height: 220px; overflow-y: auto;
-}
 
 /* ── Inline file preview ──────────────────────────────────────────────── */
 .file-preview-inline {
@@ -383,14 +236,6 @@
   overflow: hidden; margin: 4px 0;
   background: var(--surface); font-family: var(--font-mono); font-size: 11.5px;
 }
-.fp-inline-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 7px 12px; border-bottom: 1px solid var(--line);
-  background: var(--surface-2); font-size: 12px; color: var(--muted);
-}
-.fp-inline-code { padding: 10px 14px; line-height: 1.7; max-height: 180px; overflow-y: auto; }
-.fp-inline-ln { display: flex; gap: 14px; }
-.fp-inline-no { color: var(--faint); width: 22px; text-align: right; user-select: none; flex-shrink: 0; }
 
 /* ── ask_user prompt, docked above the composer (not inline, not modal) ── */
 .uq-dock {
@@ -473,11 +318,6 @@
   background: var(--ink);
   color: var(--bg);
 }
-.uq2-opt-text { flex: 1; line-height: 1.3; }
-.uq2-enter {
-  flex-shrink: 0; width: 16px; height: 16px;
-  color: var(--muted);
-}
 
 .uq2-custom { cursor: text; }
 .uq2-custom .uq2-num { color: var(--muted); }
@@ -493,28 +333,7 @@
   gap: 8px; padding: 12px 2px 2px;
 }
 .uq2-foot-right { display: flex; align-items: center; gap: 8px; }
-
-.uq2-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--line-2);
-  border-radius: 9px;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-weight: 600; font-size: 13px;
-  cursor: pointer;
-  transition: background .12s, opacity .12s, border-color .12s;
-}
 .uq2-btn svg { width: 15px; height: 15px; }
-.uq2-btn:hover:not(:disabled) { background: var(--surface-2); }
-.uq2-btn:disabled { opacity: 0.4; cursor: default; }
-.uq2-skip { border-color: transparent; background: transparent; color: var(--muted); }
-.uq2-skip:hover:not(:disabled) { background: var(--surface-2); }
-.uq2-primary {
-  background: var(--ink); color: var(--bg);
-  border-color: var(--ink);
-}
-.uq2-primary:hover:not(:disabled) { background: var(--ink); opacity: 0.88; }
 
 .uq2--done {
   border: 1px solid var(--line);

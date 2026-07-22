@@ -33,8 +33,7 @@
 
 .research-card--cancelled .research-card-ic { color: var(--muted); }
 
-.research-spin { animation: research-spin 1s linear infinite; }
-@keyframes research-spin { to { transform: rotate(360deg); } }
+/* .research-spin animation — now handled by Astryx Spinner */
 
 /* ── Research side panel ──────────────────────────────────────────────── */
 .research-panel .rp-head {
@@ -89,12 +88,11 @@
 }
 .rp-source-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 10px; border: none; background: transparent; cursor: pointer;
+  padding: 7px 10px;
   font-family: var(--font-body); text-align: left;
   border-bottom: 1px solid var(--line);
 }
 .rp-source-row:last-child { border-bottom: none; }
-.rp-source-row:hover { background: var(--hover); }
 .rp-source-ic {
   width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
   color: var(--muted); object-fit: contain;

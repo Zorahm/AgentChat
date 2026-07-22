@@ -1,6 +1,7 @@
 /** Easter egg by Herman — Ghost Chat. Triggered by rapid logo clicks. */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Button } from "@astryxdesign/core/Button";
 
 const LINES = [
   { text: "*тихое бу...*  пу-пу-пу...", action: true, pause: 900 },
@@ -88,7 +89,7 @@ export function GhostChat({ onClose }: GhostChatProps) {
 
         {/* Header */}
         <div className="ghost-head">
-          <button className="ghost-back" onClick={onClose}>← Назад</button>
+          <Button variant="ghost" label="← Назад" onClick={onClose} />
           <div className="ghost-head-center">
             <span className="ghost-name">👻 Призрак</span>
             <span className="ghost-status">{done ? "соединение разорвано" : "пьёт пиво в изоляции"}</span>
@@ -137,9 +138,7 @@ export function GhostChat({ onClose }: GhostChatProps) {
             <div className="ghost-end">
               <div className="ghost-err-badge">ОШИБКА ИЗОЛЯЦИИ</div>
               <p className="ghost-err-desc">Авто-фикс применён. Утечка памяти устранена.</p>
-              <button className="ghost-close-btn" onClick={onClose}>
-                Вернуться
-              </button>
+              <Button variant="primary" label="Вернуться" onClick={onClose} />
             </div>
           )}
         </div>

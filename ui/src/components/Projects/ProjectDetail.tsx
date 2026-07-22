@@ -6,6 +6,12 @@ import {
   ArrowLeft, Plus, Trash, PencilSimple, FileText, UploadSimple,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Card } from "@astryxdesign/core/Card";
+import { Dialog } from "@astryxdesign/core/Dialog";
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { ChatInput } from "../Chat/ChatInput";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import { useWindowFileDrag } from "../../hooks/useWindowFileDrag";
@@ -168,9 +174,13 @@ export function ProjectDetail({
     return (
       <div className="proj-detail">
         <div className="proj-detail-main">
-          <button className="proj-back" onClick={onBack}>
-            <ArrowLeft weight="bold" /> {t("projects.allProjects")}
-          </button>
+          <Button
+            label={t("projects.allProjects")}
+            variant="ghost"
+            icon={<ArrowLeft weight="bold" />}
+            onClick={onBack}
+            className="proj-back"
+          />
           <div className="proj-empty">{t("projects.loading")}</div>
         </div>
       </div>
@@ -183,9 +193,13 @@ export function ProjectDetail({
     <div className="proj-detail">
       {/* ── Left: title, composer, chats ───────────────────────────── */}
       <div className="proj-detail-main">
-        <button className="proj-back" onClick={onBack}>
-          <ArrowLeft weight="bold" /> {t("projects.allProjects")}
-        </button>
+        <Button
+          label={t("projects.allProjects")}
+          variant="ghost"
+          icon={<ArrowLeft weight="bold" />}
+          onClick={onBack}
+          className="proj-back"
+        />
 
         <div className="proj-title-row">
           <input
@@ -195,13 +209,12 @@ export function ProjectDetail({
             onBlur={saveName}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           />
-          <button
-            className="proj-icon-btn"
+          <IconButton
+            label={t("projects.deleteProject")}
+            icon={<Trash />}
+            variant="ghost"
             onClick={() => setConfirmDelete(true)}
-            title={t("projects.deleteProject")}
-          >
-            <Trash />
-          </button>
+          />
         </div>
 
         <ChatInput
@@ -241,20 +254,26 @@ export function ProjectDetail({
         ) : (
           <ul className="proj-chats">
             {projectChats.map((c) => (
-              <li key={c.id} className="proj-chat-row" onClick={() => onOpenChat(c.id)}>
-                <div className="proj-chat-info">
-                  <div className="proj-chat-title">{c.title}</div>
-                  <div className="proj-chat-time">
-                    {t("projects.lastMessage")} {formatRelative(c.updatedAt ?? c.createdAt)}
+              <li key={c.id} className="proj-chat-row">
+                <div
+                  className="proj-chat-row-content"
+                  onClick={() => onOpenChat(c.id)}
+                >
+                  <div className="proj-chat-info">
+                    <div className="proj-chat-title">{c.title}</div>
+                    <div className="proj-chat-time">
+                      {t("projects.lastMessage")} {formatRelative(c.updatedAt ?? c.createdAt)}
+                    </div>
                   </div>
                 </div>
-                <button
-                  className="proj-icon-btn proj-icon-btn--sm proj-chat-del"
+                <IconButton
+                  label={t("projects.deleteChat")}
+                  icon={<Trash />}
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => { e.stopPropagation(); onDeleteChat(c.id); }}
-                  title={t("projects.deleteChat")}
-                >
-                  <Trash />
-                </button>
+                  className="proj-chat-del"
+                />
               </li>
             ))}
           </ul>
@@ -263,23 +282,30 @@ export function ProjectDetail({
 
       {/* ── Right: instructions + files cards ──────────────────────── */}
       <aside className="proj-detail-side">
-        <div className="proj-card-panel">
+        <Card className="proj-card-panel">
           <div className="proj-card-head">
             <span className="proj-card-title">{t("projects.instructions")}</span>
-            <button className="proj-icon-btn proj-icon-btn--sm" onClick={openInstrEditor} title={t("projects.edit")}>
-              <PencilSimple />
-            </button>
+            <IconButton
+              label={t("projects.edit")}
+              icon={<PencilSimple />}
+              variant="ghost"
+              size="sm"
+              onClick={openInstrEditor}
+            />
           </div>
           {instr ? (
             <p className="proj-card-text" onClick={openInstrEditor}>{instr}</p>
           ) : (
-            <button className="proj-card-empty" onClick={openInstrEditor}>
-              {t("projects.instructionsEmpty")}
-            </button>
+            <Button
+              label={t("projects.instructionsEmpty")}
+              variant="ghost"
+              onClick={openInstrEditor}
+              className="proj-card-empty"
+            />
           )}
-        </div>
+        </Card>
 
-        <div
+        <Card
           className={`proj-card-panel proj-files-panel${filesDragging || windowDragging ? " proj-files-panel--dragging" : ""}`}
           {...filesDrop}
         >
@@ -291,14 +317,14 @@ export function ProjectDetail({
           )}
           <div className="proj-card-head">
             <span className="proj-card-title">{t("projects.files")}</span>
-            <button
-              className="proj-icon-btn proj-icon-btn--sm"
+            <IconButton
+              label={t("projects.addFiles")}
+              icon={uploading ? <UploadSimple className="proj-spin" /> : <Plus weight="bold" />}
+              variant="ghost"
+              size="sm"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              title={t("projects.addFiles")}
-            >
-              {uploading ? <UploadSimple className="proj-spin" /> : <Plus weight="bold" />}
-            </button>
+              isDisabled={uploading}
+            />
             <input
               ref={fileInputRef}
               type="file"
@@ -308,9 +334,12 @@ export function ProjectDetail({
             />
           </div>
           {project.files.length === 0 ? (
-            <button className="proj-card-empty" onClick={() => fileInputRef.current?.click()}>
-              {t("projects.filesEmpty")}
-            </button>
+            <Button
+              label={t("projects.filesEmpty")}
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              className="proj-card-empty"
+            />
           ) : (
             <div className="proj-files-grid">
               {project.files.map((f) => (
@@ -324,76 +353,86 @@ export function ProjectDetail({
               ))}
             </div>
           )}
-        </div>
+        </Card>
       </aside>
 
       {/* ── Instructions modal ─────────────────────────────────────── */}
-      {editingInstr && (
-        <div className="proj-modal-overlay" onClick={() => setEditingInstr(false)}>
-          <div className="proj-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="proj-modal-title">{t("projects.instructionsModalTitle")}</h3>
-            <p className="proj-modal-hint">
-              {t("projects.instructionsHint")}
-            </p>
-            <textarea
-              className="proj-modal-textarea"
-              value={instrDraft}
-              onChange={(e) => setInstrDraft(e.target.value)}
-              rows={12}
-              autoFocus
+      <Dialog
+        isOpen={editingInstr}
+        onOpenChange={setEditingInstr}
+        width={500}
+      >
+        <div className="proj-modal-content">
+          <h3 className="proj-modal-title">{t("projects.instructionsModalTitle")}</h3>
+          <p className="proj-modal-hint">
+            {t("projects.instructionsHint")}
+          </p>
+          <textarea
+            className="proj-modal-textarea"
+            value={instrDraft}
+            onChange={(e) => setInstrDraft(e.target.value)}
+            rows={12}
+            autoFocus
+          />
+          <div className="proj-modal-actions">
+            <Button
+              label={t("projects.cancel")}
+              variant="secondary"
+              onClick={() => setEditingInstr(false)}
             />
-            <div className="proj-modal-actions">
-              <button className="proj-btn" onClick={() => setEditingInstr(false)}>{t("projects.cancel")}</button>
-              <button
-                className="proj-btn proj-btn--primary"
-                onClick={() => void saveInstructions()}
-                disabled={savingInstr}
-              >
-                {savingInstr ? t("projects.saving") : t("projects.save")}
-              </button>
-            </div>
+            <Button
+              label={savingInstr ? t("projects.saving") : t("projects.save")}
+              variant="primary"
+              onClick={() => void saveInstructions()}
+              isDisabled={savingInstr}
+              isLoading={savingInstr}
+            />
           </div>
         </div>
-      )}
+      </Dialog>
 
       {/* ── File text modal ────────────────────────────────────────── */}
-      {fileView && (
-        <div className="proj-modal-overlay" onClick={() => setFileView(null)}>
-          <div className="proj-modal proj-modal--wide" onClick={(e) => e.stopPropagation()}>
-            <div className="proj-modal-filehead">
-              <h3 className="proj-modal-title">{fileView.name}</h3>
-              <button className="proj-icon-btn proj-icon-btn--sm" onClick={() => setFileView(null)} title={t("projects.close")}>
-                ×
-              </button>
-            </div>
-            {fileLoading ? (
-              <div className="proj-files-empty">{t("projects.loading")}</div>
-            ) : fileView.text.trim() ? (
-              <pre className="proj-filetext">{fileView.text}</pre>
-            ) : (
-              <div className="proj-files-empty">
-                {t("projects.fileTextEmpty")}
-              </div>
-            )}
+      <Dialog
+        isOpen={fileView !== null}
+        onOpenChange={(open) => {
+          if (!open) setFileView(null);
+        }}
+        width={700}
+      >
+        <div className="proj-modal-content">
+          <div className="proj-modal-filehead">
+            <h3 className="proj-modal-title">{fileView?.name}</h3>
+            <IconButton
+              label={t("projects.close")}
+              icon={<span>×</span>}
+              variant="ghost"
+              size="sm"
+              onClick={() => setFileView(null)}
+            />
           </div>
+          {fileLoading ? (
+            <div className="proj-files-empty">{t("projects.loading")}</div>
+          ) : fileView?.text.trim() ? (
+            <pre className="proj-filetext">{fileView.text}</pre>
+          ) : (
+            <div className="proj-files-empty">
+              {t("projects.fileTextEmpty")}
+            </div>
+          )}
         </div>
-      )}
+      </Dialog>
 
       {/* ── Delete confirm ─────────────────────────────────────────── */}
-      {confirmDelete && (
-        <div className="proj-confirm-overlay" onClick={() => setConfirmDelete(false)}>
-          <div className="proj-confirm" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("projects.deleteConfirm")}</h3>
-            <p>{t("projects.deleteMessage")}</p>
-            <div className="proj-confirm-actions">
-              <button className="proj-btn" onClick={() => setConfirmDelete(false)}>{t("projects.cancel")}</button>
-              <button className="proj-btn proj-btn--danger" onClick={() => void handleDeleteProject()}>
-                {t("projects.delete")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog
+        isOpen={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t("projects.deleteConfirm")}
+        description={t("projects.deleteMessage")}
+        cancelLabel={t("projects.cancel")}
+        actionLabel={t("projects.delete")}
+        actionVariant="destructive"
+        onAction={() => void handleDeleteProject()}
+      />
     </div>
   );
 }
@@ -408,22 +447,25 @@ function FileChip(
     ? `${file.text_len.toLocaleString()} ${t("projects.chars")}`
     : formatSize(file.size, t);
   return (
-    <div className="proj-file-chip" onClick={onOpen} title={t("projects.openText")}>
+    <Card className="proj-file-chip">
       <div className="proj-file-chip-top">
         <FileText className="proj-file-icon" />
-        <button
-          className="proj-file-chip-x"
+        <IconButton
+          label={t("projects.deleteFile")}
+          icon={<span>×</span>}
+          variant="ghost"
+          size="sm"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title={t("projects.deleteFile")}
-        >×</button>
+          className="proj-file-chip-x"
+        />
       </div>
-      <div className="proj-file-chip-name">{file.name}</div>
+      <div className="proj-file-chip-name" onClick={onOpen} role="button" title={t("projects.openText")}>{file.name}</div>
       <div className="proj-file-chip-meta">
         {meta}
         {file.extract_status === "failed" && <span className="proj-badge proj-badge--warn">{t("projects.notExtracted")}</span>}
       </div>
       <span className="proj-file-chip-badge">{ext}</span>
-    </div>
+    </Card>
   );
 }
 

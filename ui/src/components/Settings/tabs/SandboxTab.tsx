@@ -2,6 +2,7 @@
 
 import { ShieldWarning } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Switch } from "@astryxdesign/core/Switch";
 import type { SettingsData } from "../SettingsPanel";
 
 export function SandboxTab({ settings, onUpdate }: {
@@ -27,8 +28,12 @@ export function SandboxTab({ settings, onUpdate }: {
                 </p>
               </div>
               <div className="st2-danger-switch">
-                <div className={`st2-switch${unrestricted ? " on" : ""}`}
-                  onClick={() => onUpdate({ unrestricted_mode: !unrestricted })} />
+                <Switch
+                  label={t("settings.general.unrestricted")}
+                  isLabelHidden
+                  value={unrestricted}
+                  onChange={(checked) => onUpdate({ unrestricted_mode: checked })}
+                />
               </div>
             </div>
             {unrestricted && (

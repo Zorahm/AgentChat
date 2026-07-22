@@ -4,6 +4,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Robot, Trash, CaretDown, CaretRight, Plus, X, WarningCircle } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { TextArea } from "@astryxdesign/core/TextArea";
 import { useAgents, type AgentPatch } from "../../../hooks/useAgents";
 import { AgentAvatar } from "../../AgentAvatar";
 import type { Agent } from "../../../types/agent";
@@ -73,9 +77,14 @@ export function AgentsTab() {
           createAgent={createAgent}
         />
       ) : (
-        <button className="ag-add-btn" onClick={() => setAdding(true)} disabled={loading}>
-          <Plus size={14} /> {t("settings.agents.addAgent")}
-        </button>
+        <Button
+          label={t("settings.agents.addAgent")}
+          icon={<Plus size={14} />}
+          onClick={() => setAdding(true)}
+          isDisabled={loading}
+          variant="secondary"
+          className="ag-add-btn"
+        />
       )}
     </>
   );
@@ -142,7 +151,7 @@ function AgentCard({
     return (
       <div className="ag-card ag-card--locked">
         <div className="ag-head ag-head--static">
-          <AgentAvatar colorFrom={agent.color_from} colorTo={agent.color_to} size={26} />
+          <AgentAvatar name={agent.name} colorFrom={agent.color_from} colorTo={agent.color_to} size={26} />
           <span className="ag-name">{agent.name}</span>
           <span className="ag-tag">{t("settings.agents.defaultTag")}</span>
           <span className="ag-locked-hint">{t("settings.agents.defaultLockedHint")}</span>
@@ -154,7 +163,7 @@ function AgentCard({
   return (
     <div className={`ag-card${open ? " ag-card--open" : ""}`}>
       <div className="ag-head" onClick={onToggle}>
-        <AgentAvatar colorFrom={agent.color_from} colorTo={agent.color_to} size={26} />
+        <AgentAvatar name={agent.name} colorFrom={agent.color_from} colorTo={agent.color_to} size={26} />
         <span className="ag-name">{agent.name}</span>
         {agent.system_prompt.trim() && (
           <span className="ag-tag ag-tag--override">{t("settings.agents.overrideTag")}</span>
@@ -164,15 +173,16 @@ function AgentCard({
 
       {open && (
         <div className="ag-body">
-          <label className="ag-field">
-            <span>{t("settings.agents.name")}</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+          <TextInput
+            label={t("settings.agents.name")}
+            value={name}
+            onChange={setName}
+          />
 
           <div className="ag-field">
             <span>{t("settings.agents.avatar")}</span>
             <div className="ag-color-row">
-              <AgentAvatar colorFrom={colorFrom} colorTo={colorTo} size={32} />
+              <AgentAvatar name={name || agent.name} colorFrom={colorFrom} colorTo={colorTo} size={32} />
               <input type="color" value={colorFrom} onChange={(e) => setColorFrom(e.target.value)} title={t("settings.agents.colorFrom")} />
               <input type="color" value={colorTo} onChange={(e) => setColorTo(e.target.value)} title={t("settings.agents.colorTo")} />
               <div className="ag-swatches">
@@ -189,42 +199,58 @@ function AgentCard({
             </div>
           </div>
 
-          <label className="ag-field">
-            <span>{t("settings.agents.systemPrompt")}</span>
-            <textarea
-              rows={8}
-              className="ag-prompt-textarea"
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder={t("settings.agents.systemPromptPlaceholder")}
-            />
-          </label>
+          <TextArea
+            label={t("settings.agents.systemPrompt")}
+            value={systemPrompt}
+            onChange={setSystemPrompt}
+            placeholder={t("settings.agents.systemPromptPlaceholder")}
+            rows={8}
+          />
 
           <div className="ag-warning">
             <WarningCircle size={15} weight="fill" />
             <span>{t("settings.agents.overrideWarning")}</span>
           </div>
 
-          <div className="ag-prompt-actions">
-            <button className="st2-btn" onClick={loadDefault} disabled={loadingDefault}>
-              {loadingDefault ? "…" : t("settings.agents.loadDefault")}
-            </button>
-            <button className="st2-btn" onClick={() => setSystemPrompt("")} disabled={!systemPrompt}>
-              {t("settings.agents.resetToDefault")}
-            </button>
-          </div>
-
           {saveErr && (
             <div className="st2-error" style={{ margin: "4px 0 0", position: "static" }}>{saveErr}</div>
           )}
 
+          <div className="ag-prompt-actions">
+            <Button
+              label={loadingDefault ? "…" : t("settings.agents.loadDefault")}
+              onClick={loadDefault}
+              isDisabled={loadingDefault}
+              isLoading={loadingDefault}
+              variant="secondary"
+              size="sm"
+            />
+            <Button
+              label={t("settings.agents.resetToDefault")}
+              onClick={() => setSystemPrompt("")}
+              isDisabled={!systemPrompt}
+              variant="secondary"
+              size="sm"
+            />
+          </div>
+
           <div className="ag-actions">
-            <button className="st2-btn st2-btn--primary" onClick={save} disabled={saving}>
-              {saving ? t("settings.agents.saving") : t("settings.agents.save")}
-            </button>
-            <button className="st2-btn st2-btn--danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
-              <Trash size={13} /> {t("settings.agents.delete")}
-            </button>
+            <Button
+              label={saving ? t("settings.agents.saving") : t("settings.agents.save")}
+              onClick={save}
+              isDisabled={saving}
+              isLoading={saving}
+              variant="primary"
+              size="sm"
+            />
+            <Button
+              label={t("settings.agents.delete")}
+              icon={<Trash size={13} />}
+              onClick={onDelete}
+              variant="destructive"
+              size="sm"
+              style={{ marginLeft: "auto" }}
+            />
           </div>
         </div>
       )}
@@ -274,27 +300,42 @@ function AddAgentForm({
     <div className="ag-add-form">
       <div className="ag-add-form-head">
         <span>{t("settings.agents.newAgent")}</span>
-        <button className="ag-add-form-close" onClick={onCancel}><X size={14} /></button>
+        <IconButton label={t("common.close")} icon={<X size={14} />} onClick={onCancel} variant="ghost" size="sm" />
       </div>
 
       <div className="ag-add-grid">
-        <label className="ag-field">
-          <span>{t("settings.agents.name")}</span>
-          <input value={name} onChange={(e) => onNameChange(e.target.value)} placeholder={t("settings.agents.namePlaceholder")} />
-        </label>
-        <label className="ag-field">
-          <span>{t("settings.agents.id")}</span>
-          <input value={id} onChange={(e) => setId(e.target.value)} placeholder={t("settings.agents.idPlaceholder")} />
-        </label>
+        <TextInput
+          label={t("settings.agents.name")}
+          value={name}
+          onChange={onNameChange}
+          placeholder={t("settings.agents.namePlaceholder")}
+        />
+        <TextInput
+          label={t("settings.agents.id")}
+          value={id}
+          onChange={setId}
+          placeholder={t("settings.agents.idPlaceholder")}
+        />
       </div>
 
       {err && <div className="st2-error" style={{ margin: "10px 0 0", position: "static" }}>{err}</div>}
 
       <div className="ag-actions" style={{ marginTop: 14 }}>
-        <button className="st2-btn st2-btn--primary" onClick={submit} disabled={saving}>
-          {saving ? t("settings.agents.adding") : t("settings.agents.add")}
-        </button>
-        <button className="st2-btn" onClick={onCancel} disabled={saving}>{t("settings.agents.cancel")}</button>
+        <Button
+          label={saving ? t("settings.agents.adding") : t("settings.agents.add")}
+          onClick={submit}
+          isDisabled={saving}
+          isLoading={saving}
+          variant="primary"
+          size="sm"
+        />
+        <Button
+          label={t("settings.agents.cancel")}
+          onClick={onCancel}
+          isDisabled={saving}
+          variant="secondary"
+          size="sm"
+        />
       </div>
     </div>
   );

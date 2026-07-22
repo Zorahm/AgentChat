@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, CheckCircle, XCircle, Terminal } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
 import { API_BASE } from "../../../utils/apiBase";
 import { isAndroidTauri } from "../../../utils/tauri";
 import { playNotificationSound } from "../../../utils/notify";
@@ -232,14 +234,14 @@ export function TerminalTab({ settings, onUpdate }: {
       <div className="st2-main">
         <div className="st2-h-row">
           <h3 className="st2-h">{t("settings.general.terminal")}</h3>
-          <button
-            className="st2-mh-refresh"
+          <Button
+            label={loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
+            icon={<ArrowClockwise />}
             onClick={reload}
-            disabled={loading}
-            title={t("settings.general.checkAgain")}
-          >
-            <ArrowClockwise /> {loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
-          </button>
+            isDisabled={loading}
+            isLoading={loading}
+            variant="secondary"
+          />
         </div>
         <p className="st2-sub">{t("settings.general.terminalNativeDescription")}</p>
         <div className="st2-mrows">
@@ -276,19 +278,19 @@ export function TerminalTab({ settings, onUpdate }: {
                 <p className="d">{t("settings.general.shellPreferenceNativeHint")}</p>
               </div>
               <div className="st2-mctl">
-                <div className="st2-theme">
-                  <button
-                    className={!zshActive ? "active" : ""}
+                <div className="st2-shell-actions">
+                  <Button
+                    label={t("settings.general.shellBash")}
+                    icon={<Terminal />}
                     onClick={() => onChange("auto")}
-                  >
-                    <Terminal /> {t("settings.general.shellBash")}
-                  </button>
-                  <button
-                    className={zshActive ? "active" : ""}
+                    variant={!zshActive ? "primary" : "secondary"}
+                  />
+                  <Button
+                    label={t("settings.general.shellZsh")}
+                    icon={<Terminal />}
                     onClick={() => onChange("zsh")}
-                  >
-                    <Terminal /> {t("settings.general.shellZsh")}
-                  </button>
+                    variant={zshActive ? "primary" : "secondary"}
+                  />
                 </div>
                 {zshActive && !status.zsh_available && (
                   <div className="st2-risk-note" style={{ marginTop: 10 }}>
@@ -307,14 +309,14 @@ export function TerminalTab({ settings, onUpdate }: {
     <div className="st2-main">
       <div className="st2-h-row">
         <h3 className="st2-h">{t("settings.general.terminal")}</h3>
-        <button
-          className="st2-mh-refresh"
+        <Button
+          label={loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
+          icon={<ArrowClockwise />}
           onClick={reload}
-          disabled={loading}
-          title={t("settings.general.checkAgain")}
-        >
-          <ArrowClockwise /> {loading ? t("settings.general.checking") : t("settings.general.checkAgain")}
-        </button>
+          isDisabled={loading}
+          isLoading={loading}
+          variant="secondary"
+        />
       </div>
       <p className="st2-sub">{t("settings.general.terminalDescription")}</p>
 
@@ -390,25 +392,25 @@ export function TerminalTab({ settings, onUpdate }: {
               </p>
             </div>
             <div className="st2-mctl">
-              <div className="st2-theme">
-                <button
-                  className={preference === "auto" ? "active" : ""}
+              <div className="st2-shell-actions">
+                <Button
+                  label={t("settings.general.shellAuto")}
+                  icon={<Terminal />}
                   onClick={() => onChange("auto")}
-                >
-                  <Terminal /> {t("settings.general.shellAuto")}
-                </button>
-                <button
-                  className={preference === "wsl" ? "active" : ""}
+                  variant={preference === "auto" ? "primary" : "secondary"}
+                />
+                <Button
+                  label={t("settings.general.shellWsl")}
+                  icon={<Terminal />}
                   onClick={() => onChange("wsl")}
-                >
-                  <Terminal /> {t("settings.general.shellWsl")}
-                </button>
-                <button
-                  className={preference === "powershell" ? "active" : ""}
+                  variant={preference === "wsl" ? "primary" : "secondary"}
+                />
+                <Button
+                  label={t("settings.general.shellPowershell")}
+                  icon={<Terminal />}
                   onClick={() => onChange("powershell")}
-                >
-                  <Terminal /> {t("settings.general.shellPowershell")}
-                </button>
+                  variant={preference === "powershell" ? "primary" : "secondary"}
+                />
               </div>
             </div>
           </div>
@@ -420,45 +422,41 @@ export function TerminalTab({ settings, onUpdate }: {
             {preference !== "powershell" && (
               <div className="st2-shell-actions">
                 {!wslOk ? (
-                  <button
-                    className="st2-btn"
+                  <Button
+                    label={installing === "distro" ? t("settings.general.installing") : t("settings.general.installWsl")}
                     onClick={installDistro}
-                    disabled={installing !== null}
-                    title={t("settings.general.installWsl")}
-                  >
-                    {installing === "distro" ? t("settings.general.installing") : t("settings.general.installWsl")}
-                  </button>
+                    isDisabled={installing !== null}
+                    isLoading={installing === "distro"}
+                    variant="secondary"
+                  />
                 ) : !depsAllOk ? (
-                  <button
-                    className="st2-btn"
+                  <Button
+                    label={installing === "deps" ? t("settings.general.installing") : t("settings.general.installDeps")}
                     onClick={installDeps}
-                    disabled={installing !== null}
-                    title={t("settings.general.installDeps")}
-                  >
-                    {installing === "deps" ? t("settings.general.installing") : t("settings.general.installDeps")}
-                  </button>
+                    isDisabled={installing !== null}
+                    isLoading={installing === "deps"}
+                    variant="secondary"
+                  />
                 ) : (
                   <span className="st2-shell-allok">{t("settings.general.allInstalled")}</span>
                 )}
                 {wslOk && !status?.dns_ok && (
-                  <button
-                    className="st2-btn"
+                  <Button
+                    label={installing === "dns" ? t("settings.general.fixing") : t("settings.general.fixDns")}
                     onClick={fixDns}
-                    disabled={installing !== null}
-                    title={t("settings.general.fixDns")}
-                  >
-                    {installing === "dns" ? t("settings.general.fixing") : t("settings.general.fixDns")}
-                  </button>
+                    isDisabled={installing !== null}
+                    isLoading={installing === "dns"}
+                    variant="secondary"
+                  />
                 )}
                 {wslOk && !status?.internet_ok && (
-                  <button
-                    className="st2-btn"
+                  <Button
+                    label={installing === "network" ? t("settings.general.fixing") : t("settings.general.fixNetwork")}
                     onClick={fixNetwork}
-                    disabled={installing !== null}
-                    title={t("settings.general.fixNetworkHint")}
-                  >
-                    {installing === "network" ? t("settings.general.fixing") : t("settings.general.fixNetwork")}
-                  </button>
+                    isDisabled={installing !== null}
+                    isLoading={installing === "network"}
+                    variant="secondary"
+                  />
                 )}
               </div>
             )}
@@ -467,14 +465,13 @@ export function TerminalTab({ settings, onUpdate }: {
                 {winDepsAllOk ? (
                   <span className="st2-shell-allok">{t("settings.general.allInstalled")}</span>
                 ) : winStatus.winget ? (
-                  <button
-                    className="st2-btn"
+                  <Button
+                    label={installing === "windeps" ? t("settings.general.installing") : t("settings.general.installDeps")}
                     onClick={installWinDeps}
-                    disabled={installing !== null}
-                    title={t("settings.general.installDeps")}
-                  >
-                    {installing === "windeps" ? t("settings.general.installing") : t("settings.general.installDeps")}
-                  </button>
+                    isDisabled={installing !== null}
+                    isLoading={installing === "windeps"}
+                    variant="secondary"
+                  />
                 ) : (
                   <span className="st2-shell-note">{t("settings.general.wingetMissing")}</span>
                 )}
@@ -508,7 +505,7 @@ function ShellStatusCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className={`st2-shell-card${active ? " active" : ""}${ok ? " ok" : " bad"}`}>
+    <Card className={`st2-shell-card${active ? " active" : ""}${ok ? " ok" : " bad"}`} padding={0}>
       <div className="st2-shell-card-h">
         {ok ? <CheckCircle weight="fill" /> : <XCircle weight="fill" />}
         <span className="st2-shell-card-title">{title}</span>
@@ -517,6 +514,6 @@ function ShellStatusCard({
       {lines.map((ln, i) => (
         <div key={i} className="st2-shell-card-ln">{ln}</div>
       ))}
-    </div>
+    </Card>
   );
 }

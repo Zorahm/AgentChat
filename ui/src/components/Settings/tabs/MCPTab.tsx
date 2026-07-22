@@ -6,6 +6,10 @@ import {
   Plugs, Trash, CaretDown, CaretRight, ArrowsClockwise,
   Upload, FolderOpen, Plus, X, CheckCircle, XCircle, Terminal,
 } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Switch } from "@astryxdesign/core/Switch";
+import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import { API_BASE } from "../../../utils/apiBase";
 import type { MCPTransportConfig, MCPStdioConfig, MCPHttpConfig } from "../SettingsPanel";
 
@@ -125,22 +129,36 @@ export function MCPTab() {
           </p>
         </div>
         <div className="mcp-header-actions">
-          <button
-            className="st2-btn"
-            title={t("settings.mcp.openConfigFolder")}
+          <IconButton
+            label={t("settings.mcp.openConfigFolder")}
+            icon={<FolderOpen size={14} />}
             onClick={() => fetch(`${API_BASE}/mcp/config-dir/open`, { method: "POST" }).catch(() => {})}
-          >
-            <FolderOpen size={14} />
-          </button>
-          <button className="st2-btn" onClick={() => setInstalling(true)}>
-            <Terminal size={14} /> {t("settings.mcp.installCmd")}
-          </button>
-          <button className="st2-btn" onClick={() => setImporting(true)}>
-            <Upload size={14} /> {t("settings.mcp.import")}
-          </button>
-          <button className="st2-btn" onClick={reload} disabled={loading}>
-            <ArrowsClockwise size={14} /> {loading ? "…" : t("settings.mcp.refresh")}
-          </button>
+            variant="secondary"
+            size="sm"
+          />
+          <Button
+            label={t("settings.mcp.installCmd")}
+            icon={<Terminal size={14} />}
+            onClick={() => setInstalling(true)}
+            variant="secondary"
+            size="sm"
+          />
+          <Button
+            label={t("settings.mcp.import")}
+            icon={<Upload size={14} />}
+            onClick={() => setImporting(true)}
+            variant="secondary"
+            size="sm"
+          />
+          <Button
+            label={loading ? "…" : t("settings.mcp.refresh")}
+            icon={<ArrowsClockwise size={14} />}
+            onClick={reload}
+            isDisabled={loading}
+            isLoading={loading}
+            variant="secondary"
+            size="sm"
+          />
         </div>
       </div>
 
@@ -175,9 +193,12 @@ export function MCPTab() {
           onAdded={async () => { setAdding(false); setAddInitial(null); await reload(); }}
         />
       ) : (
-        <button className="mcp-add-btn" onClick={() => { setAddInitial(null); setAdding(true); }}>
-          <Plus size={14} /> {t("settings.mcp.addServer")}
-        </button>
+        <Button
+          label={t("settings.mcp.addServer")}
+          icon={<Plus size={14} />}
+          onClick={() => { setAddInitial(null); setAdding(true); }}
+          variant="secondary"
+        />
       )}
 
       {importing && (
@@ -215,14 +236,22 @@ function KVEditor({ pairs, onChange, keyPh = "KEY", valPh = "value" }: {
           <input className="mcp-kv-key" value={p.key} onChange={(e) => upd(i, "key", e.target.value)} placeholder={keyPh} />
           <span className="mcp-kv-eq">=</span>
           <input className="mcp-kv-val" value={p.value} onChange={(e) => upd(i, "value", e.target.value)} placeholder={valPh} />
-          <button className="mcp-kv-del" onClick={() => onChange(pairs.filter((_, j) => j !== i))}>
-            <X size={11} />
-          </button>
+          <IconButton
+            label={t("common.remove")}
+            icon={<X size={11} />}
+            onClick={() => onChange(pairs.filter((_, j) => j !== i))}
+            variant="ghost"
+            size="sm"
+          />
         </div>
       ))}
-      <button className="mcp-kv-add" onClick={() => onChange([...pairs, { key: "", value: "" }])}>
-        <Plus size={11} /> {t("settings.mcp.add")}
-      </button>
+      <Button
+        label={t("settings.mcp.add")}
+        icon={<Plus size={11} />}
+        onClick={() => onChange([...pairs, { key: "", value: "" }])}
+        variant="secondary"
+        size="sm"
+      />
     </div>
   );
 }
@@ -305,10 +334,16 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
         <span className="mcp-name">{server.name}</span>
         <span className="mcp-tag">{server.config.transport}</span>
         <span className="mcp-summary">{summary}</span>
-        <label className="mcp-toggle" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={server.enabled} onChange={(e) => onToggleEnabled(e.target.checked)} />
-          <span>{t("settings.mcp.enabled")}</span>
-        </label>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Switch
+            label={t("settings.mcp.enabled")}
+            value={server.enabled}
+            onChange={(v) => onToggleEnabled(v)}
+            isLabelHidden={false}
+            labelPosition="end"
+            labelSpacing="hug"
+          />
+        </div>
         {open ? <CaretDown size={13} className="mcp-chevron" /> : <CaretRight size={13} className="mcp-chevron" />}
       </div>
 
@@ -332,15 +367,30 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
           )}
 
           <div className="mcp-actions">
-            <button className="st2-btn st2-btn--primary" onClick={save} disabled={saving}>
-              {saving ? t("settings.mcp.saving") : t("settings.mcp.save")}
-            </button>
-            <button className="st2-btn" onClick={test} disabled={testing || !server.enabled}>
-              {testing ? t("settings.mcp.testing") : t("settings.mcp.test")}
-            </button>
-            <button className="st2-btn st2-btn--danger" style={{ marginLeft: "auto" }} onClick={onDelete}>
-              <Trash size={13} /> {t("settings.mcp.delete")}
-            </button>
+            <Button
+              label={saving ? t("settings.mcp.saving") : t("settings.mcp.save")}
+              onClick={save}
+              isDisabled={saving}
+              isLoading={saving}
+              variant="primary"
+              size="sm"
+            />
+            <Button
+              label={testing ? t("settings.mcp.testing") : t("settings.mcp.test")}
+              onClick={test}
+              isDisabled={testing || !server.enabled}
+              isLoading={testing}
+              variant="secondary"
+              size="sm"
+            />
+            <Button
+              label={t("settings.mcp.delete")}
+              icon={<Trash size={13} />}
+              onClick={onDelete}
+              variant="destructive"
+              size="sm"
+              style={{ marginLeft: "auto" }}
+            />
           </div>
 
           {testError && (
@@ -388,17 +438,15 @@ function StdioFields({ form, onChange }: { form: StdioForm; onChange: (f: Config
         <span>{t("settings.mcp.env")}</span>
         <KVEditor pairs={form.env} onChange={(env) => onChange({ ...form, env })} keyPh={t("settings.mcp.key")} valPh={t("settings.mcp.value")} />
       </div>
-      <div className="mcp-field">
-        <span>{t("settings.mcp.runtime")}</span>
-        <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
-          {(["host", "wsl"] as const).map((r) => (
-            <label key={r} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 400 }}>
-              <input type="radio" checked={form.runtime === r} onChange={() => onChange({ ...form, runtime: r })} />
-              {r === "host" ? t("settings.mcp.windows") : t("settings.mcp.wsl")}
-            </label>
-          ))}
-        </div>
-      </div>
+      <RadioList
+        label={t("settings.mcp.runtime")}
+        value={form.runtime}
+        onChange={(val) => onChange({ ...form, runtime: val as "host" | "wsl" })}
+        size="sm"
+      >
+        <RadioListItem value="host" label={t("settings.mcp.windows")} />
+        <RadioListItem value="wsl" label={t("settings.mcp.wsl")} />
+      </RadioList>
     </>
   );
 }
@@ -482,7 +530,7 @@ function AddServerForm({ existingIds, onCancel, onAdded, initial }: {
     <div className="mcp-add-form">
       <div className="mcp-add-form-head">
         <span>{t("settings.mcp.newServer")}</span>
-        <button className="mcp-add-form-close" onClick={onCancel}><X size={14} /></button>
+        <IconButton label={t("common.close")} icon={<X size={14} />} onClick={onCancel} variant="ghost" size="sm" />
       </div>
 
       <div className="mcp-add-grid">
@@ -496,13 +544,16 @@ function AddServerForm({ existingIds, onCancel, onAdded, initial }: {
         </label>
       </div>
 
-      <div className="mcp-transport-tabs">
-        {(["stdio", "http"] as const).map((t) => (
-          <button key={t} className={`mcp-transport-tab${transport === t ? " active" : ""}`} onClick={() => switchTransport(t)}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <RadioList
+        label={t("settings.mcp.transport")}
+        isLabelHidden
+        value={transport}
+        onChange={(val) => switchTransport(val as "stdio" | "http")}
+        size="sm"
+      >
+        <RadioListItem value="stdio" label="stdio" />
+        <RadioListItem value="http" label="http" />
+      </RadioList>
 
       {form.transport === "stdio"
         ? <StdioFields form={form} onChange={setForm} />
@@ -511,10 +562,21 @@ function AddServerForm({ existingIds, onCancel, onAdded, initial }: {
       {err && <div className="st2-error" style={{ margin: "10px 0 0", position: "static" }}>{err}</div>}
 
       <div className="mcp-actions" style={{ marginTop: 14 }}>
-        <button className="st2-btn st2-btn--primary" onClick={submit} disabled={saving}>
-          {saving ? t("settings.mcp.adding") : t("settings.mcp.add")}
-        </button>
-        <button className="st2-btn" onClick={onCancel} disabled={saving}>{t("settings.mcp.cancel")}</button>
+        <Button
+          label={saving ? t("settings.mcp.adding") : t("settings.mcp.add")}
+          onClick={submit}
+          isDisabled={saving}
+          isLoading={saving}
+          variant="primary"
+          size="sm"
+        />
+        <Button
+          label={t("settings.mcp.cancel")}
+          onClick={onCancel}
+          isDisabled={saving}
+          variant="secondary"
+          size="sm"
+        />
       </div>
     </div>
   );
@@ -556,7 +618,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
     <div className="mcp-add-form" style={{ marginTop: 12 }}>
       <div className="mcp-add-form-head">
         <span>{t("settings.mcp.importTitle")}</span>
-        <button className="mcp-add-form-close" onClick={onClose}><X size={14} /></button>
+        <IconButton label={t("common.close")} icon={<X size={14} />} onClick={onClose} variant="ghost" size="sm" />
       </div>
       <p className="st2-sub2">
         {t("settings.mcp.importDescription")}
@@ -570,10 +632,21 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
       />
       {err && <div className="st2-error" style={{ margin: "8px 0 0", position: "static" }}>{err}</div>}
       <div className="mcp-actions" style={{ marginTop: 12 }}>
-        <button className="st2-btn st2-btn--primary" onClick={submit} disabled={saving}>
-          {saving ? "…" : t("settings.mcp.importButton")}
-        </button>
-        <button className="st2-btn" onClick={onClose} disabled={saving}>{t("settings.mcp.importCancel")}</button>
+        <Button
+          label={saving ? "…" : t("settings.mcp.importButton")}
+          onClick={submit}
+          isDisabled={saving}
+          isLoading={saving}
+          variant="primary"
+          size="sm"
+        />
+        <Button
+          label={t("settings.mcp.importCancel")}
+          onClick={onClose}
+          isDisabled={saving}
+          variant="secondary"
+          size="sm"
+        />
       </div>
     </div>
   );
@@ -638,7 +711,7 @@ function InstallModal({ onClose, onUseCommand }: {
     <div className="mcp-add-form" style={{ marginTop: 12 }}>
       <div className="mcp-add-form-head">
         <span>{t("settings.mcp.installTitle")}</span>
-        <button className="mcp-add-form-close" onClick={onClose}><X size={14} /></button>
+        <IconButton label={t("common.close")} icon={<X size={14} />} onClick={onClose} variant="ghost" size="sm" />
       </div>
       <p className="st2-sub2">{t("settings.mcp.installDescription")}</p>
 
@@ -650,17 +723,15 @@ function InstallModal({ onClose, onUseCommand }: {
         placeholder={t("settings.mcp.installPlaceholder")}
       />
 
-      <div className="mcp-field" style={{ marginTop: 8 }}>
-        <span>{t("settings.mcp.installShell")}</span>
-        <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
-          {(["powershell", "cmd"] as const).map((s) => (
-            <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 400 }}>
-              <input type="radio" checked={shell === s} onChange={() => setShell(s)} />
-              {s === "powershell" ? "PowerShell" : "CMD"}
-            </label>
-          ))}
-        </div>
-      </div>
+      <RadioList
+        label={t("settings.mcp.installShell")}
+        value={shell}
+        onChange={(val) => setShell(val as "powershell" | "cmd")}
+        size="sm"
+      >
+        <RadioListItem value="powershell" label="PowerShell" />
+        <RadioListItem value="cmd" label="CMD" />
+      </RadioList>
 
       <p className="st2-sub2" style={{ marginTop: 8, color: "var(--muted)" }}>{t("settings.mcp.installHostNote")}</p>
 
@@ -685,15 +756,30 @@ function InstallModal({ onClose, onUseCommand }: {
       )}
 
       <div className="mcp-actions" style={{ marginTop: 12 }}>
-        <button className={`st2-btn${result ? "" : " st2-btn--primary"}`} onClick={run} disabled={running}>
-          {running ? t("settings.mcp.installRunning") : t("settings.mcp.installRun")}
-        </button>
+        <Button
+          label={running ? t("settings.mcp.installRunning") : t("settings.mcp.installRun")}
+          onClick={run}
+          isDisabled={running}
+          isLoading={running}
+          variant={result ? "secondary" : "primary"}
+          size="sm"
+        />
         {result && parsed && (
-          <button className="st2-btn st2-btn--primary" onClick={() => onUseCommand(parsed)} disabled={running}>
-            {t("settings.mcp.installAddServer")}
-          </button>
+          <Button
+            label={t("settings.mcp.installAddServer")}
+            onClick={() => onUseCommand(parsed)}
+            isDisabled={running}
+            variant="primary"
+            size="sm"
+          />
         )}
-        <button className="st2-btn" onClick={onClose} disabled={running}>{t("settings.mcp.cancel")}</button>
+        <Button
+          label={t("settings.mcp.cancel")}
+          onClick={onClose}
+          isDisabled={running}
+          variant="secondary"
+          size="sm"
+        />
       </div>
     </div>
   );

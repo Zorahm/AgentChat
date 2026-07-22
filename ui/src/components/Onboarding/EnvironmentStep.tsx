@@ -11,6 +11,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Card } from "@astryxdesign/core/Card";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Button } from "@astryxdesign/core/Button";
 import { API_BASE } from "../../utils/apiBase";
 import { DependencyCard, type DepItem } from "./DependencyCard";
 
@@ -328,22 +331,38 @@ export function EnvironmentStep({ osPlatform, onBusyChange, onError }: Environme
         </p>
 
         <div className="ob-shell-choice">
-          <button
-            type="button"
+          <Card
             className={`ob-shell-card${nativeShell === "bash" ? " selected" : ""}`}
+            variant={nativeShell === "bash" ? "blue" : "default"}
+            role="button"
             onClick={() => chooseNativeShell("bash")}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                chooseNativeShell("bash");
+              }
+            }}
           >
             <span className="ob-shell-name">{t("onboarding.shellBash")}</span>
             <span className="ob-shell-desc">{t("onboarding.shellBashDesc")}</span>
-          </button>
-          <button
-            type="button"
+          </Card>
+          <Card
             className={`ob-shell-card${nativeShell === "zsh" ? " selected" : ""}`}
+            variant={nativeShell === "zsh" ? "blue" : "default"}
+            role="button"
             onClick={() => chooseNativeShell("zsh")}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                chooseNativeShell("zsh");
+              }
+            }}
           >
             <span className="ob-shell-name">{t("onboarding.shellZsh")}</span>
             <span className="ob-shell-desc">{t("onboarding.shellZshDesc")}</span>
-          </button>
+          </Card>
         </div>
 
         {wsl === null ? (
@@ -382,22 +401,38 @@ export function EnvironmentStep({ osPlatform, onBusyChange, onError }: Environme
       <p className="ob-sub">{t("onboarding.step3Description")}</p>
 
       <div className="ob-shell-choice">
-        <button
-          type="button"
+        <Card
           className={`ob-shell-card${shell === "powershell" ? " selected" : ""}`}
+          variant={shell === "powershell" ? "blue" : "default"}
+          role="button"
           onClick={() => chooseShell("powershell")}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              chooseShell("powershell");
+            }
+          }}
         >
           <span className="ob-shell-name">{t("onboarding.shellPowershell")}</span>
           <span className="ob-shell-desc">{t("onboarding.shellPowershellDesc")}</span>
-        </button>
-        <button
-          type="button"
+        </Card>
+        <Card
           className={`ob-shell-card${shell === "wsl" ? " selected" : ""}`}
+          variant={shell === "wsl" ? "blue" : "default"}
+          role="button"
           onClick={() => chooseShell("wsl")}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              chooseShell("wsl");
+            }
+          }}
         >
           <span className="ob-shell-name">{t("onboarding.shellWsl")}</span>
           <span className="ob-shell-desc">{t("onboarding.shellWslDesc")}</span>
-        </button>
+        </Card>
       </div>
 
       {shell === "wsl" &&
@@ -429,39 +464,38 @@ export function EnvironmentStep({ osPlatform, onBusyChange, onError }: Environme
                     <div className="ob-wsl-creds">
                       <p className="ob-sub2">{t("onboarding.wslCredsDescription")}</p>
                       <div className="ob-wsl-creds-row">
-                        <label className="ob-label">
-                          {t("onboarding.wslUsername")}
-                          <input
-                            className="ob-input"
-                            type="text"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            value={wslUsername}
-                            onChange={(e) => setWslUsername(e.target.value)}
-                            placeholder={t("onboarding.wslUsernamePlaceholder")}
-                            disabled={busy !== null}
-                          />
-                        </label>
-                        <label className="ob-label">
-                          {t("onboarding.wslPassword")}
-                          <input
-                            className="ob-input"
-                            type="password"
-                            value={wslPassword}
-                            onChange={(e) => setWslPassword(e.target.value)}
-                            placeholder={t("onboarding.wslPasswordPlaceholder")}
-                            disabled={busy !== null}
-                          />
-                        </label>
+                        <TextInput
+                          label={t("onboarding.wslUsername")}
+                          type="text"
+                          value={wslUsername}
+                          onChange={(v) => setWslUsername(v)}
+                          placeholder={t("onboarding.wslUsernamePlaceholder")}
+                          isDisabled={busy !== null}
+                          className="ob-input"
+                        />
+                        <TextInput
+                          label={t("onboarding.wslPassword")}
+                          type="password"
+                          value={wslPassword}
+                          onChange={(v) => setWslPassword(v)}
+                          placeholder={t("onboarding.wslPasswordPlaceholder")}
+                          isDisabled={busy !== null}
+                          className="ob-input"
+                        />
                       </div>
                     </div>
                   ) : null
                 }
                 secondaryActions={
                   wsl.distro_running && !wsl.internet_ok ? (
-                    <button className="ob-btn ob-btn--ghost" onClick={fixNetwork} disabled={busy !== null}>
-                      {busy === "network" ? t("onboarding.fixingNetwork") : t("onboarding.fixNetwork")}
-                    </button>
+                    <Button
+                      label={busy === "network" ? t("onboarding.fixingNetwork") : t("onboarding.fixNetwork")}
+                      variant="ghost"
+                      onClick={fixNetwork}
+                      isDisabled={busy !== null}
+                      isLoading={busy === "network"}
+                      className="ob-btn ob-btn--ghost"
+                    />
                   ) : null
                 }
               />

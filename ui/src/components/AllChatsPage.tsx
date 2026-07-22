@@ -1,11 +1,17 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
-  Trash, PencilSimple, Check, X, MagnifyingGlass, ArrowLeft,
+  Trash, PencilSimple, Check, ArrowLeft,
   PushPin, Chats, SortAscending, SortDescending,
 } from "@phosphor-icons/react";
 import type { ChatSession, ChatNode } from "../types/chat";
-import { useLongPress } from "../hooks/useLongPress";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Badge } from "@astryxdesign/core/Badge";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { ContextMenu, ContextMenuItem } from "@astryxdesign/core/ContextMenu";
+import { Divider } from "@astryxdesign/core/Divider";
 
 interface AllChatsPageProps {
   sessions: ChatSession[];
@@ -133,20 +139,30 @@ export function AllChatsPage({
 
   const actions = (
     <div className="ac-head-actions">
-      <button className="ac-toolbar-btn" onClick={cycleSortMode} title={t("allChats.sortTooltip")}>
-        {sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
-        <span>{sortLabel[sort]}</span>
-      </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        label={sortLabel[sort]}
+        icon={sort === "oldest" ? <SortAscending size={15} weight="bold" /> : <SortDescending size={15} weight="bold" />}
+        onClick={cycleSortMode}
+        tooltip={t("allChats.sortTooltip")}
+      />
       {selectMode ? (
-        <button className="ac-toolbar-btn ac-toolbar-btn--active" onClick={handleExitSelect}>
-          <X size={14} weight="bold" />
-          <span>{t("allChats.cancel")}</span>
-        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          label={t("allChats.cancel")}
+          icon={<Check size={14} weight="bold" />}
+          onClick={handleExitSelect}
+        />
       ) : (
-        <button className="ac-toolbar-btn" onClick={() => setSelectMode(true)}>
-          <Check size={14} weight="bold" />
-          <span>{t("allChats.select")}</span>
-        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          label={t("allChats.select")}
+          icon={<Check size={14} weight="bold" />}
+          onClick={() => setSelectMode(true)}
+        />
       )}
     </div>
   );
@@ -156,27 +172,19 @@ export function AllChatsPage({
       {/* ── Header (standalone only) ── */}
       {!embedded && (
         <div className="ac-head">
-          <button className="ac-back" onClick={onBack} title={t("allChats.cancel")}>
-            <ArrowLeft size={18} weight="bold" />
-          </button>
+          <Button variant="ghost" isIconOnly icon={<ArrowLeft size={18} weight="bold" />} label={t("allChats.cancel")} onClick={onBack} />
           <div className="ac-head-titles">
             <h2 className="ac-head-title">{t("allChats.title")}</h2>
             <span className="ac-head-count">{sessions.length}</span>
           </div>
-          <div className="ac-search">
-            <MagnifyingGlass size={14} className="ac-search-icon" />
-            <input
-              ref={searchRef}
-              placeholder={t("allChats.searchPlaceholder")}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            {query && (
-              <button className="ac-search-clear" onClick={() => setQuery("")}>
-                <X size={12} weight="bold" />
-              </button>
-            )}
-          </div>
+          <TextInput
+            ref={searchRef as React.Ref<HTMLInputElement>}
+            label={t("allChats.searchPlaceholder")}
+            placeholder={t("allChats.searchPlaceholder")}
+            value={query}
+            onChange={(value: string) => setQuery(value)}
+            isLabelHidden
+          />
           {actions}
         </div>
       )}
@@ -199,10 +207,13 @@ export function AllChatsPage({
           {selected.size > 0 && (
             <div className="ac-bulk-right">
               <span className="ac-bulk-count">{t("allChats.selected", { count: selected.size })}</span>
-              <button className="ac-bulk-del" onClick={handleBulkDelete}>
-                <Trash size={14} weight="bold" />
-                {t("allChats.delete")}
-              </button>
+              <Button
+                variant="destructive"
+                size="sm"
+                label={t("allChats.delete")}
+                icon={<Trash size={14} weight="bold" />}
+                onClick={handleBulkDelete}
+              />
             </div>
           )}
         </div>
@@ -211,11 +222,11 @@ export function AllChatsPage({
       {/* ── Grid ── */}
       <div className="ac-scroll">
         {filtered.length === 0 ? (
-          <div className="ac-empty">
-            <div className="ac-empty-icon"><Chats size={40} weight="duotone" /></div>
-            <p className="ac-empty-title">{t("allChats.emptyTitle")}</p>
-            <p className="ac-empty-sub">{t("allChats.emptySubtitle")}</p>
-          </div>
+          <EmptyState
+            icon={<Chats size={40} weight="duotone" />}
+            title={t("allChats.emptyTitle")}
+            description={t("allChats.emptySubtitle")}
+          />
         ) : (
           <>
             {pinned.length > 0 && (
@@ -273,52 +284,6 @@ export function AllChatsPage({
   );
 }
 
-/* ── Context Menu ─────────────────────────────────────────────────────────── */
-
-interface CardMenuProps {
-  x: number;
-  y: number;
-  pinned: boolean;
-  onPin: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}
-
-function CardMenu({ x, y, pinned, onPin, onRename, onDelete, onClose }: CardMenuProps) {
-  const { t } = useTranslation();
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const down = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    // pointerdown covers both mouse and touch dismissals.
-    document.addEventListener("pointerdown", down);
-    document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
-  }, [onClose]);
-
-  return (
-    <div ref={ref} className="ctx-menu" style={{ position: "fixed", top: y, left: x, zIndex: 9999 }}>
-      <button className="ctx-item" onClick={() => { onPin(); onClose(); }}>
-        <PushPin weight={pinned ? "fill" : "regular"} />
-        {pinned ? t("allChats.unpin") : t("allChats.pin")}
-      </button>
-      <button className="ctx-item" onClick={() => { onRename(); onClose(); }}>
-        <PencilSimple />
-        {t("allChats.rename")}
-      </button>
-      <div className="ctx-divider" />
-      <button className="ctx-item ctx-item--danger" onClick={() => { onDelete(); onClose(); }}>
-        <Trash />
-        {t("allChats.delete")}
-      </button>
-    </div>
-  );
-}
-
 /* ── Chat Card ────────────────────────────────────────────────────────────── */
 
 interface ChatCardProps {
@@ -339,19 +304,14 @@ function ChatCard({
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(session.title);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const msgCount = useMemo(() => getMessageCount(session.root ?? []), [session.root]);
 
-  // Right-click (desktop) or long-press (touch) opens the context menu.
-  const { bind: longPress, shouldSuppressClick } = useLongPress((x, y) => setMenu({ x, y }));
-
   const handleClick = useCallback(() => {
     if (editing) return;
-    if (shouldSuppressClick()) return;
     if (selectMode) { onToggleSelect(); return; }
     onSelect();
-  }, [editing, shouldSuppressClick, selectMode, onToggleSelect, onSelect]);
+  }, [editing, selectMode, onToggleSelect, onSelect]);
 
   const handleStartEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -372,7 +332,31 @@ function ChatCard({
   }, [handleSave]);
 
   return (
-    <>
+    <ContextMenu
+      isDisabled={editing}
+      label={session.title}
+      menuContent={
+        <>
+          <ContextMenuItem
+            icon={<PushPin weight={session.pinned ? "fill" : "regular"} />}
+            label={session.pinned ? t("allChats.unpin") : t("allChats.pin")}
+            onClick={onPin}
+          />
+          <ContextMenuItem
+            icon={<PencilSimple />}
+            label={t("allChats.rename")}
+            onClick={() => { setEditTitle(session.title); setEditing(true); }}
+          />
+          <Divider />
+          <ContextMenuItem
+            icon={<Trash />}
+            label={t("allChats.delete")}
+            onClick={onDelete}
+            className="ctx-item--danger"
+          />
+        </>
+      }
+    >
       <div
         className={[
           "ac-card",
@@ -380,7 +364,6 @@ function ChatCard({
           selected ? "ac-card--selected" : "",
         ].filter(Boolean).join(" ")}
         onClick={handleClick}
-        {...longPress}
       >
         {/* Top row */}
         <div className="ac-card-top">
@@ -394,17 +377,13 @@ function ChatCard({
             />
           )}
           <div className="ac-card-badges">
-            {active && <span className="ac-badge ac-badge--active">{t("allChats.currentBadge")}</span>}
-            {session.pinned && <span className="ac-badge ac-badge--pin"><PushPin size={9} weight="fill" /></span>}
+            {active && <Badge variant="blue" label={t("allChats.currentBadge")} />}
+            {session.pinned && <Badge variant="green" icon={<PushPin size={9} weight="fill" />} label="" />}
           </div>
           {!selectMode && !editing && (
             <div className="ac-card-actions" onClick={(e) => e.stopPropagation()}>
-              <button className="ac-card-btn" onClick={handleStartEdit} title={t("allChats.renameTooltip")}>
-                <PencilSimple size={13} />
-              </button>
-              <button className="ac-card-btn ac-card-btn--del" onClick={() => onDelete()} title={t("allChats.deleteTooltip")}>
-                <Trash size={13} />
-              </button>
+              <Button variant="ghost" size="sm" isIconOnly icon={<PencilSimple size={13} />} label={t("allChats.renameTooltip")} onClick={handleStartEdit} tooltip={t("allChats.renameTooltip")} />
+              <Button variant="ghost" size="sm" isIconOnly icon={<Trash size={13} />} label={t("allChats.deleteTooltip")} onClick={() => onDelete()} tooltip={t("allChats.deleteTooltip")} />
             </div>
           )}
         </div>
@@ -422,12 +401,8 @@ function ChatCard({
                 autoFocus
               />
               <div className="ac-card-edit-actions">
-                <button className="ac-card-btn ac-card-btn--ok" onMouseDown={(e) => { e.preventDefault(); handleSave(e); }}>
-                  <Check size={13} weight="bold" />
-                </button>
-                <button className="ac-card-btn" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(false); }}>
-                  <X size={13} weight="bold" />
-                </button>
+                <Button variant="secondary" size="sm" isIconOnly icon={<Check size={13} weight="bold" />} label="Save" onMouseDown={(e) => { e.preventDefault(); handleSave(e); }} />
+                <Button variant="ghost" size="sm" isIconOnly icon={<Check size={13} weight="bold" />} label="Cancel" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(false); }} />
               </div>
             </div>
           ) : (
@@ -447,18 +422,6 @@ function ChatCard({
           </span>
         </div>
       </div>
-
-      {menu && (
-        <CardMenu
-          x={menu.x}
-          y={menu.y}
-          pinned={!!session.pinned}
-          onPin={onPin}
-          onRename={() => { setEditTitle(session.title); setEditing(true); }}
-          onDelete={onDelete}
-          onClose={() => setMenu(null)}
-        />
-      )}
-    </>
+    </ContextMenu>
   );
 }

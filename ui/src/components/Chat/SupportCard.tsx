@@ -9,6 +9,7 @@
 
 import { Lifebuoy, Phone, ChatCircleText, Globe } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Card } from "@astryxdesign/core/Card";
 
 interface ResourceLine {
   /** Display text for the contact (number/handle). */
@@ -47,7 +48,7 @@ export function SupportCard() {
   ];
 
   return (
-    <div className="support-card" role="note">
+    <Card className="support-card">
       <div className="support-card-head">
         <span className="support-card-icon"><Lifebuoy size={20} weight="duotone" /></span>
         <span className="support-card-title">{t("support.title")}</span>
@@ -80,6 +81,6 @@ export function SupportCard() {
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

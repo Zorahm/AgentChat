@@ -2,12 +2,17 @@
  *  behind a single shared search box and a Chats | Files tab switcher. */
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, MagnifyingGlass, X, Chats, Images } from "@phosphor-icons/react";
+import { Chats, Images, ArrowLeft } from "@phosphor-icons/react";
 import type { ChatSession } from "../hooks/useChats";
 import { collectAllFiles } from "../utils/collectAllFiles";
 import { AllChatsPage } from "./AllChatsPage";
 import { FilesGalleryPage } from "./FilesGalleryPage";
 import { useTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
+import { TabList, Tab } from "@astryxdesign/core/TabList";
+import { TextInput } from "@astryxdesign/core/TextInput";
+
+type TabValue = "chats" | "files";
 
 type Tab = "chats" | "files";
 
@@ -37,43 +42,33 @@ export function LibraryPage({
   return (
     <div className="lib-page">
       <div className="lib-head">
-        <button className="lib-back" onClick={onBack} title={t("library.close")}>
-          <ArrowLeft size={18} weight="bold" />
-        </button>
+        <Button variant="ghost" isIconOnly icon={<ArrowLeft size={18} weight="bold" />} label={t("library.close")} onClick={onBack} />
 
-        <div className="lib-tabs">
-          <button
-            className={`lib-tab${tab === "chats" ? " active" : ""}`}
-            onClick={() => setTab("chats")}
-          >
-            <Chats size={16} weight={tab === "chats" ? "fill" : "regular"} />
-            <span>{t("library.tabChats")}</span>
-            <span className="lib-tab-count">{sessions.length}</span>
-          </button>
-          <button
-            className={`lib-tab${tab === "files" ? " active" : ""}`}
-            onClick={() => setTab("files")}
-          >
-            <Images size={16} weight={tab === "files" ? "fill" : "regular"} />
-            <span>{t("library.tabFiles")}</span>
-            <span className="lib-tab-count">{fileCount}</span>
-          </button>
-        </div>
-
-        <div className="lib-search">
-          <MagnifyingGlass size={15} className="lib-search-icon" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={tab === "chats" ? t("library.searchChats") : t("library.searchFiles")}
-            autoFocus
+        <TabList value={tab} onChange={(v) => setTab(v as TabValue)}>
+          <Tab
+            value="chats"
+            icon={<Chats size={16} weight="regular" />}
+            selectedIcon={<Chats size={16} weight="fill" />}
+            label={t("library.tabChats")}
+            endContent={<span className="lib-tab-count">{sessions.length}</span>}
           />
-          {query && (
-            <button className="lib-search-clear" onClick={() => setQuery("")}>
-              <X size={12} weight="bold" />
-            </button>
-          )}
-        </div>
+          <Tab
+            value="files"
+            icon={<Images size={16} weight="regular" />}
+            selectedIcon={<Images size={16} weight="fill" />}
+            label={t("library.tabFiles")}
+            endContent={<span className="lib-tab-count">{fileCount}</span>}
+          />
+        </TabList>
+
+        <TextInput
+          label={tab === "chats" ? t("library.searchChats") : t("library.searchFiles")}
+          value={query}
+          onChange={(value: string) => setQuery(value)}
+          placeholder={tab === "chats" ? t("library.searchChats") : t("library.searchFiles")}
+          isLabelHidden
+          hasAutoFocus
+        />
       </div>
 
       <div className="lib-body">

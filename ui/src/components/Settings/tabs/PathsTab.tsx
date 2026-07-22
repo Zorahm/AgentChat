@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Globe, Check, Copy, DeviceMobile } from "@phosphor-icons/react";
 import { QRCodeSVG } from "qrcode.react";
+import { Switch } from "@astryxdesign/core/Switch";
+import { Button } from "@astryxdesign/core/Button";
 import { API_BASE, setBackendUrl } from "../../../utils/apiBase";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { RestartBackendButton } from "../RestartBackendButton";
@@ -107,11 +109,11 @@ export function PathsTab() {
               <div className="st2-remote-head-title">{t("settings.paths.remoteAllow")}</div>
               <div className="st2-remote-head-sub">{t("settings.paths.remoteAllowHint")}</div>
             </div>
-            <div
-              className={`st2-switch st2-switch--lg${enabled ? " on" : ""}`}
-              role="switch"
-              aria-checked={enabled}
-              onClick={() => { void handleToggleRemote(); }}
+            <Switch
+              label={t("settings.paths.remoteAllow")}
+              isLabelHidden
+              value={enabled}
+              onChange={() => { void handleToggleRemote(); }}
             />
           </div>
 
@@ -119,7 +121,6 @@ export function PathsTab() {
             <div className="st2-remote-body">
               <div className="st2-remote-restart-row">
                 <RestartBackendButton
-                  className="st2-remote-copy"
                   onDone={() => { setRestartHint(false); void loadInfo(); }}
                 />
                 {restartHint && (
@@ -140,14 +141,13 @@ export function PathsTab() {
                         {info.urls.length > 1 && (
                           <div className="st2-remote-urls">
                             {info.urls.map((u) => (
-                              <button
+                              <Button
                                 key={u}
-                                className={`st2-remote-url-chip${u === selectedUrl ? " on" : ""}${isTailscaleUrl(u) ? " ts" : ""}`}
+                                label={`${u.replace(/^https?:\/\//, "")}${isTailscaleUrl(u) ? " · Tailscale" : ""}`}
                                 onClick={() => setSelectedUrl(u)}
-                              >
-                                {u.replace(/^https?:\/\//, "")}
-                                {isTailscaleUrl(u) && <span className="st2-remote-url-tag">Tailscale</span>}
-                              </button>
+                                variant={u === selectedUrl ? "primary" : "secondary"}
+                                size="sm"
+                              />
                             ))}
                           </div>
                         )}
@@ -156,10 +156,13 @@ export function PathsTab() {
                           <div className="st2-remote-field">
                             <span className="lab">{t("settings.paths.remoteUrlLabel")}</span>
                             <code>{selectedUrl}</code>
-                            <button className="st2-remote-copy" onClick={() => void copy(selectedUrl, "url")}>
-                              {copied === "url" ? <Check weight="bold" /> : <Copy />}
-                              {copied === "url" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
-                            </button>
+                            <Button
+                              label={copied === "url" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
+                              icon={copied === "url" ? <Check weight="bold" /> : <Copy />}
+                              onClick={() => void copy(selectedUrl, "url")}
+                              variant="secondary"
+                              size="sm"
+                            />
                           </div>
                         )}
 
@@ -205,12 +208,12 @@ export function PathsTab() {
               onKeyDown={(e) => { if (e.key === "Enter") handleApply(); }}
             />
           </div>
-          <button
-            className={`st2-paths-url-btn${applied ? " applied" : ""}`}
+          <Button
+            label={applied ? t("settings.paths.applied") : t("settings.paths.apply")}
+            icon={applied ? <Check weight="bold" /> : undefined}
             onClick={handleApply}
-          >
-            {applied ? <><Check weight="bold" /> {t("settings.paths.applied")}</> : t("settings.paths.apply")}
-          </button>
+            variant="primary"
+          />
         </div>
       </div>
 
@@ -224,7 +227,7 @@ export function PathsTab() {
             </div>
           </div>
           <div className="st2-paths-restart-row">
-            <RestartBackendButton className="st2-btn" />
+            <RestartBackendButton />
           </div>
         </div>
       )}

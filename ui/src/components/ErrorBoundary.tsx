@@ -4,11 +4,15 @@
  * equivalent — so this is the one sanctioned exception to the functional-only
  * rule in AGENTS.md. Without it, any uncaught throw in a render/effect (e.g. a
  * `JSON.stringify` cycle error) unmounts the entire tree to a blank screen.
+ * `withTranslation` (react-i18next's class-component HOC) supplies `t` since
+ * `useTranslation` isn't usable here.
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { withTranslation, type WithTranslation } from "react-i18next";
+import { Button } from "@astryxdesign/core/Button";
 
-interface ErrorBoundaryProps {
+interface ErrorBoundaryProps extends WithTranslation {
   children: ReactNode;
 }
 
@@ -16,7 +20,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundaryBase extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -34,6 +38,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render(): ReactNode {
     const { error } = this.state;
+    const { t } = this.props;
     if (!error) return this.props.children;
 
     return (
@@ -52,27 +57,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         }}
       >
         <div style={{ fontSize: 40 }}>👻</div>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>Что-то сломалось</div>
+        <div style={{ fontSize: 18, fontWeight: 600 }}>{t("errorBoundary.title")}</div>
         <div style={{ fontSize: 13, opacity: 0.7, maxWidth: 420, wordBreak: "break-word" }}>
-          {error.message || "Неизвестная ошибка"}
+          {error.message || t("errorBoundary.unknownError")}
         </div>
-        <button
-          type="button"
+        <Button
+          label={t("errorBoundary.reload")}
           onClick={this.handleReload}
-          style={{
-            marginTop: 8,
-            padding: "8px 18px",
-            fontSize: 14,
-            borderRadius: 8,
-            border: "1px solid var(--line-2, #ccc)",
-            background: "var(--surface-2, #fff)",
-            color: "inherit",
-            cursor: "pointer",
-          }}
-        >
-          Перезагрузить
-        </button>
+          variant="secondary"
+          style={{ marginTop: 8 }}
+        />
       </div>
     );
   }
 }
+
+export const ErrorBoundary = withTranslation()(ErrorBoundaryBase);

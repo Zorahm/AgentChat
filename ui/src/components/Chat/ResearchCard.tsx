@@ -2,7 +2,9 @@
  *  Clicking it opens the research side panel (timeline of the process). */
 
 import { useTranslation } from "react-i18next";
-import { CaretRight, MagnifyingGlass, Spinner } from "@phosphor-icons/react";
+import { CaretRight, MagnifyingGlass, Spinner as PhosphorSpinner } from "@phosphor-icons/react";
+import { Button } from "@astryxdesign/core/Button";
+import { Spinner } from "@astryxdesign/core/Spinner";
 import type { ToolCall } from "../../types/tool-call";
 import { aggregateSources } from "../../utils/research";
 
@@ -39,12 +41,14 @@ export function ResearchCard({ call }: ResearchCardProps) {
   };
 
   return (
-    <button
-      className={`research-card${running ? " research-card--running" : ""}${cancelled ? " research-card--cancelled" : ""}`}
+    <Button
+      label={title}
       onClick={open}
+      variant="secondary"
+      className={`research-card${running ? " research-card--running" : ""}${cancelled ? " research-card--cancelled" : ""}`}
     >
       <span className="research-card-ic">
-        {running ? <Spinner className="research-spin" weight="bold" /> : <MagnifyingGlass weight="bold" />}
+        {running ? <Spinner size="sm" /> : <MagnifyingGlass weight="bold" />}
       </span>
       <span className="research-card-body">
         <span className="research-card-title">{title}</span>
@@ -55,6 +59,6 @@ export function ResearchCard({ call }: ResearchCardProps) {
         </span>
       </span>
       <CaretRight className="research-card-chev" weight="bold" />
-    </button>
+    </Button>
   );
 }
