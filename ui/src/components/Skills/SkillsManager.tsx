@@ -18,6 +18,8 @@ import { TreeList } from "@astryxdesign/core/TreeList";
 import type { TreeListItemData } from "@astryxdesign/core/TreeList";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { latexMarkdownPlugins } from "../../utils/latexPlugins";
+import { parseFrontmatter } from "../../utils/frontmatter";
+import { FrontmatterCard } from "../FrontmatterCard";
 import { API_BASE } from "../../utils/apiBase";
 import { playNotificationSound } from "../../utils/notify";
 import { basename } from "../../utils/basename";
@@ -198,12 +200,35 @@ function SkillDetailPane({ skill, content, files, onUninstall }: SkillDetailPane
 
       <div className="sk2-render">
         {content !== undefined ? (
-          <Markdown className="sk2-readme" inlinePlugins={latexMarkdownPlugins}>{content}</Markdown>
+          <SkillReadme content={content} />
         ) : (
           <div className="sk2-readme faint">{t("skills.loadingContent")}</div>
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Readme ─────────────────────────────────────────────────────────────── */
+
+interface SkillReadmeProps {
+  content: string;
+}
+
+/** SKILL.md body with its YAML frontmatter rendered as a card instead of a raw
+ * `--- … ---` block. The pane header already shows name/description (h3 +
+ * sk2-desc), so those keys are dropped and the card degrades to a chips-only
+ * row of the remaining fields (license, allowed-tools, …). */
+function SkillReadme({ content }: SkillReadmeProps) {
+  const { meta, body } = parseFrontmatter(content);
+  const rest = Object.fromEntries(
+    Object.entries(meta).filter(([k]) => k !== "name" && k !== "description"),
+  );
+  return (
+    <>
+      {Object.keys(rest).length > 0 && <FrontmatterCard meta={rest} />}
+      <Markdown className="sk2-readme" inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
+    </>
   );
 }
 

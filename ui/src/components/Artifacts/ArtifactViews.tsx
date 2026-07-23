@@ -12,6 +12,7 @@ import { API_BASE, withToken } from "../../utils/apiBase";
 import { useTranslation } from "react-i18next";
 import { parseFrontmatter } from "../../utils/frontmatter";
 import { basename } from "../../utils/basename";
+import { FrontmatterCard } from "../FrontmatterCard";
 
 /** Office preview: convert the file to PDF on the backend (LibreOffice) and show
  * it in an iframe. Falls back to a download hint when LibreOffice is missing or
@@ -312,36 +313,6 @@ function MemberCode({ name, content }: { name: string; content: string }) {
       width="100%"
       container="section"
     />
-  );
-}
-
-/** Formatted YAML frontmatter (name + description + remaining fields) — shown
- * above the rendered markdown body instead of dumping the raw `--- … ---`. */
-function FrontmatterCard({ meta }: { meta: Record<string, string> }) {
-  const { t } = useTranslation();
-  const { name, description, ...rest } = meta;
-  const restEntries = Object.entries(rest).filter(([, v]) => v.trim().length > 0);
-
-  return (
-    <div className="fm-card">
-      {name && <div className="fm-name">{name}</div>}
-      {description && (
-        <div className="fm-field">
-          <div className="fm-label">{t("artifacts.description")}</div>
-          <div className="fm-desc">{description}</div>
-        </div>
-      )}
-      {restEntries.length > 0 && (
-        <div className="fm-chips">
-          {restEntries.map(([k, v]) => (
-            <span key={k} className="fm-chip">
-              <span className="fm-chip-key">{k}</span>
-              <span className="fm-chip-val">{v}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
