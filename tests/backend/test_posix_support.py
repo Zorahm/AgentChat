@@ -130,6 +130,45 @@ def test_posix_check_read_allows_uploads_rejects_system() -> None:
     assert policy.check_read("/etc/passwd") is not None
 
 
+# ── macOS sandbox-exec fallback ────────────────────────────────────────
+
+
+def test_wrap_bash_falls_back_to_sandbox_exec() -> None:
+    policy = SandboxPolicy(chat_dir=POSIX_CHAT_DIR, shell="posix")
+    wrapped = policy.wrap_bash("echo hi")
+    # Runtime dispatch: bwrap first, then the macOS Seatbelt cage, then the
+    # loud exit-127 error — never a silent uncaged run.
+    assert "command -v bwrap" in wrapped
+    assert "/usr/bin/sandbox-exec" in wrapped
+    assert "exit 127" in wrapped
+    # --clearenv parity: env is rebuilt from scratch so backend API keys never
+    # reach the model's shell; HOME points at the chat dir.
+    assert "/usr/bin/env -i" in wrapped
+    assert f"HOME={POSIX_CHAT_DIR}" in wrapped
+
+
+def test_sandbox_exec_profile_denies_writes_and_home_reads() -> None:
+    policy = SandboxPolicy(
+        chat_dir=POSIX_CHAT_DIR,
+        allowed_read_prefixes=("/home/user/.agents",),
+        shell="posix",
+    )
+    wrapped = policy.wrap_bash("echo hi")
+    assert "(deny file-write*)" in wrapped
+    assert f'(subpath "{POSIX_CHAT_DIR}")' in wrapped
+    # The real home is derived from the app's <home>/AgentChat/chats/<slug>
+    # layout and denied for reads (bwrap's unmounted-home parity)...
+    assert '(deny file-read* (subpath "/home/user"))' in wrapped
+    # ...with the skill allowlist re-allowed back on top.
+    assert '(subpath "/home/user/.agents")' in wrapped
+
+
+def test_sandbox_exec_cage_runs_zsh_when_chosen() -> None:
+    policy = SandboxPolicy(chat_dir=POSIX_CHAT_DIR, shell="zsh")
+    wrapped = policy.wrap_bash("echo hi")
+    # The Seatbelt cage's inner interpreter follows the shell preference too.
+    assert "/bin/zsh -c" in wrapped
+
 
 # ── BashTool dispatch in posix mode ────────────────────────────────────
 

@@ -4,6 +4,8 @@ Three rules:
   1. bash_tool runs inside a bubblewrap (bwrap) cage that exposes only the
      chat directory read-write plus read-only system paths (/usr, /bin, /lib,
      /etc). The model cannot read $HOME, /mnt, or anything outside the cage.
+     On macOS (no bwrap, no mount namespaces) the envelope falls back to the
+     system ``sandbox-exec`` with an equivalent-in-spirit Seatbelt profile.
   2. read_file is restricted to ``chat_dir`` — i.e. files the user has
      attached via @-mention (which land under ``chat_dir/uploads/``) plus
      anything the model itself created through write_file/edit_file.
@@ -134,11 +136,13 @@ class SandboxPolicy:
     # ── bash wrap ─────────────────────────────────────────────────────
 
     def wrap_bash(self, inner_cmd: str) -> str:
-        """Return *inner_cmd* wrapped in a bwrap call, or the cmd unchanged
-        when unrestricted.
+        """Return *inner_cmd* wrapped in a bwrap call (Linux/WSL) or a
+        sandbox-exec cage (macOS), or the cmd unchanged when unrestricted.
 
-        The wrapper checks bwrap availability at runtime and falls back to a
-        loud error so the model doesn't silently break out.
+        The wrapper picks the cage at runtime — ``command -v bwrap`` first,
+        then ``/usr/bin/sandbox-exec`` — and falls back to a loud error so the
+        model doesn't silently break out. Keeping the detection in the shell
+        (not in Python) keeps this module platform-free.
         """
         if self.unrestricted:
             # No cage and no path checks — but keep the per-chat dev environment
@@ -236,16 +240,64 @@ class SandboxPolicy:
             "zsh" if self.shell == "zsh" else "bash", "-c", inner_cmd,
         ]
         bwrap_str = " ".join(shlex.quote(a) for a in bwrap_args)
-        # If bwrap is not installed, fall through to a friendly error rather
-        # than silently dropping the cage. `command -v` returns non-zero → we
-        # print the install hint and exit 127.
+
+        # macOS twin of the cage: /usr/bin/sandbox-exec (Seatbelt). Deprecated
+        # but shipped on every macOS and still driven via `-p` profiles by
+        # Apple's own tooling (and Bazel/Nix). No mount namespaces there, so
+        # parity is approximate:
+        #   - writes: denied everywhere except chat_dir (+ tmp dirs, tty/null
+        #     devices) — the same containment bwrap gets from binding only
+        #     chat_dir read-write;
+        #   - reads: the real $HOME is denied wholesale (protects ~/.ssh,
+        #     keychains — matching bwrap's unmounted home), with chat_dir and
+        #     the skill allowlist re-allowed on top;
+        #   - env: `/usr/bin/env -i` replays --clearenv + --setenv, so API
+        #     keys living in the backend process never reach the model's shell;
+        #   - no PID/IPC namespaces, and /tmp is shared rather than a private
+        #     tmpfs — accepted best-effort deviations.
+        mac_shell = "/bin/zsh" if self.shell == "zsh" else "/bin/bash"
+        mac_path_entries = [
+            f"{self.chat_dir}/.venv/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ]
+        sbx_args = [
+            "/usr/bin/env", "-i",
+            f"HOME={self.chat_dir}",
+            f"USER={self.user_name or 'user'}",
+            f"LOGNAME={self.user_name or 'user'}",
+            f"SHELL={mac_shell}",
+            "TERM=xterm-256color",
+            "LANG=C.UTF-8",
+            "LC_ALL=C.UTF-8",
+            "TMPDIR=/tmp",
+            "PATH=" + ":".join(mac_path_entries),
+            "/usr/bin/sandbox-exec",
+            "-p", _sandbox_exec_profile(self.chat_dir, self.allowed_read_prefixes),
+            mac_shell, "-c", inner_cmd,
+        ]
+        sbx_str = " ".join(shlex.quote(a) for a in sbx_args)
+
+        # If neither cage exists, fall through to a friendly error rather
+        # than silently dropping the cage — print the install hint and exit 127.
         fallback = (
-            "echo '[sandbox] bubblewrap (bwrap) is not installed. "
-            "Install it (Debian/Ubuntu: sudo apt install -y bubblewrap; "
+            "echo '[sandbox] no supported sandbox found. "
+            "Linux: install bubblewrap (Debian/Ubuntu: sudo apt install -y bubblewrap; "
             "Arch: sudo pacman -S bubblewrap; Fedora: sudo dnf install bubblewrap). "
             "Or toggle Unrestricted mode in Settings.' >&2; exit 127"
         )
-        return f"mkdir -p {chat_q}; if command -v bwrap >/dev/null 2>&1; then {bwrap_str}; else {fallback}; fi"
+        return (
+            f"mkdir -p {chat_q}; "
+            f"if command -v bwrap >/dev/null 2>&1; then {bwrap_str}; "
+            f"elif [ -x /usr/bin/sandbox-exec ]; then cd {chat_q} && {sbx_str}; "
+            f"else {fallback}; fi"
+        )
 
     # ── powershell wrap ───────────────────────────────────────────────
 
@@ -288,6 +340,53 @@ class SandboxPolicy:
 # ── helpers ───────────────────────────────────────────────────────────
 
 
+def _sbpl_quote(path: str) -> str:
+    """Quote a path for embedding in an SBPL (Seatbelt profile) string literal."""
+    return '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _sandbox_exec_profile(chat_dir: str, allowed_read_prefixes: tuple[str, ...]) -> str:
+    """SBPL profile for the macOS sandbox-exec cage — wrap_bash's bwrap twin.
+
+    In SBPL the *last* matching rule wins, so the shape is: allow everything,
+    deny all writes, re-allow chat_dir + tmp + tty devices, deny reading the
+    real home (derived from the app's own ``<home>/AgentChat/chats/<slug>``
+    layout — the only layout api/chats.py ever creates), then re-allow
+    chat_dir and the skill allowlist back inside it. ``/private/...`` twins
+    cover macOS's ``/tmp`` → ``/private/tmp`` symlinks, which Seatbelt matches
+    post-resolution; ``/private/var/folders`` is where per-user TMPDIRs live.
+    """
+    q = _sbpl_quote
+    write_allows = [
+        f"(subpath {q(chat_dir)})",
+        '(subpath "/private/tmp")',
+        '(subpath "/private/var/tmp")',
+        '(subpath "/private/var/folders")',
+        '(subpath "/tmp")',
+        '(literal "/dev/null")',
+        '(literal "/dev/stdout")',
+        '(literal "/dev/stderr")',
+        '(literal "/dev/tty")',
+        '(literal "/dev/dtracehelper")',
+        '(regex #"^/dev/ttys[0-9]+$")',
+    ]
+    lines = [
+        "(version 1)",
+        "(allow default)",
+        "(deny file-write*)",
+        "(allow file-write* " + " ".join(write_allows) + ")",
+    ]
+    home = chat_dir.split("/AgentChat/chats/", 1)[0] if "/AgentChat/chats/" in chat_dir else ""
+    if home and home != "/":
+        read_allows = [f"(subpath {q(chat_dir)})"]
+        for prefix in allowed_read_prefixes:
+            if prefix.startswith("/"):
+                read_allows.append(f"(subpath {q(prefix)})")
+        lines.append(f"(deny file-read* (subpath {q(home)}))")
+        lines.append("(allow file-read* " + " ".join(read_allows) + ")")
+    return " ".join(lines)
+
+
 def _normalize(path: str) -> str:
     """Normalize a path for prefix comparison.
 
@@ -325,15 +424,3 @@ def _is_under(child: str, parent: str) -> bool:
     else:
         parent_with_sep = parent
     return child.startswith(parent_with_sep)
-
-
-def windows_to_wsl(win_path: str) -> str | None:
-    """Translate ``C:\\foo\\bar`` to ``/mnt/c/foo/bar``. Returns None if not a
-    Windows drive path."""
-    if len(win_path) < 2 or win_path[1] != ":":
-        return None
-    drive = win_path[0].lower()
-    rest = win_path[2:].replace("\\", "/")
-    if rest.startswith("/"):
-        rest = rest[1:]
-    return f"/mnt/{drive}/{rest}" if rest else f"/mnt/{drive}"
