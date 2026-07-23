@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
-from agent.wsl_exec import wsl_read_bytes, wsl_read_text, wsl_run
+from agent.host_exec import host_read_bytes, host_read_text, host_run
 from api.schemas.skills import (
     CatalogInstallRequest,
     InstallLocalRequest,
@@ -107,7 +107,7 @@ async def _materialize_wsl_skill_dir(root: str) -> Path:
     chats/...'), which Python on Windows can't read directly — so we stream the
     folder as a tar and extract it locally, then hand that to install_local.
     """
-    res = await wsl_run(f"cd {shlex.quote(root)} && tar -cf - .")
+    res = await host_run(f"cd {shlex.quote(root)} && tar -cf - .")
     if res.returncode != 0:
         err = res.stderr.decode("utf-8", errors="replace").strip()
         raise ValueError(err or "Could not read the skill folder from WSL")
@@ -154,7 +154,7 @@ async def install_local_skill(request: Request, body: InstallLocalRequest) -> li
     # ── .skill / .zip archive → unpack it ──────────────────────────────
     if ext in ("skill", "zip"):
         try:
-            data = await wsl_read_bytes(raw_path) if is_wsl else Path(raw_path).read_bytes()
+            data = await host_read_bytes(raw_path) if is_wsl else Path(raw_path).read_bytes()
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Archive not found")
         except OSError as exc:
@@ -174,7 +174,7 @@ async def install_local_skill(request: Request, body: InstallLocalRequest) -> li
         )
 
     try:
-        md_text = await wsl_read_text(raw_path) if is_wsl else Path(raw_path).read_text(
+        md_text = await host_read_text(raw_path) if is_wsl else Path(raw_path).read_text(
             "utf-8", errors="replace"
         )
     except FileNotFoundError:

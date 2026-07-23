@@ -1,7 +1,7 @@
 """Tests for native POSIX (Linux/macOS) support — the third shell mode.
 
 These exercise the platform branches without requiring an actual Linux host:
-``sys.platform`` and ``wsl_exec.IS_POSIX`` are monkeypatched so the POSIX code
+``sys.platform`` and ``host_exec.IS_POSIX`` are monkeypatched so the POSIX code
 paths run (and, for file IO, hit the real local filesystem) even on Windows CI.
 """
 
@@ -15,7 +15,8 @@ import pytest
 BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-import agent.wsl_exec as wsl_exec  # noqa: E402
+import agent.host_exec as host_exec  # noqa: E402
+import agent.posix_exec as posix_exec  # noqa: E402
 import shell  # noqa: E402
 from agent.sandbox import SandboxPolicy  # noqa: E402
 from tools.bash_tool import BashTool  # noqa: E402
@@ -56,41 +57,41 @@ def test_resolve_active_shell_honours_forced_modes_on_windows(
     assert shell.resolve_active_shell("powershell") == "powershell"
 
 
-# ── wsl_exec native file IO (POSIX branch) ─────────────────────────────
+# ── host_exec native file IO (POSIX branch) ─────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_native_write_then_read_roundtrip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(wsl_exec, "IS_POSIX", True)
+    monkeypatch.setattr(host_exec, "IS_POSIX", True)
     target = tmp_path / "nested" / "out.txt"
 
-    await wsl_exec.wsl_write_bytes(str(target), b"hello")
+    await host_exec.host_write_bytes(str(target), b"hello")
 
     assert target.read_bytes() == b"hello"  # parent dir auto-created
-    assert await wsl_exec.wsl_read_text(str(target)) == "hello"
-    assert await wsl_exec.wsl_read_bytes(str(target)) == b"hello"
+    assert await host_exec.host_read_text(str(target)) == "hello"
+    assert await host_exec.host_read_bytes(str(target)) == b"hello"
 
 
 @pytest.mark.asyncio
 async def test_native_write_append(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(wsl_exec, "IS_POSIX", True)
+    monkeypatch.setattr(host_exec, "IS_POSIX", True)
     target = tmp_path / "log.txt"
 
-    await wsl_exec.wsl_write_bytes(str(target), b"a")
-    await wsl_exec.wsl_write_bytes(str(target), b"b", append=True)
+    await host_exec.host_write_bytes(str(target), b"a")
+    await host_exec.host_write_bytes(str(target), b"b", append=True)
 
-    assert await wsl_exec.wsl_read_text(str(target)) == "ab"
+    assert await host_exec.host_read_text(str(target)) == "ab"
 
 
 @pytest.mark.asyncio
 async def test_native_read_missing_raises_filenotfound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(wsl_exec, "IS_POSIX", True)
+    monkeypatch.setattr(host_exec, "IS_POSIX", True)
     with pytest.raises(FileNotFoundError):
-        await wsl_exec.wsl_read_text(str(tmp_path / "does-not-exist.txt"))
+        await host_exec.host_read_text(str(tmp_path / "does-not-exist.txt"))
 
 
 # ── SandboxPolicy in posix mode ────────────────────────────────────────
@@ -127,6 +128,7 @@ def test_posix_check_read_allows_uploads_rejects_system() -> None:
     policy = SandboxPolicy(chat_dir=POSIX_CHAT_DIR, shell="posix")
     assert policy.check_read(f"{POSIX_CHAT_DIR}/uploads/a.txt") is None
     assert policy.check_read("/etc/passwd") is not None
+
 
 
 # ── BashTool dispatch in posix mode ────────────────────────────────────
@@ -171,7 +173,7 @@ def test_host_tool_env_strips_bundle_paths(monkeypatch: pytest.MonkeyPatch) -> N
     # would otherwise load the bundled (mismatched) libreadline and die.
     monkeypatch.setenv("APPDIR", "/tmp/.mount_AgentXY")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_AgentXY/usr/lib:/usr/lib")
-    env = wsl_exec.host_tool_env()
+    env = posix_exec.host_tool_env()
     assert env is not None
     # Bundle path dropped, the genuine host path kept.
     assert env["LD_LIBRARY_PATH"] == "/usr/lib"
@@ -181,7 +183,7 @@ def test_host_tool_env_drops_var_when_all_bundle(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("APPDIR", "/tmp/.mount_AgentXY")
     monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/.mount_AgentXY/usr/lib")
     monkeypatch.delenv("LD_PRELOAD", raising=False)
-    env = wsl_exec.host_tool_env()
+    env = posix_exec.host_tool_env()
     assert env is not None
     assert "LD_LIBRARY_PATH" not in env
 
@@ -190,5 +192,22 @@ def test_host_tool_env_none_when_clean(monkeypatch: pytest.MonkeyPatch) -> None:
     # No LD_* pollution → None, so subprocess.run(env=None) just inherits.
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     monkeypatch.delenv("LD_PRELOAD", raising=False)
+    monkeypatch.delenv("PYTHONHOME", raising=False)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
     monkeypatch.delenv("APPDIR", raising=False)
-    assert wsl_exec.host_tool_env() is None
+    assert posix_exec.host_tool_env() is None
+
+
+def test_host_tool_env_strips_pythonhome(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The AppImage runtime points PYTHONHOME/PYTHONPATH at its own mounted
+    # usr/ tree. Left in place, a spawned system python3 (e.g. the
+    # `python3 -m venv` chats.py runs per chat) fails at startup with
+    # "ModuleNotFoundError: No module named 'encodings'" because it looks for
+    # its stdlib inside the (unrelated) bundle layout instead of its own.
+    monkeypatch.setenv("APPDIR", "/tmp/.mount_AgentXY")
+    monkeypatch.setenv("PYTHONHOME", "/tmp/.mount_AgentXY/usr/")
+    monkeypatch.setenv("PYTHONPATH", "/tmp/.mount_AgentXY/usr/share/pyshared/")
+    env = posix_exec.host_tool_env()
+    assert env is not None
+    assert "PYTHONHOME" not in env
+    assert "PYTHONPATH" not in env

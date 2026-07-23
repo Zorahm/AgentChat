@@ -6,7 +6,8 @@ import shutil
 import subprocess
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import host_tool_env, run_blocking
+from agent.exec_common import run_blocking
+from agent.posix_exec import host_tool_env
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 
@@ -126,7 +127,7 @@ class BashTool(BaseTool):
         # Outer envelope sets USER/USER_HOME/HOME — these are inherited into
         # the bwrap sandbox via --setenv, but we also keep them on the outer
         # shell for backwards compatibility with any tool that bypasses
-        # wrap_bash (e.g. wsl_run helpers in agent/wsl_exec.py).
+        # wrap_bash (e.g. the host_run helpers in agent/host_exec.py).
         inner = self._policy.wrap_bash(command)
         full_cmd = (
             f"export USER='{self._user_name}' "

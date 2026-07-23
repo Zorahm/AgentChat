@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_read_text, wsl_write_bytes
+from agent.host_exec import host_read_text, host_write_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 # Similarity thresholds for block-anchor fallback matching
@@ -420,7 +420,7 @@ class EditFileTool(BaseTool):
             # Create / overwrite
             if is_wsl:
                 try:
-                    await wsl_write_bytes(path, new_string.encode("utf-8"), append=False)
+                    await host_write_bytes(path, new_string.encode("utf-8"), append=False)
                 except OSError as e:
                     return f"Error writing file: {e}"
             else:
@@ -435,7 +435,7 @@ class EditFileTool(BaseTool):
         # Read → replace → write
         if is_wsl:
             try:
-                content = await wsl_read_text(path)
+                content = await host_read_text(path)
             except FileNotFoundError:
                 return f"Error: file not found — {path}"
             except OSError as e:
@@ -464,7 +464,7 @@ class EditFileTool(BaseTool):
 
         if is_wsl:
             try:
-                await wsl_write_bytes(path, new_content.encode("utf-8"), append=False)
+                await host_write_bytes(path, new_content.encode("utf-8"), append=False)
             except OSError as e:
                 return f"Error writing file: {e}"
         else:

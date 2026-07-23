@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_read_text
+from agent.host_exec import host_read_text
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 MAX_BYTES = 100_000
@@ -68,7 +68,7 @@ class ReadFileTool(BaseTool):
 
         if path.startswith("/"):
             try:
-                content = await wsl_read_text(path)
+                content = await host_read_text(path)
             except FileNotFoundError:
                 return f"Error: file not found — {path}"
             except OSError as e:

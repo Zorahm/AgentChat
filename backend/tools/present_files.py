@@ -13,7 +13,7 @@ import shlex
 from pathlib import Path
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_run
+from agent.host_exec import host_run
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 from tools.write_file import _looks_windows_abs, _resolve_write_path
 
@@ -101,6 +101,6 @@ class PresentFilesTool(BaseTool):
 
     async def _is_file(self, path: str) -> bool:
         if path.startswith("/"):
-            result = await wsl_run(f"test -f {shlex.quote(path)}")
+            result = await host_run(f"test -f {shlex.quote(path)}")
             return result.returncode == 0
         return Path(path).is_file()

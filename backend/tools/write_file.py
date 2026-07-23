@@ -16,7 +16,7 @@ import posixpath
 from pathlib import Path
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_read_bytes, wsl_write_bytes
+from agent.host_exec import host_read_bytes, host_write_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 from tools.edit_file import (
     _convert_to_line_ending,
@@ -192,7 +192,7 @@ class WriteFileTool(BaseTool):
             data = _BOM_BYTES + data
 
         if is_wsl:
-            await wsl_write_bytes(path, data, append=False)
+            await host_write_bytes(path, data, append=False)
         else:
             p = Path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,7 @@ class WriteFileTool(BaseTool):
 
         data = content.encode("utf-8")
         if is_wsl:
-            await wsl_write_bytes(path, data, append=True)
+            await host_write_bytes(path, data, append=True)
             return f"Appended to {path} ({len(data)} bytes)"
 
         p = Path(path)
@@ -226,7 +226,7 @@ class WriteFileTool(BaseTool):
         """
         if is_wsl:
             try:
-                return await wsl_read_bytes(path)
+                return await host_read_bytes(path)
             except FileNotFoundError:
                 return None
         p = Path(path)

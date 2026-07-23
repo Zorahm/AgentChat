@@ -24,7 +24,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from agent.wsl_exec import run_capture
+from agent.exec_common import run_capture
 
 logger = logging.getLogger(__name__)
 

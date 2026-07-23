@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_write_bytes
+from agent.host_exec import host_write_bytes
 from api.schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
 from llm.model_tag import retag_model_for_litellm
@@ -309,7 +309,7 @@ async def _sync_unextracted_to_sandbox(
                 await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
                 await asyncio.to_thread(p.write_bytes, data)
             else:
-                await wsl_write_bytes(target, data)
+                await host_write_bytes(target, data)
         except Exception:  # noqa: BLE001 — fallback copy is non-critical
             continue
 

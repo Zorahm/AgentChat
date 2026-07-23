@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.sandbox import SandboxPolicy
-from agent.wsl_exec import wsl_read_bytes
+from agent.host_exec import host_read_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 _MIME_MAP: dict[str, str] = {
@@ -74,7 +74,7 @@ class ReadPhotoTool(BaseTool):
 
         try:
             if path.startswith("/"):
-                data = await wsl_read_bytes(path)
+                data = await host_read_bytes(path)
             else:
                 file_path = Path(path)
                 if not file_path.exists():

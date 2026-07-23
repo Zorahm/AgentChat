@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agent.wsl_exec import run_capture
+from agent.exec_common import run_capture
 from shell import resolve_active_shell
 
 logger = logging.getLogger(__name__)

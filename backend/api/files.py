@@ -18,7 +18,8 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from agent.wsl_exec import run_blocking, wsl_run, wsl_write_bytes
+from agent.exec_common import run_blocking
+from agent.host_exec import host_read_bytes, host_run, host_write_bytes
 from shell import resolve_active_shell
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -30,17 +31,6 @@ _OFFICE_EXTS = frozenset({"docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "o
 _PREVIEW_DIR = Path(tempfile.gettempdir()) / "agentchat-preview"
 
 
-async def _wsl_read_bytes(path: str) -> bytes:
-    """Read a file from WSL via wsl.exe. Raises FileNotFoundError / OSError on failure."""
-    result = await wsl_run(f"cat {shlex.quote(path)}")
-    if result.returncode != 0:
-        err = result.stderr.decode("utf-8", errors="replace").strip()
-        if "No such file" in err or "not found" in err.lower():
-            raise FileNotFoundError(err)
-        raise OSError(err or f"wsl read failed with code {result.returncode}")
-    return result.stdout
-
-
 @router.get("/content")
 async def read_content(
     path: str = Query(..., description="Absolute file path"),
@@ -48,7 +38,7 @@ async def read_content(
     """Return UTF-8 text content of a file. Supports WSL paths starting with '/'."""
     try:
         if path.startswith("/"):
-            data = await _wsl_read_bytes(path)
+            data = await host_read_bytes(path)
             return PlainTextResponse(data.decode("utf-8", errors="replace"))
         p = Path(path).resolve()
         content = p.read_text(encoding="utf-8", errors="replace")
@@ -76,7 +66,7 @@ async def serve_file(
     try:
         media_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
         if path.startswith("/"):
-            data = await _wsl_read_bytes(path)
+            data = await host_read_bytes(path)
             suffix = Path(path).suffix
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.write(data)
@@ -120,7 +110,7 @@ class ArchiveEntry(BaseModel):
 async def _read_archive_bytes(path: str) -> bytes:
     """Read a .skill/.zip archive's bytes from WSL or the Windows filesystem."""
     if path.startswith("/"):
-        return await _wsl_read_bytes(path)
+        return await host_read_bytes(path)
     return Path(path).resolve().read_bytes()
 
 
@@ -323,7 +313,7 @@ async def _office_to_pdf_windows(path: str) -> Path:
 
 
 async def _office_to_pdf_wsl(path: str) -> Path:
-    stat = await wsl_run(f"stat -c '%Y %s' {shlex.quote(path)}")
+    stat = await host_run(f"stat -c '%Y %s' {shlex.quote(path)}")
     if stat.returncode != 0:
         raise FileNotFoundError(path)
     sig = stat.stdout.decode("utf-8", errors="replace").strip()
@@ -335,7 +325,7 @@ async def _office_to_pdf_wsl(path: str) -> Path:
     wsl_out = f"/tmp/agentchat-preview/{key}"
     profile = f"/tmp/agentchat-preview/profile-{key}"
     stem = Path(path).stem
-    result = await wsl_run(
+    result = await host_run(
         f"mkdir -p {shlex.quote(wsl_out)} && "
         f"soffice --headless -env:UserInstallation=file://{profile} "
         f"--convert-to pdf --outdir {shlex.quote(wsl_out)} {shlex.quote(path)}",
@@ -343,7 +333,7 @@ async def _office_to_pdf_wsl(path: str) -> Path:
     )
     produced = f"{wsl_out}/{stem}.pdf"
     try:
-        data = await _wsl_read_bytes(produced)
+        data = await host_read_bytes(produced)
     except FileNotFoundError:
         err = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(err or "LibreOffice conversion failed (is it installed in WSL?)")
@@ -400,7 +390,7 @@ async def _wsl_home() -> str:
     if _cached_wsl_home is not None:
         return _cached_wsl_home
     try:
-        result = await wsl_run("echo $HOME")
+        result = await host_run("echo $HOME")
         home = result.stdout.decode("utf-8", errors="replace").strip()
         if home and result.returncode == 0:
             _cached_wsl_home = home
@@ -454,7 +444,7 @@ def _safe_filename(name: str) -> str:
 async def _extract_pdf_text(wsl_path: str) -> str | None:
     """Try to extract text from a PDF via WSL pdftotext. Returns None on failure."""
     try:
-        result = await wsl_run(f"pdftotext {shlex.quote(wsl_path)} - 2>/dev/null")
+        result = await host_run(f"pdftotext {shlex.quote(wsl_path)} - 2>/dev/null")
         if result.returncode == 0 and result.stdout:
             text = result.stdout.decode("utf-8", errors="replace").strip()
             return text[:50000] if len(text) > 50000 else text
@@ -496,7 +486,7 @@ async def upload_files(
             await asyncio.to_thread(Path(full).write_bytes, data)
         else:
             full = f"{dir_path}/{name}"
-            await wsl_write_bytes(full, data)
+            await host_write_bytes(full, data)
 
         result: dict[str, object] = {
             "name": name,
@@ -544,6 +534,6 @@ async def delete_upload(
         await asyncio.to_thread(lambda: target.unlink(missing_ok=True))
     else:
         up_dir = await _wsl_upload_dir(chat_dir_slug)
-        await wsl_run(f"rm -f {shlex.quote(f'{up_dir}/{name}')}")
+        await host_run(f"rm -f {shlex.quote(f'{up_dir}/{name}')}")
 
     return {"deleted": True, "name": name}

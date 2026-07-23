@@ -24,7 +24,8 @@ import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agent.wsl_exec import decode_loose, run_capture, wsl_read_text, wsl_run, wsl_write_bytes
+from agent.exec_common import decode_loose, run_capture
+from agent.host_exec import host_read_text, host_run, host_write_bytes
 from shell import NO_WINDOW
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ async def _wsl_home() -> str | None:
     """Resolve $HOME inside WSL. Referencing $HOME in `bash -lc` works on this
     host; assigning shell variables does not (silently empty), so all paths are
     built from this Python string instead of in-shell vars."""
-    r = await wsl_run("echo $HOME", timeout=15)
+    r = await host_run("echo $HOME", timeout=15)
     if r.returncode != 0:
         return None
     home = decode_loose(r.stdout).strip()
@@ -114,17 +115,17 @@ async def _wsl_home() -> str | None:
 
 
 async def _docker_cli() -> bool:
-    r = await wsl_run("command -v docker >/dev/null 2>&1", timeout=15)
+    r = await host_run("command -v docker >/dev/null 2>&1", timeout=15)
     return r.returncode == 0
 
 
 async def _docker_daemon() -> bool:
-    r = await wsl_run("docker info >/dev/null 2>&1", timeout=20)
+    r = await host_run("docker info >/dev/null 2>&1", timeout=20)
     return r.returncode == 0
 
 
 async def _container_running() -> bool:
-    r = await wsl_run(
+    r = await host_run(
         f"docker ps --filter name=^/{_CONTAINER}$ --filter status=running -q",
         timeout=20,
     )
@@ -160,14 +161,14 @@ def _extract_secret_key(text: str) -> str | None:
 async def _host_secret_key(path: str) -> str | None:
     """Read the existing ``secret_key`` from the host settings.yml, if any."""
     try:
-        return _extract_secret_key(await wsl_read_text(path))
+        return _extract_secret_key(await host_read_text(path))
     except (FileNotFoundError, OSError):
         return None
 
 
 async def _container_secret_key(container: str) -> str | None:
     """Read the existing ``secret_key`` from the container's settings.yml."""
-    r = await wsl_run(
+    r = await host_run(
         f"docker exec {shlex.quote(container)} cat /etc/searxng/settings.yml",
         timeout=20,
     )
@@ -184,10 +185,10 @@ async def _apply_settings_into_container(
     tmp = f"/tmp/searxng-settings-{secrets.token_hex(4)}.yml"
     try:
         try:
-            await wsl_write_bytes(tmp, content.encode())
+            await host_write_bytes(tmp, content.encode())
         except OSError as exc:
             return False, f"write tempfile: {exc}"
-        cp = await wsl_run(
+        cp = await host_run(
             f"docker cp {shlex.quote(tmp)} "
             f"{shlex.quote(container)}:/etc/searxng/settings.yml",
             timeout=60,
@@ -197,12 +198,12 @@ async def _apply_settings_into_container(
             return False, err
         # The image runs as ``searxng`` (uid 977); make sure it can still read
         # the file after we overwrote it as the cp user.
-        await wsl_run(
+        await host_run(
             f"docker exec -u root {shlex.quote(container)} "
             f"chown searxng:searxng /etc/searxng/settings.yml",
             timeout=20,
         )
-        restart = await wsl_run(
+        restart = await host_run(
             f"docker restart {shlex.quote(container)}", timeout=60
         )
         if restart.returncode != 0:
@@ -213,7 +214,7 @@ async def _apply_settings_into_container(
             return False, err
         return True, None
     finally:
-        await wsl_run(f"rm -f {shlex.quote(tmp)}", timeout=10)
+        await host_run(f"rm -f {shlex.quote(tmp)}", timeout=10)
 
 
 async def _wait_for_health(attempts: int = 20, delay: float = 2.0) -> bool:
@@ -474,7 +475,7 @@ async def _run_install(set_url: Callable[[str], None]) -> None:
             return
         if not await _docker_daemon():
             emit("Docker daemon not reachable — trying to start it…")
-            await wsl_run("sudo service docker start >/dev/null 2>&1 || true", timeout=30)
+            await host_run("sudo service docker start >/dev/null 2>&1 || true", timeout=30)
             if not await _docker_daemon():
                 _install_error = (
                     "Docker daemon is not running. Start Docker Desktop (with WSL "
@@ -497,7 +498,7 @@ async def _run_install(set_url: Callable[[str], None]) -> None:
         # Always write the host file: it's our source of truth and lets the
         # bind-mount carry the config on setups where it works.
         emit("Writing settings.yml (JSON output enabled)…")
-        await wsl_write_bytes(settings_path, settings_content.encode())
+        await host_write_bytes(settings_path, settings_content.encode())
 
         emit("Pulling searxng/searxng and starting the container (first run takes a few minutes)…")
         # No shell variable assignments — this host returns them empty inside
@@ -509,7 +510,7 @@ async def _run_install(set_url: Callable[[str], None]) -> None:
             "docker run -d --name agentchat-searxng --restart unless-stopped "
             f"-p 8080:8080 -v {vol} searxng/searxng:latest"
         )
-        r = await wsl_run(run_cmd, timeout=900)
+        r = await host_run(run_cmd, timeout=900)
         tail = "\n".join(filter(None, [decode_loose(r.stdout).strip(), decode_loose(r.stderr).strip()]))
         if tail:
             emit(tail[-2000:])
@@ -577,7 +578,7 @@ async def install_status(request: Request) -> SearxngInstallStatus:
 @router.post("/stop", response_model=ActionResult)
 async def stop() -> ActionResult:
     """Stop the SearXNG container (leaves it installed)."""
-    r = await wsl_run(f"docker stop {_CONTAINER}", timeout=30)
+    r = await host_run(f"docker stop {_CONTAINER}", timeout=30)
     out = decode_loose(r.stdout).strip() or decode_loose(r.stderr).strip()
     return ActionResult(success=r.returncode == 0, output=out or "stopped")
 

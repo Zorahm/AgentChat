@@ -1,150 +1,19 @@
-"""Shell subprocess helpers — blocking subprocess in a thread.
+"""WSL execution — tunnels shell commands and file IO through ``wsl.exe``.
 
-On Windows the agent reaches its POSIX filesystem through ``wsl.exe``; on a
-native Linux/macOS host (``sys.platform != "win32"``) the very same helpers run
-against the local filesystem and ``/bin/bash`` directly — no ``wsl.exe``, no
-``/mnt/c`` translation. Every file tool (read_file, write_file, edit_file,
-read_photo, uploads, chat-dir purge) funnels through here, so this single
-platform switch is what makes those tools work on Linux without per-tool changes.
-
-asyncio.create_subprocess_exec raises NotImplementedError on Windows
-SelectorEventLoop (which uvicorn sometimes installs). Running blocking
-subprocess.run in asyncio.to_thread works on any event loop policy.
+Windows-only leaf of the shell-execution stack: the agent reaches its POSIX
+filesystem through ``wsl.exe``, so every helper here shells out to the default
+WSL distribution. The native Linux/macOS twin lives in ``agent.posix_exec``;
+the platform dispatch that picks between the two is ``agent.host_exec`` —
+import from there unless a call site is explicitly WSL-only (e.g. the WSL
+chat-dir purge in ``api/chats.py``).
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
 import shlex
 import subprocess
-import sys
-from pathlib import Path
 
-from shell import NO_WINDOW
-
-# True on a native POSIX host — the agent runs bash and touches files directly
-# instead of tunnelling through wsl.exe.
-IS_POSIX = sys.platform != "win32"
-
-
-def host_tool_env() -> dict[str, str] | None:
-    """Env for spawning host tools (bash/node/python/pdftotext) from a bundled app.
-
-    A PyInstaller onefile sidecar — and the AppImage that launched it — prepend
-    their own private lib dirs to ``LD_LIBRARY_PATH``/``LD_PRELOAD``. A system
-    binary like ``bash`` then loads those bundled libraries (e.g. a mismatched
-    ``libreadline``/``libtinfo``) instead of the host's and dies with a
-    ``symbol lookup error`` / exit 127. We strip only the bundle-private entries
-    so spawned tools resolve against the host's own libraries, while keeping any
-    genuine user-set paths.
-
-    Returns ``None`` when nothing needs cleaning (no LD_* pollution / not Linux),
-    so callers can pass it straight to ``subprocess.run(env=...)`` — ``None``
-    means "inherit the current environment unchanged".
-    """
-    markers: list[str] = []
-    appdir = os.environ.get("APPDIR")
-    if appdir:
-        markers.append(appdir)
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        markers.append(str(meipass))
-
-    def _is_bundle_path(p: str) -> bool:
-        if not p:
-            return True
-        if any(p.startswith(m) for m in markers):
-            return True
-        # AppImage mounts at /tmp/.mount_*; PyInstaller extracts to /tmp/_MEI*.
-        return "/.mount_" in p or "/_MEI" in p
-
-    env = dict(os.environ)
-    changed = False
-    # LD_LIBRARY_PATH / LD_PRELOAD are POSIX vars — always colon-separated,
-    # regardless of the host os.pathsep (which is ';' on Windows).
-    for var in ("LD_LIBRARY_PATH", "LD_PRELOAD"):
-        val = env.get(var)
-        if not val:
-            continue
-        parts = val.split(":")
-        kept = [p for p in parts if not _is_bundle_path(p)]
-        if len(kept) != len(parts):
-            changed = True
-            if kept:
-                env[var] = ":".join(kept)
-            else:
-                env.pop(var, None)
-    return env if changed else None
-
-
-def decode_loose(data: bytes) -> str:
-    """Best-effort bytes → str. WSL CLI sometimes emits UTF-16LE."""
-    if not data:
-        return ""
-    try:
-        s = data.decode("utf-8")
-        if "\x00" in s:
-            raise UnicodeDecodeError("utf-8", data, 0, 1, "looks like utf-16")
-        return s
-    except UnicodeDecodeError:
-        try:
-            return data.decode("utf-16-le").replace("\x00", "")
-        except UnicodeDecodeError:
-            return data.decode("utf-8", errors="replace")
-
-
-async def run_blocking(
-    argv: list[str],
-    *,
-    timeout: float = 300,
-    stdin: bytes | None = None,
-    cwd: str | None = None,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[bytes]:
-    """Run a blocking subprocess off the event loop, capturing output.
-
-    Centralises what every shell-out site needs: ``asyncio.to_thread`` (works on
-    any event-loop policy — unlike ``create_subprocess_exec`` on a Windows
-    SelectorEventLoop) plus ``creationflags=NO_WINDOW`` to hide the console flash.
-    Does not raise on non-zero exit — the caller inspects ``.returncode`` — but
-    propagates ``FileNotFoundError`` / ``TimeoutExpired`` / ``OSError`` for the
-    caller's own error mapping.
-    """
-    return await asyncio.to_thread(
-        subprocess.run,
-        argv,
-        input=stdin,
-        cwd=cwd,
-        capture_output=True,
-        timeout=timeout,
-        creationflags=NO_WINDOW,
-        env=env,
-    )
-
-
-async def run_capture(
-    argv: list[str],
-    *,
-    timeout: float = 60,
-    env: dict[str, str] | None = None,
-    cwd: str | None = None,
-) -> tuple[int, str, str]:
-    """Run a command and return ``(returncode, stdout, stderr)`` decoded leniently.
-
-    Maps the usual spawn failures to conventional shell codes: 127 (not found),
-    124 (timeout), 1 (other OSError). Shared by the WSL/PowerShell probe + install
-    helpers, which previously each carried an identical copy of this block.
-    """
-    try:
-        result = await run_blocking(argv, timeout=timeout, env=env, cwd=cwd)
-    except FileNotFoundError:
-        return 127, "", f"{argv[0]}: not found"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timed out after {timeout}s"
-    except OSError as exc:
-        return 1, "", str(exc)
-    return result.returncode, decode_loose(result.stdout), decode_loose(result.stderr)
+from agent.exec_common import decode_loose, run_blocking
 
 
 async def wsl_run(
@@ -153,35 +22,21 @@ async def wsl_run(
     stdin: bytes | None = None,
     timeout: float = 300,
 ) -> subprocess.CompletedProcess[bytes]:
-    """Run *bash_cmd* in a login bash and return the CompletedProcess.
+    """Run *bash_cmd* in a login bash inside WSL: ``wsl.exe -- bash -lc <bash_cmd>``.
 
-    Windows: ``wsl.exe -- bash -lc <bash_cmd>`` — ``--`` separates wsl.exe
-    options from the command, ``-l`` (login shell) sources startup files so
-    ``$HOME`` and PATH are complete inside the distro.
-
-    POSIX (Linux/macOS): ``bash -lc <bash_cmd>`` directly against the host.
+    ``--`` separates wsl.exe options from the command, ``-l`` (login shell)
+    sources startup files so ``$HOME`` and PATH are complete inside the distro.
 
     Does not raise on non-zero exit — caller inspects ``.returncode``.
-    Raises ``FileNotFoundError`` if the shell binary is missing from PATH.
+    Raises ``FileNotFoundError`` if wsl.exe is missing from PATH.
     """
-    if IS_POSIX:
-        argv = ["bash", "-lc", bash_cmd]
-        env = host_tool_env()
-    else:
-        argv = ["wsl.exe", "--", "bash", "-lc", bash_cmd]
-        env = None
-    return await run_blocking(argv, timeout=timeout, stdin=stdin, env=env)
+    return await run_blocking(
+        ["wsl.exe", "--", "bash", "-lc", bash_cmd], timeout=timeout, stdin=stdin
+    )
 
 
 async def wsl_read_text(path: str) -> str:
-    """Read a UTF-8 file. Raises FileNotFoundError or OSError on failure.
-
-    POSIX reads natively; bytes are decoded leniently (matching the WSL path's
-    ``decode_loose``) so a non-UTF-8 file never raises mid-tool.
-    """
-    if IS_POSIX:
-        data = await asyncio.to_thread(Path(path).read_bytes)
-        return decode_loose(data)
+    """Read a UTF-8 file from WSL. Raises FileNotFoundError or OSError on failure."""
     result = await wsl_run(f"cat {shlex.quote(path)}")
     if result.returncode != 0:
         err = decode_loose(result.stderr).strip()
@@ -192,9 +47,7 @@ async def wsl_read_text(path: str) -> str:
 
 
 async def wsl_read_bytes(path: str) -> bytes:
-    """Read a binary file. Returns raw bytes. Raises FileNotFoundError or OSError."""
-    if IS_POSIX:
-        return await asyncio.to_thread(Path(path).read_bytes)
+    """Read a binary file from WSL. Returns raw bytes. Raises FileNotFoundError or OSError."""
     result = await wsl_run(f"cat {shlex.quote(path)}")
     if result.returncode != 0:
         err = decode_loose(result.stderr).strip()
@@ -205,22 +58,10 @@ async def wsl_read_bytes(path: str) -> bytes:
 
 
 async def wsl_write_bytes(path: str, data: bytes, *, mkdir: bool = True, append: bool = False) -> None:
-    """Write *data* to a path. Creates parent dirs by default.
+    """Write *data* to a WSL path by piping the bytes into ``cat >`` inside WSL.
 
-    ``append=True`` preserves existing content. POSIX writes natively; Windows
-    pipes the bytes into ``cat >`` inside WSL.
+    Creates parent dirs by default; ``append=True`` preserves existing content.
     """
-    if IS_POSIX:
-        def _write() -> None:
-            p = Path(path)
-            if mkdir:
-                p.parent.mkdir(parents=True, exist_ok=True)
-            with p.open("ab" if append else "wb") as fp:
-                fp.write(data)
-
-        await asyncio.to_thread(_write)
-        return
-
     redirect = ">>" if append else ">"
     quoted = shlex.quote(path)
     parts = [f"cat {redirect} {quoted}"]

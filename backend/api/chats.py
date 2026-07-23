@@ -15,7 +15,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agent.wsl_exec import IS_POSIX, decode_loose, host_tool_env, run_blocking, wsl_run
+from agent.exec_common import decode_loose, run_blocking
+from agent.host_exec import IS_POSIX
+from agent.posix_exec import host_tool_env
+from agent.wsl_exec import wsl_run
 from shell import resolve_active_shell
 
 logger = logging.getLogger(__name__)

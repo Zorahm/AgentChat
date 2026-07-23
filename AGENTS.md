@@ -66,7 +66,10 @@ AgentChat/
 │   │   ├── types.py            # Agent event/message types
 │   │   ├── sandbox.py          # SandboxPolicy — path access control
 │   │   ├── write_file_stream.py # write_file streaming chunk emitter
-│   │   ├── wsl_exec.py         # WSL/posix/PowerShell command execution hub
+│   │   ├── exec_common.py      # Shared subprocess plumbing (run_blocking/run_capture/decode_loose)
+│   │   ├── host_exec.py        # Platform dispatch — host_run/host_read_*/host_write_* (single import point)
+│   │   ├── posix_exec.py       # Native Linux/macOS execution (bash/zsh) + AppImage env scrub
+│   │   ├── wsl_exec.py         # WSL-only execution — tunnels through wsl.exe
 │   │   ├── reasoning_split.py  # Splits model output into thinking/text
 │   │   ├── research_prompt.py  # System prompt for the research sub-agent
 │   │   └── research_runner.py  # Drives a nested AgentLoop for the research tool
