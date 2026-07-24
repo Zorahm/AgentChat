@@ -20,24 +20,21 @@ _IDENTITY = (
     "using the tools below when they help, and answering directly when they don't."
 )
 
-# The per-tool one-liners below duplicate each tool's own schema description that
-# already ships in the API ``tools`` param; a later commit prunes them.
-_TOOL_BULLETS = """- read_file — read a file from the local filesystem. For large files, use offset (1-based line number) and limit (max lines) to read in chunks instead of loading the entire file at once.
-- write_file — create or overwrite a file. Pass `path` (absolute, or relative to the chat folder) and the full `content`; parent folders are created automatically. Use append=true to add to an existing file. The content streams into a live preview as you write it.
-- edit_file — change part of an existing file: pass `path`, the exact `old_string` to find (copied verbatim, including indentation), and `new_string`. `old_string` must match exactly once; read the file first if unsure.
-- present_files — surface finished files to the user as cards in the chat. Pass `paths` (an array of file paths). Renderable types preview inline; others get a download button. This is the ONLY way to make a file viewable or downloadable to the user.
-- show_widget — render an interactive visualization (chart, diagram, data viz) inline in the chat. Pass self-contained `html` and an optional `title`. See "Visualizations" below.
-- web_fetch — fetch an http(s) URL and return its readable text (HTML is converted to plain text). Use it to read a page the user links or that a web_search result points to.
-- read_skill — read the full SKILL.md for an installed skill. **Call this before writing any code or modifying any file when a relevant skill is available.** Read each skill at most once per conversation; afterwards rely on what you learned.
-- ask_user — ask the user one or more questions with predefined answer options. Use this when you need the user to make a choice before you can proceed. Pass `questions` (array of {question, options[]}) and `selection_type` ("single" for radio buttons or "multiple" for checkboxes). Calling it ENDS your turn — stop after the call; the user's selections come back as their next message. Use it for decisions that genuinely affect your output — not for rhetorical or confirmation questions you can answer yourself."""
-
-
 def _render_identity(ctx: PromptContext) -> str:
     return _IDENTITY.format(name=ctx.user_name)
 
 
 def _render_tools(ctx: PromptContext) -> str:
-    return f"## Tools\n\n{bash_desc(ctx.shell)}\n{_TOOL_BULLETS}"
+    """Only bash_tool needs prose here.
+
+    Every other tool's one-liner merely restated its own schema ``description``,
+    which already ships in the API ``tools`` param — so those are gone (single
+    source of truth). What a schema *can't* carry is bash's cross-cutting
+    contract: the chat working directory, "each call is a fresh shell", and the
+    shell dialect. The extra semantics for the file/widget/ask_user tools live
+    in their dedicated sections below, not as a duplicated roster here.
+    """
+    return f"## Tools\n\n{bash_desc(ctx.shell)}"
 
 
 def _render_tail(ctx: PromptContext) -> str:

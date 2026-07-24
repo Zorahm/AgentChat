@@ -133,6 +133,30 @@ def test_default_output_preserves_section_texts() -> None:
         assert span in out
 
 
+def test_tools_section_deduped_against_schema() -> None:
+    # The `## Tools` section must keep only what the tool *schemas* can't say —
+    # bash's working-dir/fresh-shell/dialect semantics — and drop the per-tool
+    # one-liners that merely restate each schema's own description.
+    out = build_system_prompt("", "wsl", "", False)
+    assert "## Tools" in out
+    assert "- bash_tool — execute bash commands inside WSL." in out
+    for gone in [
+        "- read_file — read a file from the local filesystem.",
+        "- write_file — create or overwrite a file.",
+        "- edit_file — change part of an existing file:",
+        "- present_files — surface finished files to the user as cards in the chat.",
+        "- show_widget — render an interactive visualization",
+        "- web_fetch — fetch an http(s) URL",
+        "- read_skill — read the full SKILL.md",
+        "- ask_user — ask the user one or more questions with predefined answer options.",
+    ]:
+        assert gone not in out
+    # The non-schema semantics for those tools survive in their own sections.
+    assert "Calling `ask_user` ENDS your turn" in out
+    assert "Write the COMPLETE content" in out
+    assert "present_files(paths=[...])" in out
+
+
 def test_model_line_present_only_when_model_set() -> None:
     assert "Model:" not in build_system_prompt("", "wsl", "", False)
     withm = build_system_prompt("", "wsl", "anthropic/claude-3-5-sonnet", False)
