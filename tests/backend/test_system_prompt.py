@@ -118,6 +118,30 @@ def test_wrapper_keeps_signature_and_returns_str() -> None:
     assert "## Wellbeing & crisis support" in out
 
 
+def test_every_retained_section_appears_verbatim() -> None:
+    # Characterization: at the default context each retained section renders as
+    # one contiguous, byte-for-byte block. Proves the refactor only reordered /
+    # de-duped / appended — it never reworded a section (and never silently
+    # truncated one, as an early draft did to the read_file bullet).
+    from agent.prompt import sections
+
+    out = build_system_prompt("", "wsl", "", False)
+    for const in (
+        sections.CORE_BEHAVIOR,
+        sections.SANDBOX_RULES,
+        sections.READING_FILES,
+        sections.CREATING_FILES,
+        sections.VISUALIZATIONS,
+        sections.FORMATTING,
+        sections.AGENTIC_SAFETY,
+        sections.CRISIS,
+        sections.SKILLS_HEADER,
+    ):
+        assert const in out
+    # describe_actions is gated off by default, so its section must be absent.
+    assert sections.DESCRIBE_ACTIONS not in out
+
+
 def test_default_output_preserves_section_texts() -> None:
     # Verbatim spans from the pre-refactor prompt must survive untouched —
     # the refactor may reorder and de-dup, never reword.
