@@ -16,17 +16,36 @@ from agent.prompt.modules import assemble
 from agent.prompt.registry import build_registry
 
 
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _os_login() -> str:
+    """``os.getlogin()`` raises OSError with no controlling terminal (e.g. under
+    a service manager) — degrade to empty rather than crash prompt assembly."""
+    try:
+        return os.getlogin()
+    except OSError:
+        return ""
+
+
 def _resolve_user_name(user_name: str) -> str:
     """Explicit name, else the OS login, else empty."""
-    return user_name or os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
+    return user_name or os.environ.get("USER", os.environ.get("USERNAME", "")) or _os_login()
 
 
 def _format_today(now: datetime) -> str:
-    """Day-granularity date. Minutes are deliberately dropped: a per-minute
-    timestamp at the top of the prompt meant the cacheable prefix never
-    matched between requests (see the cache invariant in agent.prompt.modules).
+    """Day-granularity date with an explicit English month.
+
+    Minutes are deliberately dropped: a per-minute timestamp at the top of the
+    prompt meant the cacheable prefix never matched between requests (see the
+    cache invariant in agent.prompt.modules). The month is spelled out from a
+    table rather than ``%B`` because ``%B`` is locale-dependent — on a Russian
+    system it would splice Cyrillic into an otherwise-English prompt.
     """
-    return now.strftime("%d %B %Y")
+    return f"{now:%d} {_MONTHS[now.month - 1]} {now:%Y}"
 
 
 def build_system_prompt(

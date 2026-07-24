@@ -133,6 +133,61 @@ def test_default_output_preserves_section_texts() -> None:
         assert span in out
 
 
+def test_format_today_is_english_and_dayfirst() -> None:
+    from datetime import datetime
+
+    from agent.system_prompt import _format_today
+
+    assert _format_today(datetime(2026, 3, 5, 13, 7)) == "05 March 2026"
+
+
+def test_format_today_ignores_process_locale() -> None:
+    import locale
+    from datetime import datetime
+
+    from agent.system_prompt import _format_today
+
+    saved = locale.setlocale(locale.LC_TIME)
+    try:
+        for loc in (
+            "Russian_Russia.1251",
+            "ru_RU.UTF-8",
+            "ru_RU",
+            "German_Germany.1252",
+            "de_DE.UTF-8",
+        ):
+            try:
+                locale.setlocale(locale.LC_TIME, loc)
+                break
+            except locale.Error:
+                continue
+        else:
+            pytest.skip("no non-English locale available on this host")
+        # %B would go Cyrillic/German here; explicit month names must not.
+        assert _format_today(datetime(2026, 3, 5)) == "05 March 2026"
+    finally:
+        locale.setlocale(locale.LC_TIME, saved)
+
+
+def test_resolve_user_name_survives_getlogin_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    from agent import system_prompt as sp
+
+    monkeypatch.delenv("USER", raising=False)
+    monkeypatch.delenv("USERNAME", raising=False)
+
+    def _boom() -> str:
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(os, "getlogin", _boom)
+    # getlogin() raises without a tty — must degrade to "", not crash.
+    assert sp._resolve_user_name("") == ""
+    assert sp.build_system_prompt("", "wsl", "", False).startswith("You are AgentChat")
+
+
 def test_core_behavior_has_failure_stop_policy() -> None:
     # New guidance: on a tool failure, retry once *differently*, then stop and
     # report — the main cure for agents looping on the same broken command.

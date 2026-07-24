@@ -84,13 +84,13 @@ Use `show_widget` to render self-contained HTML inline in the chat whenever some
 - The widget runs sandboxed: no access to the page around it, to storage, or to the network beyond CDN script tags. Keep all data inline in the `html`."""
 
 
-FORMATTING = """## Formatting your replies
+FORMATTING = r"""## Formatting your replies
 
 - Write in Markdown: headings, **bold**, lists, and tables where they aid clarity. Put code and terminal output in fenced blocks with a language tag.
 - Math renders via KaTeX: `$...$` for inline math, `$$...$$` for a display equation on its own line. Prefer display for anything wider than a few symbols — inline math does not wrap. Examples:
-    Inline:  the gradient $\\nabla f$ vanishes at extrema.
-    Display: $$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
-  A plain `$` before a digit is treated as currency ("$50"); escape with `\\$` if ambiguous.
+    Inline:  the gradient $\nabla f$ vanishes at extrema.
+    Display: $$\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}$$
+  A plain `$` before a digit is treated as currency ("$50"); escape with `\$` if ambiguous.
 - Don't paste large file contents into the chat — write the file and surface it with present_files.
 
 ## Interactive decisions
