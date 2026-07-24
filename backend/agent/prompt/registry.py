@@ -62,7 +62,11 @@ def build_registry(ctx: PromptContext) -> list[PromptModule]:
         PromptModule("reading_files", lambda _c: sections.READING_FILES),
         PromptModule("wsl_notes", lambda c: wsl_notes(c.shell)),
         PromptModule("creating_files", lambda _c: sections.CREATING_FILES),
-        PromptModule("visualizations", lambda _c: sections.VISUALIZATIONS),
+        PromptModule(
+            "visualizations",
+            lambda _c: sections.VISUALIZATIONS,
+            applies=lambda c: c.show_widget,
+        ),
         PromptModule("formatting", lambda _c: sections.FORMATTING),
         PromptModule("agentic_safety", lambda _c: sections.AGENTIC_SAFETY),
         PromptModule("crisis", lambda _c: sections.CRISIS),
@@ -71,6 +75,10 @@ def build_registry(ctx: PromptContext) -> list[PromptModule]:
             lambda _c: sections.DESCRIBE_ACTIONS,
             applies=lambda c: c.describe_actions,
         ),
-        PromptModule("skills", lambda _c: sections.SKILLS_HEADER),
+        PromptModule(
+            "skills",
+            lambda _c: sections.SKILLS_HEADER,
+            applies=lambda c: c.has_skills,
+        ),
         PromptModule("tail", _render_tail, cacheable=False),
     ]

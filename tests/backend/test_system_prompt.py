@@ -196,6 +196,29 @@ def test_wsl_notes_only_for_wsl() -> None:
         assert "WSL DNS is" not in build_system_prompt("", sh, "", False)
 
 
+def test_widget_section_gated_on_show_widget() -> None:
+    assert "## Visual widgets" in build_system_prompt("", "wsl", "", False, show_widget=True)
+    out = build_system_prompt("", "wsl", "", False, show_widget=False)
+    assert "## Visual widgets" not in out
+    assert "show_widget" not in out
+
+
+def test_skills_section_gated_on_has_skills() -> None:
+    assert "## Skills" in build_system_prompt("", "wsl", "", False, has_skills=True)
+    assert "## Skills" not in build_system_prompt("", "wsl", "", False, has_skills=False)
+
+
+def test_gated_out_section_leaves_no_double_blank() -> None:
+    # A dropped module must not leave a stray "\n\n\n" seam.
+    out = build_system_prompt("", "wsl", "", False, show_widget=False, has_skills=False)
+    assert "\n\n\n" not in out
+
+
+def test_describe_actions_gated() -> None:
+    assert "## Narrating your actions" not in build_system_prompt("", "wsl", "", False)
+    assert "## Narrating your actions" in build_system_prompt("", "wsl", "", True)
+
+
 def test_model_line_present_only_when_model_set() -> None:
     assert "Model:" not in build_system_prompt("", "wsl", "", False)
     withm = build_system_prompt("", "wsl", "anthropic/claude-3-5-sonnet", False)
