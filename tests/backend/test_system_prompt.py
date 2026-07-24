@@ -133,6 +133,16 @@ def test_default_output_preserves_section_texts() -> None:
         assert span in out
 
 
+def test_core_behavior_has_failure_stop_policy() -> None:
+    # New guidance: on a tool failure, retry once *differently*, then stop and
+    # report — the main cure for agents looping on the same broken command.
+    out = build_system_prompt("", "wsl", "", False)
+    assert "## Core behavior" in out
+    assert "10." in out.split("## Core behavior", 1)[1].split("## ", 1)[0]
+    assert "retry once with a changed approach" in out.lower()
+    assert "stop and report" in out.lower()
+
+
 def test_tools_section_deduped_against_schema() -> None:
     # The `## Tools` section must keep only what the tool *schemas* can't say —
     # bash's working-dir/fresh-shell/dialect semantics — and drop the per-tool
