@@ -12,6 +12,7 @@ from agent.config import AgentConfig
 from agent.reasoning_split import REASONING, ThinkTagSplitter
 from agent.sandbox import SandboxPolicy
 from agent.types import ToolCall, ToolResult
+from agent.untrusted import untrusted_source, wrap_untrusted
 from agent.write_file_stream import emit_tool_call_progress
 from llm.client import LLMClient
 from llm.token_breakdown import estimate_prompt_breakdown
@@ -535,11 +536,20 @@ class AgentLoop:
 
         display_output = f"[image: {args.get('path', '?')}]" if isinstance(output, list) else output
 
+        # Fence content that came from outside the trust boundary (web pages,
+        # uploaded files) so the model sees a prompt-injection marker at the
+        # exact point it reads the bytes. The UI still shows the raw text.
+        llm_content = output
+        if success and isinstance(output, str):
+            source = untrusted_source(name, args)
+            if source is not None:
+                llm_content = wrap_untrusted(source, output)
+
         # Store result as a tool message for the LLM
         self.messages.append({
             "role": "tool",
             "tool_call_id": call_id,
-            "content": output,
+            "content": llm_content,
         })
 
         # Store structured step for UI / debugging
