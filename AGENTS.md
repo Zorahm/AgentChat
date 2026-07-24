@@ -3,6 +3,9 @@
 ## General
 
 - One module = one responsibility
+- Prefer `dataclasses` over bare `dict`s for internal data structures (Pydantic stays the rule for API boundaries)
+- Keep functions small enough to read on one screen; keep files ≤ ~300 lines — split when they grow past that
+- Comments explain *why*, not *what*; a non-obvious invariant (e.g. a prompt-cache prefix ordering) must carry a comment
 
 ## TypeScript (UI)
 
@@ -15,8 +18,8 @@
 
 ## Python (Backend)
 
-- Type hints on all function signatures and class attributes
-- Pydantic models for all data structures crossing module boundaries
+- Type hints on all function signatures and class attributes; code must be clean under `mypy --strict` (no implicit `Any`, no untyped defs)
+- Pydantic models for all data structures crossing module boundaries; `dataclasses` for internal-only structures
 - `async`/`await` for all I/O operations
 - Black formatting: 100 char line length, double quotes
 - Ruff for linting (replaces isort, flake8, pyupgrade)
