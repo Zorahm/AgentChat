@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from . import sections
 from .context import PromptContext
+from .model_family import detect_family, family_quirks
 from .modules import PromptModule
 from .shells import bash_desc, shell_block, wsl_notes
 
@@ -80,5 +81,10 @@ def build_registry(ctx: PromptContext) -> list[PromptModule]:
             lambda _c: sections.SKILLS_HEADER,
             applies=lambda c: c.has_skills,
         ),
+        # Last of the static block: per-model-family corrections. Cacheable —
+        # for a given model it's constant; switching model families is expected
+        # to change the cache key anyway. Renders "" (and is skipped) for
+        # families with no quirk and for an unknown/empty model.
+        PromptModule("model_family", lambda c: family_quirks(detect_family(c.model))),
         PromptModule("tail", _render_tail, cacheable=False),
     ]

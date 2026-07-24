@@ -219,6 +219,44 @@ def test_describe_actions_gated() -> None:
     assert "## Narrating your actions" in build_system_prompt("", "wsl", "", True)
 
 
+def test_detect_family_from_model_id() -> None:
+    from agent.prompt.model_family import detect_family
+
+    assert detect_family("anthropic/claude-3-5-sonnet") == "claude"
+    assert detect_family("openai/gpt-4o") == "openai"
+    assert detect_family("gemini/gemini-1.5-pro") == "google"
+    assert detect_family("ollama/llama3.1") == "local"
+    # LM Studio / OpenAI-compatible locals get re-tagged "openai/..." — the
+    # open-weight model name still gives them away.
+    assert detect_family("openai/qwen2.5-coder") == "local"
+    assert detect_family("") == ""
+    assert detect_family("some-proprietary-thing") == ""
+
+
+def test_local_family_adds_grounding_block() -> None:
+    out = build_system_prompt("", "wsl", "ollama/llama3", False)
+    assert "never state the output of a command you did not run" in out
+
+
+def test_nonlocal_and_empty_model_have_no_quirk_block() -> None:
+    for model in ("anthropic/claude-3-5-sonnet", "openai/gpt-4o", ""):
+        assert "Model-specific note" not in build_system_prompt("", "wsl", model, False)
+
+
+def test_model_family_shifts_cache_prefix_only_for_local() -> None:
+    from agent.prompt.context import PromptContext
+    from agent.prompt.modules import assemble
+    from agent.prompt.registry import build_registry
+
+    def prefix_hash(model: str) -> str:
+        ctx = PromptContext(shell="wsl", model=model, today="x")
+        return assemble(build_registry(ctx), ctx).cache_prefix_hash
+
+    # Families with no quirk block share the prefix; a local model adds text.
+    assert prefix_hash("openai/gpt-4o") == prefix_hash("anthropic/claude-3-5-sonnet")
+    assert prefix_hash("ollama/llama3") != prefix_hash("openai/gpt-4o")
+
+
 def test_model_line_present_only_when_model_set() -> None:
     assert "Model:" not in build_system_prompt("", "wsl", "", False)
     withm = build_system_prompt("", "wsl", "anthropic/claude-3-5-sonnet", False)
