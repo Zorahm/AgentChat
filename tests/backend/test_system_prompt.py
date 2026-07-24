@@ -157,6 +157,45 @@ def test_tools_section_deduped_against_schema() -> None:
     assert "present_files(paths=[...])" in out
 
 
+def test_bash_desc_shares_one_body_across_nix_dialects() -> None:
+    from agent.prompt.shells import bash_desc
+
+    # The working-directory contract is a single shared body — identical text
+    # across wsl/posix/zsh, differing only by lead sentence and trailing note.
+    shared = (
+        "Every command already starts in this folder — do NOT `cd` into it first, "
+        "just run the command directly."
+    )
+    assert shared in bash_desc("wsl")
+    assert shared in bash_desc("posix")
+    assert shared in bash_desc("zsh")
+    assert "execute bash commands inside WSL." in bash_desc("wsl")
+    assert "execute bash commands on the local machine." in bash_desc("posix")
+    assert "execute zsh commands on the local machine." in bash_desc("zsh")
+    assert "This is zsh, NOT bash" in bash_desc("zsh")
+    # PowerShell keeps its own template.
+    assert "Windows PowerShell" in bash_desc("powershell")
+    assert "Set-Location" in bash_desc("powershell")
+
+
+def test_unknown_shell_falls_back_to_wsl_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        out = build_system_prompt("", "bogus-shell", "", False)
+    assert "Shell: bash inside WSL." in out
+    assert "execute bash commands inside WSL." in out
+    assert any("bogus-shell" in r.message for r in caplog.records)
+
+
+def test_wsl_notes_only_for_wsl() -> None:
+    assert "WSL DNS is" in build_system_prompt("", "wsl", "", False)
+    for sh in ("posix", "zsh", "powershell"):
+        assert "WSL DNS is" not in build_system_prompt("", sh, "", False)
+
+
 def test_model_line_present_only_when_model_set() -> None:
     assert "Model:" not in build_system_prompt("", "wsl", "", False)
     withm = build_system_prompt("", "wsl", "anthropic/claude-3-5-sonnet", False)
