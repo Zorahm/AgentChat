@@ -154,7 +154,7 @@ async def update_server(
 
     # Config or enabled flag changed — drop any cached connection so the
     # next call re-spawns with the fresh parameters.
-    await request.app.state.mcp_manager._tear_down(server_id, reason="config update")
+    await request.app.state.mcp_manager.stop(server_id, reason="config update")
     return _view(cfg, request)
 
 
@@ -165,7 +165,9 @@ async def delete_server(request: Request, server_id: str) -> dict[str, str]:
         store.remove_mcp_server(server_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await request.app.state.mcp_manager._tear_down(server_id, reason="deleted")
+    manager = request.app.state.mcp_manager
+    await manager.stop(server_id, reason="deleted")
+    manager.forget(server_id)
     return {"status": "ok"}
 
 

@@ -18,6 +18,39 @@ if TYPE_CHECKING:
 
 from mcp_integration.config import MCPHttpConfig, MCPServerConfig, MCPStdioConfig
 
+# Env vars a child MCP server legitimately needs: locate its binaries, resolve
+# HOME, reach the network, trust the system cert store. Deliberately NOT the
+# whole of ``os.environ`` — this backend's own environment holds provider
+# secrets (ANTHROPIC_API_KEY, OPENAI_API_KEY, TAVILY_API_KEY, …) and handing
+# them to a third-party subprocess leaks every one of them. That is the same
+# threat the bash sandbox spends ``--clearenv`` on. A server that needs a
+# secret declares it explicitly in ``cfg.env``.
+#
+# ``os.environ`` is case-insensitive on Windows, so the mixed-case Windows
+# names below resolve there and are simply absent on POSIX.
+_ENV_PASSTHROUGH: tuple[str, ...] = (
+    # POSIX basics
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TZ", "TMPDIR",
+    # Windows basics
+    "SystemRoot", "SystemDrive", "windir", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
+    "USERPROFILE", "USERNAME", "USERDOMAIN", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP",
+    # Toolchain lookup paths
+    "NODE_PATH", "NVM_DIR", "NVM_BIN", "PYTHONHOME", "PYTHONPATH",
+    # TLS trust + proxies
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+)
+
+
+def _passthrough_env() -> dict[str, str]:
+    """Copy only the allow-listed vars out of the backend's environment."""
+    return {
+        name: value
+        for name in _ENV_PASSTHROUGH
+        if (value := os.environ.get(name)) is not None
+    }
+
 
 def _build_stdio_params(cfg: MCPStdioConfig) -> tuple[str, list[str], dict[str, str]]:
     """Return ``(command, args, env)`` ready for ``StdioServerParameters``.
@@ -27,7 +60,7 @@ def _build_stdio_params(cfg: MCPStdioConfig) -> tuple[str, list[str], dict[str, 
     ``A=1 B=2`` prefixes inside the inner script so they survive the WSL
     boundary (the outer ``env=`` dict only mutates the Windows child).
     """
-    base_env = {**os.environ, **cfg.env}
+    base_env = {**_passthrough_env(), **cfg.env}
 
     if cfg.runtime == "host":
         return cfg.command, list(cfg.args), base_env

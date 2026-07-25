@@ -45,13 +45,20 @@ class _ToolInfo:
 
 @dataclass
 class _Handle:
-    """In-memory state for one running MCP server."""
+    """In-memory state for one running MCP server.
+
+    ``owner`` is the task that entered the session's ``AsyncExitStack`` and is
+    the only task allowed to exit it (see :meth:`MCPManager._own_session`).
+    Tearing down means setting ``close_event`` and awaiting ``owner`` — never
+    closing the stack from here.
+    """
 
     server_id: str
     session: ClientSession
-    stack: AsyncExitStack
     tools: list[_ToolInfo]
     last_used: float
+    owner: asyncio.Task[None]
+    close_event: asyncio.Event
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -144,8 +151,7 @@ class MCPManager:
         arguments: dict[str, Any],
     ) -> str:
         """Invoke a tool on the named server. Returns a textual result."""
-        await self.ensure_started(cfg)
-        handle = self._handles[cfg.id]
+        handle = await self._acquire(cfg)
         async with handle.lock:
             handle.last_used = time.monotonic()
             try:
@@ -159,11 +165,48 @@ class MCPManager:
                 ) from exc
         return _format_call_result(result)
 
+    async def _acquire(self, cfg: MCPServerConfig) -> _Handle:
+        """Start the server if needed and return its live handle.
+
+        ``ensure_started`` releases the spawn lock before returning, so a
+        tear-down (idle reap, manual refresh, shutdown) can land between it and
+        the lookup — indexing ``_handles`` blindly raised KeyError there. One
+        retry covers that window; a second miss means the server really is gone.
+        """
+        for _ in range(2):
+            await self.ensure_started(cfg)
+            handle = self._handles.get(cfg.id)
+            if handle is not None:
+                return handle
+        raise RuntimeError(
+            f"MCP server '{cfg.id}' kept stopping before the call could be made"
+        )
+
     async def list_tools_fresh(self, cfg: MCPServerConfig) -> list[_ToolInfo]:
         """Force a re-spawn (or first spawn) and return the latest tool set."""
-        if cfg.id in self._handles:
+        # Hold the spawn lock across the tear-down so a concurrent
+        # ensure_started can't install a fresh handle that we then reap.
+        lock = self._spawn_locks.setdefault(cfg.id, asyncio.Lock())
+        async with lock:
             await self._tear_down(cfg.id, reason="manual refresh")
         return await self.ensure_started(cfg)
+
+    async def stop(self, server_id: str, *, reason: str) -> None:
+        """Public tear-down — used by the routes when config changes or the
+        server is deleted. Held under the spawn lock so it can't race a spawn
+        that is already in flight."""
+        lock = self._spawn_locks.setdefault(server_id, asyncio.Lock())
+        async with lock:
+            await self._tear_down(server_id, reason=reason)
+
+    def forget(self, server_id: str) -> None:
+        """Drop bookkeeping for a server the user deleted from settings.
+
+        The handle itself is reaped separately; this only clears the per-id
+        lock and error entries so they don't accumulate for the process's life.
+        """
+        self._spawn_locks.pop(server_id, None)
+        self._errors.pop(server_id, None)
 
     def get_status(self, server_id: str) -> MCPServerStatus:
         """Snapshot of a server's runtime state — for the UI."""
@@ -189,39 +232,84 @@ class MCPManager:
     # internals
     # ------------------------------------------------------------------
 
-    async def _spawn(self, cfg: MCPServerConfig) -> _Handle:
-        stack = AsyncExitStack()
-        try:
-            session = await asyncio.wait_for(
-                open_session(cfg, stack), timeout=_OP_TIMEOUT_S
-            )
-            tools_response = await asyncio.wait_for(
-                session.list_tools(), timeout=_OP_TIMEOUT_S
-            )
-        except Exception:
-            await stack.aclose()
-            raise
+    async def _own_session(
+        self,
+        cfg: MCPServerConfig,
+        ready: asyncio.Future[tuple[ClientSession, list[_ToolInfo]]],
+        close_event: asyncio.Event,
+    ) -> None:
+        """Own one server's ``AsyncExitStack`` for the whole of its lifetime.
 
-        tools = [
-            _ToolInfo(
-                name=t.name,
-                description=t.description or "",
-                input_schema=_normalise_schema(t.inputSchema),
-            )
-            for t in tools_response.tools
-        ]
-        logger.info(
-            "MCP server %s started: %d tool(s) [%s]",
-            cfg.id,
-            len(tools),
-            ", ".join(t.name for t in tools),
+        The MCP SDK's transports are anyio-based, and anyio binds a cancel
+        scope to the task that entered it. Entering the stack in a request
+        handler and closing it from the reaper — a different task — raises
+        ``Attempted to exit cancel scope in a different task``; the manager
+        logged that and moved on, leaving the subprocess running forever. So
+        the stack is opened *and* closed here, in one task, and tear-down is a
+        signal (``close_event``) rather than a foreign ``aclose()``.
+        """
+        try:
+            async with AsyncExitStack() as stack:
+                session = await asyncio.wait_for(
+                    open_session(cfg, stack), timeout=_OP_TIMEOUT_S
+                )
+                tools_response = await asyncio.wait_for(
+                    session.list_tools(), timeout=_OP_TIMEOUT_S
+                )
+                tools = [
+                    _ToolInfo(
+                        name=t.name,
+                        description=t.description or "",
+                        input_schema=_normalise_schema(t.inputSchema),
+                    )
+                    for t in tools_response.tools
+                ]
+                logger.info(
+                    "MCP server %s started: %d tool(s) [%s]",
+                    cfg.id,
+                    len(tools),
+                    ", ".join(t.name for t in tools),
+                )
+                if ready.done():
+                    # The spawner gave up (timed out / was cancelled) — unwind
+                    # rather than leaving an unreachable server running.
+                    return
+                ready.set_result((session, tools))
+                await close_event.wait()
+        except asyncio.CancelledError:
+            if not ready.done():
+                ready.cancel()
+            raise
+        except Exception as exc:  # noqa: BLE001 — reported via `ready` or the log
+            if not ready.done():
+                ready.set_exception(exc)
+            else:
+                logger.warning(
+                    "MCP server %s session ended with an error", cfg.id, exc_info=True
+                )
+
+    async def _spawn(self, cfg: MCPServerConfig) -> _Handle:
+        loop = asyncio.get_running_loop()
+        ready: asyncio.Future[tuple[ClientSession, list[_ToolInfo]]] = loop.create_future()
+        close_event = asyncio.Event()
+        owner = asyncio.create_task(
+            self._own_session(cfg, ready, close_event), name=f"mcp-session-{cfg.id}"
         )
+        try:
+            # `ready` is a plain future, so a timeout here does not cancel the
+            # owner task — signal it instead and let it unwind its own stack.
+            session, tools = await asyncio.wait_for(ready, timeout=_OP_TIMEOUT_S)
+        except BaseException:
+            close_event.set()
+            owner.cancel()
+            raise
         return _Handle(
             server_id=cfg.id,
             session=session,
-            stack=stack,
             tools=tools,
             last_used=time.monotonic(),
+            owner=owner,
+            close_event=close_event,
         )
 
     async def _tear_down(self, server_id: str, *, reason: str) -> None:
@@ -229,10 +317,23 @@ class MCPManager:
         if handle is None:
             return
         logger.info("MCP server %s stopping (%s)", server_id, reason)
-        try:
-            await handle.stack.aclose()
-        except Exception:  # noqa: BLE001
-            logger.warning("MCP server %s shutdown raised", server_id, exc_info=True)
+        # The handle is already unreachable, so no new call can join. Wait for
+        # an in-flight call_tool to finish rather than yanking the session out
+        # from under it — the call is itself bounded by _OP_TIMEOUT_S.
+        async with handle.lock:
+            handle.close_event.set()
+            try:
+                await asyncio.wait_for(handle.owner, timeout=_OP_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                # wait_for already cancelled the owner; it unwinds on its own.
+                logger.warning(
+                    "MCP server %s did not stop within %.0fs — cancelled",
+                    server_id, _OP_TIMEOUT_S,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.warning("MCP server %s shutdown raised", server_id, exc_info=True)
 
     async def _reaper_loop(self) -> None:
         try:
