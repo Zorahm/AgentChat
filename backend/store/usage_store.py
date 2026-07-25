@@ -158,6 +158,23 @@ class UsageStore:
     # reads
     # ------------------------------------------------------------------
 
+    def delete_pricing(self, provider: str, model: str) -> bool:
+        """Drop a manual price row, falling the model back to LiteLLM's map."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM model_pricing WHERE provider = ? AND model = ?",
+                (provider, model),
+            )
+        return cur.rowcount > 0
+
+    def list_pricing(self) -> list[dict[str, Any]]:
+        """Every manual price row, provider/model ordered."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM model_pricing ORDER BY provider, model"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_pricing(self, provider: str, model: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
