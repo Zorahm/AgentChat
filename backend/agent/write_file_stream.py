@@ -31,7 +31,8 @@ def _unescape(raw: str) -> str:
         c = raw[i]
         if c == "\\" and i + 1 < len(raw):
             nc = raw[i + 1]
-            if nc == "u" and i + 5 <= len(raw):
+            # \uXXXX spans 6 chars from the backslash — i+6, not i+5.
+            if nc == "u" and i + 6 <= len(raw):
                 try:
                     buf.append(chr(int(raw[i + 2 : i + 6], 16)))
                     i += 6
@@ -60,18 +61,29 @@ def extract_string_value(args_str: str, key: str) -> str | None:
     return _unescape(m.group(1)) if m else None
 
 
-def extract_partial_string(args_str: str, key: str) -> str | None:
-    """Return however much of *key*'s string value has been generated so far.
+def scan_partial_string(args_str: str, key: str, cursor: dict[str, int]) -> str:
+    """Return the characters of *key*'s value decoded **since the last call**.
 
-    Returns None if the key has not appeared yet.
-    Returns an empty string if the key is present but no characters yet.
-    Stops safely at an incomplete escape sequence at a chunk boundary.
+    *cursor* is per-(call, key) scratch state that remembers where the value
+    started and how far it has been decoded. Keeping it is what makes streaming
+    linear: the naive version re-ran the regex and re-decoded the whole
+    accumulated argument string on every delta chunk, so a large ``write_file``
+    cost O(n²) — a 200 KB file was re-decoded once per token. Each character is
+    now decoded exactly once.
+
+    Returns ``""`` while the key has not appeared yet, and stops safely at an
+    escape sequence split across a chunk boundary (it is picked up next call).
     """
-    m = re.search(rf'"{re.escape(key)}"\s*:\s*"', args_str)
-    if not m:
-        return None
+    start = cursor.get("start", -1)
+    if start < 0:
+        m = re.search(rf'"{re.escape(key)}"\s*:\s*"', args_str)
+        if not m:
+            return ""
+        start = m.end()
+        cursor["start"] = start
+        cursor["pos"] = start
 
-    i = m.end()
+    i = cursor.get("pos", start)
     buf: list[str] = []
 
     while i < len(args_str):
@@ -81,7 +93,7 @@ def extract_partial_string(args_str: str, key: str) -> str | None:
                 break  # incomplete escape at chunk boundary — stop safely
             nc = args_str[i + 1]
             if nc == "u":
-                if i + 5 <= len(args_str):
+                if i + 6 <= len(args_str):
                     try:
                         buf.append(chr(int(args_str[i + 2 : i + 6], 16)))
                         i += 6
@@ -98,6 +110,7 @@ def extract_partial_string(args_str: str, key: str) -> str | None:
             buf.append(c)
             i += 1
 
+    cursor["pos"] = i
     return "".join(buf)
 
 
@@ -149,8 +162,16 @@ def emit_tool_call_progress(
         args_str: str = entry["function"]["arguments"]
 
         if call_id not in progress_state:
-            progress_state[call_id] = {"started": False, "emitted_len": 0, "input_len": 0}
+            progress_state[call_id] = {
+                "started": False,
+                "emitted_len": 0,
+                "input_len": 0,
+                "input_text": "",
+                # Resume cursors for scan_partial_string, keyed by arg name.
+                "cursors": {},
+            }
         state = progress_state[call_id]
+        cursors: dict[str, dict[str, int]] = state["cursors"]
 
         if name == "write_file":
             # ── write_file: start once path is known, then stream content ──
@@ -165,16 +186,12 @@ def emit_tool_call_progress(
                     }
                     state["started"] = True
             if state["started"]:
-                content = extract_partial_string(args_str, "content")
-                if content is not None:
-                    prev: int = state["emitted_len"]
-                    if len(content) > prev:
-                        yield {
-                            "type": "tool_chunk",
-                            "id": call_id,
-                            "content": content[prev:],
-                        }
-                        state["emitted_len"] = len(content)
+                chunk = scan_partial_string(
+                    args_str, "content", cursors.setdefault("content", {})
+                )
+                if chunk:
+                    yield {"type": "tool_chunk", "id": call_id, "content": chunk}
+                    state["emitted_len"] += len(chunk)
             continue
 
         # ── every other tool: start immediately, stream the primary arg ──
@@ -182,14 +199,21 @@ def emit_tool_call_progress(
         if not state["started"]:
             input0: dict[str, Any] = {}
             if primary:
-                partial = extract_partial_string(args_str, primary)
+                partial = scan_partial_string(
+                    args_str, primary, cursors.setdefault(primary, {})
+                )
                 if partial:
                     input0[primary] = partial
+                    state["input_text"] = partial
                     state["input_len"] = len(partial)
             yield {"type": "tool_start", "id": call_id, "name": name, "input": input0}
             state["started"] = True
         elif primary:
-            partial = extract_partial_string(args_str, primary)
-            if partial is not None and len(partial) > state["input_len"]:
-                yield {"type": "tool_input", "id": call_id, "input": {primary: partial}}
-                state["input_len"] = len(partial)
+            chunk = scan_partial_string(args_str, primary, cursors.setdefault(primary, {}))
+            if chunk:
+                # tool_input carries the whole value so far (the UI replaces the
+                # block's input), so accumulate the deltas the scanner returns.
+                text: str = state["input_text"] + chunk
+                state["input_text"] = text
+                state["input_len"] = len(text)
+                yield {"type": "tool_input", "id": call_id, "input": {primary: text}}
