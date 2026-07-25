@@ -261,13 +261,17 @@ export function ModelSelector({
     </div>
   );
 
-  const trigger = (
+  // Desktop passes no handler — Popover attaches its own click listener to the
+  // button it finds inside its wrapper. Mobile has no Popover, so it wires the
+  // tap itself.
+  const renderTrigger = (onClick?: () => void) => (
     <Button
       variant="ghost"
       size="sm"
       className="ms-pill"
       label={model}
       tooltip={model}
+      onClick={onClick}
       icon={
         currentAgent && currentAgent.id !== "default"
           ? <AgentAvatar name={currentAgent.name} colorFrom={currentAgent.color_from} colorTo={currentAgent.color_to} size={14} />
@@ -282,10 +286,35 @@ export function ModelSelector({
     </Button>
   );
 
+  const closeSheet = () => { setOpen(false); setSub(null); };
+
+  // Mobile: the menu is a BottomSheet, so the Popover must not be rendered at
+  // all. Keeping it mounted with `isOpen={open && !isMobile}` looked harmless
+  // but deadlocked the trigger — the pill never opened anything:
+  //   1. Popover attaches a native click listener to the pill and, on tap,
+  //      toggles its own popover → onOpenChange(true) → setOpen(true).
+  //   2. Its controlled-sync effect then reads isOpen = open && !isMobile =
+  //      false while its internal state says open, so it calls hide().
+  //   3. hide() fires onOpenChange(false) → setOpen(false).
+  // The sheet mounted and unmounted in the same tick, and Popover's 50ms
+  // light-dismiss guard swallowed the next tap too.
+  if (isMobile) {
+    return (
+      <div className="ms-wrap" ref={wrapRef}>
+        {renderTrigger(() => { setSub(null); setOpen(true); })}
+        {open && (
+          <BottomSheet open={open} onClose={closeSheet}>
+            {renderMobileContent()}
+          </BottomSheet>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="ms-wrap" ref={wrapRef}>
       <Popover
-        isOpen={open && !isMobile}
+        isOpen={open}
         onOpenChange={handleOpenChange}
         placement={dropUp ? "above" : "below"}
         alignment="end"
@@ -411,14 +440,8 @@ export function ModelSelector({
           </div>
         }
       >
-        {trigger}
+        {renderTrigger()}
       </Popover>
-
-      {open && isMobile && (
-        <BottomSheet open={open} onClose={() => { setOpen(false); setSub(null); }}>
-          {renderMobileContent()}
-        </BottomSheet>
-      )}
     </div>
   );
 }

@@ -33,20 +33,31 @@
 }
 .ms-pill-chev { color: var(--faint); font-size: 10px; margin-left: 2px; flex-shrink: 0; }
 
-/* Wraps the panel + side flyout inside the Astryx Popover's own content —
- * Popover owns the actual overlay positioning/portal/dismiss; this is just a
- * `position: relative` anchor so `.ms-flyout`'s percentage math resolves, and
- * a hook for the dropUp/down modifier that flips the flyout's vertical edge. */
+/* Astryx's Popover paints the surface itself (white, 12px radius, shadow) and
+ * insets whatever we pass as `content` by its own 12px padding. Before the
+ * Astryx migration `.ms-panel` WAS the surface, and keeping its chrome left two
+ * stacked cards: the popover's, plus a second one offset 12px down-right and
+ * overflowing the right edge, with a doubled shadow and mismatched radii
+ * (12px outer vs 10px inner). That's the stray "second window".
+ *
+ * So the popover is now the only surface. These two values mirror Astryx's
+ * popover padding and radius — if the design system changes them, these follow.
+ * The `--sheet` variant below is the mobile path and is unaffected. */
 .ms-menu {
+  --ms-popover-pad: 12px;
+  --ms-popover-radius: 12px;
   position: relative;
+  /* Cancel the popover's inset so the model list and the tinted footer run
+   * edge to edge exactly as they did before, and so `.ms-flyout` (anchored
+   * here) still measures its gap from the real surface edge. */
+  margin: calc(-1 * var(--ms-popover-pad));
 }
-/* Main panel — overflow:hidden clips its own rounded corners; the dropdown
- * wrapper stays overflow:visible so side flyouts aren't clipped. */
+/* Main panel — fills the surface; overflow:hidden clips the footer band to the
+ * surface's rounded corners. The `.ms-menu` wrapper stays overflow:visible so
+ * side flyouts aren't clipped. */
 .ms-panel {
-  width: 320px; max-height: 440px;
-  background: var(--surface); border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  box-shadow: 0 14px 36px -12px rgba(20,20,18,.20);
+  width: 100%; max-height: 440px;
+  border-radius: var(--ms-popover-radius, var(--radius));
   overflow: hidden; display: flex; flex-direction: column;
 }
 .ms-group + .ms-group { border-top: 1px solid var(--line); }
