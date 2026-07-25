@@ -175,6 +175,11 @@ export function useChats(): UseChatResult {
   const lastSavedRef = useRef<Map<string, string>>(new Map());
   /** Per-session pending save timer. */
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /** Last session object each id was seen as — an identity guard that keeps the
+   * autosave effect from re-serialising chats that didn't change. */
+  const lastSeenRef = useRef<Map<string, ChatSession>>(new Map());
+  /** Per-session promise chain, so two PUTs for one chat can't land out of order. */
+  const saveChainRef = useRef<Map<string, Promise<void>>>(new Map());
   /** First message queued by startProjectChat, fired once the new chat is active. */
   const pendingSendRef = useRef<{
     sessionId: string;
@@ -252,22 +257,39 @@ export function useChats(): UseChatResult {
   // ── Debounced auto-save ───────────────────────────────────────────────
   useEffect(() => {
     for (const s of sessions) {
+      // A streaming chat produces a new object per token, and each pass would
+      // just reset the debounce timer anyway — so nothing is ever saved mid
+      // stream. Snapshotting it here was therefore pure cost: JSON.stringify
+      // of the full tree, per token, for every hydrated chat in memory. Skip
+      // it; dropping out of streamingIds re-runs this effect and saves once.
+      if (streamingIds.has(s.id)) continue;
+      // React hands back the SAME object for chats that didn't change, so an
+      // identity hit means there is nothing to serialise.
+      if (lastSeenRef.current.get(s.id) === s) continue;
+      lastSeenRef.current.set(s.id, s);
+
       const snap = snapshot(s);
       if (lastSavedRef.current.get(s.id) === snap) continue;
       const existing = saveTimersRef.current.get(s.id);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
-        // Read latest from closure — but we need fresh state, so look it up
-        // via the snapshot. We persist whatever the sessions array carries at
-        // schedule time; that's stale-by-one-batch at worst, fine for autosave.
-        void putChatRemote(s).then(() => {
-          lastSavedRef.current.set(s.id, snap);
-          saveTimersRef.current.delete(s.id);
+        // We persist whatever the sessions array carried at schedule time;
+        // that's stale-by-one-batch at worst, fine for autosave.
+        saveTimersRef.current.delete(s.id);
+        // Chain per chat so a slow PUT can't land after a newer one and
+        // resurrect an older tree.
+        const prev = saveChainRef.current.get(s.id) ?? Promise.resolve();
+        const next = prev.then(async () => {
+          // Only mark clean when the write really landed — putChatRemote
+          // swallows network errors, so trusting it unconditionally made an
+          // offline save look successful and the edit was never retried.
+          if (await putChatRemote(s)) lastSavedRef.current.set(s.id, snap);
         });
+        saveChainRef.current.set(s.id, next);
       }, SAVE_DEBOUNCE_MS);
       saveTimersRef.current.set(s.id, timer);
     }
-  }, [sessions]);
+  }, [sessions, streamingIds]);
 
   // Flush pending saves on unload (best-effort; navigator.sendBeacon doesn't
   // help here because PUT body is JSON — but the browser may still complete
@@ -284,7 +306,12 @@ export function useChats(): UseChatResult {
     return () => window.removeEventListener("beforeunload", flush);
   }, [sessions]);
 
-  const activeSession = sessions.find((s) => s.id === activeId) ?? sessions[0];
+  // Strictly the chat matching activeId. It used to fall back to sessions[0],
+  // which is worse than undefined: retry/editMessage build their update from
+  // activeSession but write it back under `sid = activeId`, so a mismatch
+  // stored one chat's tree under another chat's id. Every consumer already
+  // handles undefined.
+  const activeSession = sessions.find((s) => s.id === activeId);
   // The composer/stop-button only care about the chat on screen.
   const isStreaming = streamingIds.has(activeId);
   const messages = activeSession ? currentBranch(activeSession) : [];
@@ -344,10 +371,6 @@ export function useChats(): UseChatResult {
                 });
               }),
             );
-            break;
-          }
-          case "reasoning_break": {
-            // Ignore - breaks are now only inserted when text precedes reasoning/tool_start
             break;
           }
           case "web_search_status": {
@@ -897,6 +920,37 @@ export function useChats(): UseChatResult {
     dropStream(sid, true);
   }, [activeId, activeSession, dropStream]);
 
+  // Declared before newChat, which calls it: both memos carry the same deps
+  // today, so a forward reference happened to resolve — but only by accident.
+  const switchChat = useCallback(
+    (id: string) => {
+      if (id === activeId) return;
+      // Leave any in-flight stream (this chat's or another's) running.
+      setActiveId(id);
+      setLiveFiles([]);
+      setError(null);
+      // Lazy-hydrate the tree if this chat came from the list endpoint
+      // (which only returns summaries).
+      const current = sessions.find((s) => s.id === id);
+      if (current && current.root.length === 0) {
+        void fetchChatFull(id).then((full) => {
+          if (!full) return;
+          // Re-check emptiness at resolve time: if the user already sent a
+          // message into this chat while the fetch was in flight, replacing
+          // the session with the (older) server copy would wipe that message
+          // and orphan its live stream.
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === id && s.root.length === 0 ? { ...full, pinned: s.pinned } : s,
+            ),
+          );
+          lastSavedRef.current.set(id, snapshot(full));
+        });
+      }
+    },
+    [activeId, sessions],
+  );
+
   const newChat = useCallback((projectIdArg?: string) => {
     // Ignore anything that isn't a real project id — e.g. a MouseEvent forwarded
     // by `onClick={onNew}`. (makeSession guards too; this keeps the branching sane.)
@@ -931,7 +985,7 @@ export function useChats(): UseChatResult {
     void createChatRemote(session).then(() => {
       lastSavedRef.current.set(session.id, snapshot(session));
     });
-  }, [activeId, sessions]);
+  }, [activeId, sessions, switchChat]);
 
   /** Create a fresh chat in a project and immediately send its first message.
    * sendMessage reads activeId/sessions from its closure, so we can't call it
@@ -964,41 +1018,14 @@ export function useChats(): UseChatResult {
     [],
   );
 
-  const switchChat = useCallback(
-    (id: string) => {
-      if (id === activeId) return;
-      // Leave any in-flight stream (this chat's or another's) running.
-      setActiveId(id);
-      setLiveFiles([]);
-      setError(null);
-      // Lazy-hydrate the tree if this chat came from the list endpoint
-      // (which only returns summaries).
-      const current = sessions.find((s) => s.id === id);
-      if (current && current.root.length === 0) {
-        void fetchChatFull(id).then((full) => {
-          if (!full) return;
-          // Re-check emptiness at resolve time: if the user already sent a
-          // message into this chat while the fetch was in flight, replacing
-          // the session with the (older) server copy would wipe that message
-          // and orphan its live stream.
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === id && s.root.length === 0 ? { ...full, pinned: s.pinned } : s,
-            ),
-          );
-          lastSavedRef.current.set(id, snapshot(full));
-        });
-      }
-    },
-    [activeId, sessions],
-  );
-
   const deleteChat = useCallback(
     (id: string) => {
       // Kill the deleted chat's stream wherever it runs (active or background).
       dropStream(id, true);
       void deleteChatRemote(id);
       lastSavedRef.current.delete(id);
+      lastSeenRef.current.delete(id);
+      saveChainRef.current.delete(id);
       const pendingTimer = saveTimersRef.current.get(id);
       if (pendingTimer) {
         clearTimeout(pendingTimer);

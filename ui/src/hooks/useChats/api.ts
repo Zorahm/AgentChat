@@ -99,7 +99,10 @@ export async function createChatRemote(s: ChatSession): Promise<ChatSession> {
   return s; // offline — keep local copy; debounced save will retry
 }
 
-export async function putChatRemote(s: ChatSession): Promise<void> {
+/** Persist a chat. Returns whether the write actually reached the backend —
+ *  the caller must not mark the session clean on a `false`, or an offline blip
+ *  silently drops the change for good. */
+export async function putChatRemote(s: ChatSession): Promise<boolean> {
   try {
     const body: Record<string, unknown> = {
       title: s.title,
@@ -116,15 +119,16 @@ export async function putChatRemote(s: ChatSession): Promise<void> {
     // a cycle-broken payload. Skip this write and keep the previous version.
     if (hadCycle) {
       warnCyclicTree("putChatRemote (save skipped)", s);
-      return;
+      return false;
     }
-    await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
+    const r = await fetch(`${API_BASE}/chats/${encodeURIComponent(s.id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: json,
     });
+    return r.ok;
   } catch {
-    /* will retry on next change */
+    return false; // will retry on next change
   }
 }
 
