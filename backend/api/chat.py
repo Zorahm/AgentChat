@@ -53,6 +53,23 @@ _RESEARCH_NUDGE = (
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
 
+def _rejected_native_web_search(exc: Exception) -> bool:
+    """True only when the provider refused the *native web-search tool*.
+
+    This gates a sticky, hour-long fallback, so it must not fire on incidental
+    failures: the check used to be a bare ``except Exception`` around the whole
+    stream, which meant one dropped connection or one model error disabled
+    native search for an hour. Require both a 4xx (the request itself was
+    rejected, not the transport) and a mention of the tool.
+    """
+    code = getattr(exc, "status_code", None)
+    is_4xx = isinstance(code, int) and 400 <= code < 500
+    if not is_4xx and "badrequest" not in type(exc).__name__.lower():
+        return False
+    s = str(exc).lower()
+    return "web_search" in s or "web search" in s or "tool" in s
+
+
 def _resolve_chat_cwd(slug: str | None, user_home: str, shell: str = "wsl") -> str:
     """Map a chat slug to an absolute path under ~/AgentChat/chats/.
 
@@ -617,6 +634,10 @@ async def chat(
         # the assistant message (mode + later, result count from the tool step).
         if web_search_effective != "none":
             yield _sse_event("web_search_status", {"mode": web_search_effective})
+        # Register before the first tool can touch the chat folder, so a
+        # concurrent DELETE /chats/{id} waits instead of rm -rf'ing under us.
+        active_streams = app_state.active_streams
+        active_streams.begin(body.chat_id or "")
         try:
             async for event in agent.run_stream(user_content):
                 yield _sse_event(event["type"], event)
@@ -634,11 +655,14 @@ async def chat(
         except Exception as exc:
             # Native search is optimistic for some providers (e.g. OpenAI). If the
             # provider rejected the native tool, remember that so the next turn
-            # falls back down the chain instead of failing again.
-            if web_search_effective == "native":
+            # falls back down the chain instead of failing again. Narrow on
+            # purpose — see _rejected_native_web_search.
+            if web_search_effective == "native" and _rejected_native_web_search(exc):
                 app_state.web_search_service.mark_native_unsupported(provider_id, model)
             yield _sse_event("error", {"message": str(exc)})
         finally:
+            # Runs on client disconnect too — Starlette closes the generator.
+            active_streams.end(body.chat_id or "")
             if body.chat_id:
                 try:
                     app_state.chat_store.touch_chat(body.chat_id)

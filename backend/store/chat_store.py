@@ -209,7 +209,15 @@ class ChatStore:
                 "ON CONFLICT(id) DO UPDATE SET "
                 "title=excluded.title, dir_slug=excluded.dir_slug, "
                 "project_id=excluded.project_id, agent_id=excluded.agent_id, "
-                "updated_at=excluded.updated_at, root_json=excluded.root_json, "
+                "updated_at=excluded.updated_at, "
+                # Never let an EMPTY incoming tree replace a stored one. The UI
+                # fires POST /chats (this upsert, with root=[]) and the debounced
+                # PUT /chats/{id} (the real tree) independently; nothing orders
+                # them, so a slow POST landing after the first PUT used to wipe
+                # the messages the user had already sent. json.dumps([]) is
+                # exactly '[]', so the comparison is exact.
+                "root_json=CASE WHEN excluded.root_json = '[]' "
+                "THEN chats.root_json ELSE excluded.root_json END, "
                 "mcp_enabled_json=excluded.mcp_enabled_json",
                 (chat_id, title, dir_slug, project_id, agent_id, ts, now, root_blob, mcp_blob),
             )

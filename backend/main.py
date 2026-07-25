@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.system_prompt import build_system_prompt
+from api.active_streams import ActiveStreams
 from api.router import api_router
 from llm.models_fetcher import ModelsFetcher
 from mcp_integration import MCPManager
@@ -204,6 +205,9 @@ def create_app() -> FastAPI:
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
     app.state.web_search_service = web_search_service
+    # Lets DELETE /chats/{id} wait for a chat's stream to finish before it
+    # purges the working folder out from under the running tools.
+    app.state.active_streams = ActiveStreams()
     app.state.system_prompt_factory: Callable[[str], str] = lambda model="": build_system_prompt(
         user_name=settings_store.user_name,
         shell=resolve_active_shell(settings_store.shell_preference),

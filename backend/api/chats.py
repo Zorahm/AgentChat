@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
+# Strong references to fire-and-forget init tasks. asyncio keeps only a weak
+# reference to a running task, so a bare `ensure_future(...)` can be garbage
+# collected mid-flight and the chat folder silently never gets initialised.
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
+
+# How long DELETE waits for an in-flight stream on that chat before giving up
+# on the folder purge. Generous: the UI aborts the stream first, so this only
+# has to cover the abort round-trip.
+_STREAM_DRAIN_TIMEOUT_S = 10.0
+
+
+def _spawn_background(coro: Any) -> None:
+    """Run *coro* detached, keeping a strong reference until it finishes."""
+    task: asyncio.Task[None] = asyncio.ensure_future(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
 # Must be at least as permissive as api/chat.py _SLUG_RE so that every
 # slug accepted at creation time is also accepted at deletion time.
 _SAFE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
@@ -284,9 +301,9 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
     settings = request.app.state.settings_store
     active_shell = resolve_active_shell(settings.shell_preference)
     if active_shell == "wsl":
-        asyncio.ensure_future(_init_chat_dir_wsl(body.dir_slug))
+        _spawn_background(_init_chat_dir_wsl(body.dir_slug))
     else:
-        asyncio.ensure_future(_init_chat_dir_native(body.dir_slug))
+        _spawn_background(_init_chat_dir_native(body.dir_slug))
 
     return ChatFull(**row)
 
@@ -308,7 +325,7 @@ async def update_chat(request: Request, chat_id: str, body: ChatUpdate) -> ChatF
 
 
 @router.delete("/{chat_id}")
-async def delete_chat(request: Request, chat_id: str) -> dict[str, str]:
+async def delete_chat(request: Request, chat_id: str) -> dict[str, Any]:
     store = request.app.state.chat_store
     row = store.get_chat(chat_id)
     if row is None:
@@ -317,5 +334,22 @@ async def delete_chat(request: Request, chat_id: str) -> dict[str, str]:
     logger.info("Deleting chat %s, dir_slug=%r", chat_id, dir_slug)
     if not store.delete_chat(chat_id):
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")
+
+    # The row is gone, so the chat is already invisible in the UI. The folder is
+    # a different matter: an agent still streaming for this chat has tools
+    # writing into it, and rm -rf under a live write leaves the turn failing
+    # against a directory that vanished. Wait for the stream to drain; if it
+    # won't, keep the folder rather than race it (a stale folder is recoverable,
+    # a half-deleted working directory during a turn is not).
+    drained = await request.app.state.active_streams.wait_idle(
+        chat_id, timeout=_STREAM_DRAIN_TIMEOUT_S
+    )
+    if not drained:
+        logger.warning(
+            "Chat %s still streaming after %.0fs — leaving %r on disk",
+            chat_id, _STREAM_DRAIN_TIMEOUT_S, dir_slug,
+        )
+        return {"status": "ok", "dir_slug": dir_slug, "purged": "skipped"}
+
     await _purge_chat_dir(dir_slug)
-    return {"status": "ok", "dir_slug": dir_slug}
+    return {"status": "ok", "dir_slug": dir_slug, "purged": "ok"}
