@@ -6,7 +6,7 @@ import shutil
 import subprocess
 
 from agent.sandbox import SandboxPolicy
-from agent.exec_common import run_blocking
+from agent.exec_common import decode_loose, run_blocking
 from agent.posix_exec import host_tool_env
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
@@ -197,8 +197,9 @@ def _looks_like_wsl_setup_failure(output: str) -> bool:
     """Heuristic: WSL is on PATH but has no working distro.
 
     wsl.exe emits UTF-16-encoded messages like "Windows Subsystem for Linux has
-    no installed distributions" — by the time we read the bytes, the NULs are
-    interleaved into the decoded string. Strip them before matching.
+    no installed distributions". ``decode_loose`` handles that encoding now, but
+    NULs are still stripped here so the check keeps working on any output that
+    reached us through a plain utf-8 decode.
     """
     if not output:
         return False
@@ -219,8 +220,11 @@ def _looks_like_wsl_setup_failure(output: str) -> bool:
 
 
 def _format_result(result: subprocess.CompletedProcess[bytes]) -> str:
-    out = result.stdout.decode("utf-8", errors="replace")
-    err = result.stderr.decode("utf-8", errors="replace")
+    # decode_loose, not a bare utf-8 decode: wsl.exe's own diagnostics come back
+    # as UTF-16LE, which utf-8 renders as NUL-interleaved text in the model's
+    # tool output. Same helper every other shell-out site already uses.
+    out = decode_loose(result.stdout)
+    err = decode_loose(result.stderr)
     parts: list[str] = []
     if out.strip():
         parts.append(out.strip())
