@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,43 @@ BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.untrusted import MARKER, untrusted_source, wrap_untrusted  # noqa: E402
+
+
+class _ToolThenTextLLM:
+    """Turn 0 emits one tool call; turn 1 emits final text.
+
+    The fencing tests must drive ``run_stream`` — the loop's only real path.
+    Asserting against a helper the production code never calls is what let the
+    marker silently stop being applied.
+    """
+
+    def __init__(self, call_id: str, name: str, args: str) -> None:
+        tc = SimpleNamespace(
+            index=0, id=call_id, function=SimpleNamespace(name=name, arguments=args)
+        )
+        self._turns = [
+            [SimpleNamespace(choices=[SimpleNamespace(
+                delta=SimpleNamespace(content=None, reasoning_content=None, tool_calls=[tc])
+            )])],
+            [SimpleNamespace(choices=[SimpleNamespace(
+                delta=SimpleNamespace(content="done", reasoning_content=None, tool_calls=None)
+            )])],
+        ]
+        self.call_count = 0
+
+    async def completion_stream(
+        self,
+        *,
+        model: str,
+        messages: Any,
+        tools: Any = None,
+        extra_body: Any = None,
+        metadata: Any = None,
+    ) -> Any:
+        turn = self._turns[self.call_count]
+        self.call_count += 1
+        for ch in turn:
+            yield ch
 
 
 def test_wrap_fences_content_with_source() -> None:
@@ -77,18 +115,24 @@ async def test_loop_wraps_web_fetch_result() -> None:
 
     reg = ToolRegistry()
     reg.register(_FakeFetch())
-    loop = AgentLoop(config=AgentConfig(model="t"), tools=reg, llm=None)  # type: ignore[arg-type]
-    tc = SimpleNamespace(
-        id="c1",
-        function=SimpleNamespace(name="web_fetch", arguments='{"url":"https://evil.test"}'),
+    llm = _ToolThenTextLLM("c1", "web_fetch", '{"url":"https://evil.test"}')
+    loop = AgentLoop(
+        config=AgentConfig(model="t", max_iterations=3),
+        tools=reg,
+        llm=llm,  # type: ignore[arg-type]
     )
-    await loop._execute_and_record(tc)
 
-    msg = loop.messages[-1]
-    assert msg["role"] == "tool"
+    events = [ev async for ev in loop.run_stream("go")]
+
+    msg = next(m for m in loop.messages if m.get("role") == "tool")
     assert msg["content"].startswith('<untrusted_content source="web_fetch https://evil.test">')
     assert msg["content"].endswith("</untrusted_content>")
     assert "PAGE BODY" in msg["content"]
+
+    # The UI copy stays raw — only what the model reads is fenced.
+    tool_end = next(e for e in events if e["type"] == "tool_end")
+    assert tool_end["output"].startswith("PAGE BODY")
+    assert MARKER not in tool_end["output"]
 
 
 @pytest.mark.asyncio
@@ -116,12 +160,18 @@ async def test_loop_does_not_wrap_bash_result() -> None:
 
     reg = ToolRegistry()
     reg.register(_FakeBash())
-    loop = AgentLoop(config=AgentConfig(model="t"), tools=reg, llm=None)  # type: ignore[arg-type]
-    tc = SimpleNamespace(
-        id="c2", function=SimpleNamespace(name="bash_tool", arguments="{}")
+    llm = _ToolThenTextLLM("c2", "bash_tool", "{}")
+    loop = AgentLoop(
+        config=AgentConfig(model="t", max_iterations=3),
+        tools=reg,
+        llm=llm,  # type: ignore[arg-type]
     )
-    await loop._execute_and_record(tc)
-    assert loop.messages[-1]["content"] == "total 0"
+
+    async for _ in loop.run_stream("go"):
+        pass
+
+    msg = next(m for m in loop.messages if m.get("role") == "tool")
+    assert msg["content"] == "total 0"
 
 
 def test_prompt_references_the_marker() -> None:

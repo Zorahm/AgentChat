@@ -55,12 +55,43 @@ _VISION_NEGATION_MARKERS: tuple[str, ...] = (
 )
 
 
+# 4xx errors that are plainly about something other than image support. The
+# blanket "any 4xx while images are present" backstop below would otherwise
+# strip the user's image and retry — turning "context length exceeded" into a
+# second, more confusing failure with the picture silently gone.
+_UNRELATED_4XX_MARKERS: tuple[str, ...] = (
+    "context length",
+    "context_length",
+    "maximum context",
+    "too many tokens",
+    "reduce the length",
+    "rate limit",
+    "rate_limit",
+    "quota",
+    "insufficient",
+    "credit balance",
+    "billing",
+    "authentication",
+    "unauthorized",
+    "api key",
+    "permission",
+    "model not found",
+    "does not exist",
+)
+
+
 def _is_vision_rejection(message: str) -> bool:
     """Heuristic: does this provider error read like an image/vision rejection?"""
     s = message.lower()
     return any(k in s for k in _VISION_SUBJECT_MARKERS) and any(
         k in s for k in _VISION_NEGATION_MARKERS
     )
+
+
+def _is_unrelated_4xx(message: str) -> bool:
+    """True when a 4xx names a cause that has nothing to do with image input."""
+    s = message.lower()
+    return any(k in s for k in _UNRELATED_4XX_MARKERS)
 
 
 def _is_bad_request(exc: Exception) -> bool:
@@ -199,11 +230,9 @@ class AgentLoop:
         tool_defs_or_none = tool_defs if tool_defs else None
 
         # Set when we transparently retried a pass after stripping image blocks
-        # the model couldn't read — suppresses the reasoning break for the retry.
+        # the model couldn't read.
         retrying_vision = False
         for iteration_idx in range(self.config.max_iterations):
-            if iteration_idx > 0 and not retrying_vision:
-                yield {"type": "reasoning_break"}
             retrying_vision = False
             accumulated_content = ""
             accumulated_reasoning = ""
@@ -275,9 +304,11 @@ class AgentLoop:
                 # _strip_image_blocks only fires when images are present, so this
                 # is one-shot: a second failure has no images left to strip and
                 # propagates normally (no masking of unrelated 4xx errors).
-                if (_is_vision_rejection(str(exc)) or _is_bad_request(exc)) and (
-                    _strip_image_blocks(self.messages, str(exc))
-                ):
+                err = str(exc)
+                looks_like_vision = _is_vision_rejection(err) or (
+                    _is_bad_request(exc) and not _is_unrelated_4xx(err)
+                )
+                if looks_like_vision and _strip_image_blocks(self.messages, err):
                     retrying_vision = True
                     continue
                 raise
@@ -436,12 +467,23 @@ class AgentLoop:
 
                 # Tools may return a plain string or an OpenAI content list (e.g. image blocks).
                 # The LLM sees the list directly; the UI gets a human-readable summary string.
-                if isinstance(output, list):
-                    display_output = f"[image: {args.get('path', '?')}]"
-                    self.messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
-                else:
-                    display_output = output
-                    self.messages.append({"role": "tool", "tool_call_id": call_id, "content": output})
+                display_output = (
+                    f"[image: {args.get('path', '?')}]" if isinstance(output, list) else output
+                )
+
+                # Fence content that came from outside the trust boundary (web
+                # pages, uploaded files) so the model sees a prompt-injection
+                # marker at the exact point it reads the bytes. Only the copy
+                # handed to the LLM is wrapped — the UI still shows the raw text.
+                llm_content: Any = output
+                if success and isinstance(output, str):
+                    source = untrusted_source(name, args)
+                    if source is not None:
+                        llm_content = wrap_untrusted(source, output)
+
+                self.messages.append(
+                    {"role": "tool", "tool_call_id": call_id, "content": llm_content}
+                )
 
                 yield {
                     "type": "tool_end", "id": call_id, "name": name,
@@ -466,11 +508,6 @@ class AgentLoop:
 
         yield {"type": "iterations_exhausted", "count": self.config.max_iterations}
         yield {"type": "done"}
-
-    def reset(self) -> None:
-        """Clear conversation history for a new session."""
-        self.messages.clear()
-        self.steps.clear()
 
     def set_manifest(self, text: str) -> None:
         """Update the skills manifest injected into the system prompt.
@@ -512,74 +549,6 @@ class AgentLoop:
         if prompt:
             result.append({"role": "system", "content": prompt})
         result.extend(self.messages)
-        return result
-
-    async def _execute_and_record(self, tc_raw: Any) -> None:
-        """Execute a single tool call, store result in messages and steps."""
-        name: str = tc_raw.function.name
-        args_raw: str = tc_raw.function.arguments
-        call_id: str = tc_raw.id
-
-        try:
-            args = json.loads(args_raw) if args_raw else {}
-        except json.JSONDecodeError:
-            args = {}
-
-        t0 = time.perf_counter()
-        try:
-            output = await self.tools.execute(name, args)
-            success = True
-        except Exception as exc:
-            output = str(exc)
-            success = False
-        duration_ms = round((time.perf_counter() - t0) * 1000, 1)
-
-        display_output = f"[image: {args.get('path', '?')}]" if isinstance(output, list) else output
-
-        # Fence content that came from outside the trust boundary (web pages,
-        # uploaded files) so the model sees a prompt-injection marker at the
-        # exact point it reads the bytes. The UI still shows the raw text.
-        llm_content = output
-        if success and isinstance(output, str):
-            source = untrusted_source(name, args)
-            if source is not None:
-                llm_content = wrap_untrusted(source, output)
-
-        # Store result as a tool message for the LLM
-        self.messages.append({
-            "role": "tool",
-            "tool_call_id": call_id,
-            "content": llm_content,
-        })
-
-        # Store structured step for UI / debugging
-        self.steps.append({
-            "tool_call": ToolCall(
-                id=call_id,
-                function={"name": name, "arguments": args_raw},
-            ),
-            "result": ToolResult(
-                tool_call_id=call_id,
-                name=name,
-                success=success,
-                output=display_output,
-                duration_ms=duration_ms,
-            ),
-        })
-
-    @staticmethod
-    def _normalize_tool_calls(raw: Any) -> list[dict[str, Any]]:
-        """Convert LiteLLM tool call objects to plain dicts for message history."""
-        result: list[dict[str, Any]] = []
-        for tc in raw:
-            result.append({
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,
-                },
-            })
         return result
 
     @staticmethod
