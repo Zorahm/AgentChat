@@ -54,7 +54,8 @@ AgentChat/
 │   │   ├── searxng.py          # SearXNG proxy
 │   │   ├── win_deps.py         # Windows dependency detection
 │   │   ├── config_routes.py    # GET /api/config/* — runtime capability probes for the UI
-│   │   ├── usage.py            # GET /api/usage/* — token/cost dashboard queries
+│   │   ├── usage.py            # /api/usage/* — token/cost dashboard + manual model pricing
+│   │   ├── active_streams.py   # In-flight stream registry — DELETE /chats waits on it before rm -rf
 │   │   ├── router.py           # Route assembly
 │   │   └── schemas/            # Pydantic request/response models
 │   │       ├── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
@@ -158,9 +159,7 @@ AgentChat/
 │       │   │   ├── ChatInput.tsx        # Composer — Astryx ChatComposer/ChatComposerInput, no TipTap
 │       │   │   ├── MessageBubble.tsx    # Single message renderer — Astryx ChatMessage/ChatToolCalls/ChatMessageMetadata
 │       │   │   ├── ModelSelector.tsx    # Model dropdown
-│       │   │   ├── CodeBlockView.tsx    # Syntax-highlighted code blocks
 │       │   │   ├── MCPChip.tsx          # MCP indicator chip + composer "Connectors" row
-│       │   │   ├── WebSearchControl.tsx # Web search toggle
 │       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
 │       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
 │       │   │   ├── ResearchCard.tsx     # Research tool-call summary card
@@ -246,7 +245,6 @@ AgentChat/
 │           ├── frontmatter.ts      # Markdown frontmatter parsing
 │           ├── getLang.ts          # Syntax-highlighter language detection
 │           ├── basename.ts         # Path basename helper
-│           ├── parseCodeBlocks.ts  # Code block extraction
 │           ├── latexPlugins.tsx    # KaTeX inlinePlugins for Astryx's <Markdown/> (no built-in math support)
 │           └── updater.ts          # Tauri auto-updater
 │
