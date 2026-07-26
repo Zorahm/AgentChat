@@ -14,7 +14,9 @@ sys.path.insert(0, str(BACKEND_DIR))
 import main  # noqa: E402
 from api.remote import _is_tailscale_ip, _sort_ips  # noqa: E402
 from api.schemas.settings import SettingsUpdate  # noqa: E402
-from main import _is_loopback_client  # noqa: E402
+# Imported from api.loopback, not main: importing main constructs the whole app
+# against the user's REAL settings.json and databases as an import side effect.
+from api.loopback import is_loopback_request as _is_loopback_client  # noqa: E402
 from store.settings_store import SettingsStore  # noqa: E402
 
 fastapi_testclient = pytest.importorskip("fastapi.testclient")
@@ -97,6 +99,18 @@ class TestRemoteAccessGuard:
         )
         assert resp.status_code == 403
 
+    def test_rotate_endpoint_refuses_remote_callers(self, client_with_temp_store) -> None:
+        client, store = client_with_temp_store
+        store.update(SettingsUpdate(remote_access_enabled=True))
+        before = store.remote_token
+        # A caller holding the current token must not be able to roll it.
+        resp = client.post(
+            "/api/remote-access/rotate",
+            headers={"Authorization": f"Bearer {store.remote_token}"},
+        )
+        assert resp.status_code == 403
+        assert store.remote_token == before
+
     def test_token_minted_once_and_reused(self, tmp_path: Path) -> None:
         store = SettingsStore(settings_path=tmp_path / "settings.json")
         assert store.remote_token == ""
@@ -106,6 +120,18 @@ class TestRemoteAccessGuard:
         store.update(SettingsUpdate(remote_access_enabled=False))
         store.update(SettingsUpdate(remote_access_enabled=True))
         assert store.remote_token == first
+
+    def test_rotate_replaces_the_token_and_persists(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        store = SettingsStore(settings_path=path)
+        store.update(SettingsUpdate(remote_access_enabled=True))
+        first = store.remote_token
+
+        rotated = store.rotate_remote_token()
+
+        assert rotated and rotated != first
+        assert store.remote_token == rotated
+        assert SettingsStore(settings_path=path).remote_token == rotated
 
 
 class TestIpOrdering:

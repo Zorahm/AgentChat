@@ -134,3 +134,43 @@ def test_wrap_powershell_forces_utf8_even_without_chat_dir() -> None:
     wrapped = policy.wrap_powershell("Get-ChildItem")
 
     assert "[System.Text.Encoding]::UTF8" in wrapped
+
+
+class TestPowerShellBlockedPathGuard:
+    """PowerShell gets no kernel cage, so the agent system folder is refused
+    by inspecting the command. A speed bump against a casual read of the
+    settings/db folder — not a containment boundary."""
+
+    def _policy(self, **kw: object) -> SandboxPolicy:
+        return SandboxPolicy(
+            chat_dir="C:\\Users\\ZorahM\\AgentChat\\chats\\chat-abcd",
+            blocked_read_prefixes=("C:\\Users\\ZorahM\\.agents", "/mnt/c/users/zorahm/.agents"),
+            shell="powershell",
+            **kw,  # type: ignore[arg-type]
+        )
+
+    def test_refuses_a_command_naming_the_agents_dir(self) -> None:
+        wrapped = self._policy().wrap_powershell(
+            "Get-Content C:\\Users\\ZorahM\\.agents\\settings.json"
+        )
+
+        assert "exit 126" in wrapped
+        assert "Get-Content" not in wrapped
+
+    def test_matching_ignores_case_and_slash_direction(self) -> None:
+        wrapped = self._policy().wrap_powershell("cat c:/users/zorahm/.AGENTS/settings.json")
+
+        assert "exit 126" in wrapped
+
+    def test_ordinary_commands_pass_through(self) -> None:
+        wrapped = self._policy().wrap_powershell("Get-ChildItem notes.txt")
+
+        assert "exit 126" not in wrapped
+        assert "Get-ChildItem notes.txt" in wrapped
+
+    def test_unrestricted_mode_bypasses_the_guard(self) -> None:
+        wrapped = self._policy(unrestricted=True).wrap_powershell(
+            "Get-Content C:\\Users\\ZorahM\\.agents\\settings.json"
+        )
+
+        assert "exit 126" not in wrapped
