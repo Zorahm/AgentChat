@@ -103,6 +103,23 @@
 
 .st2-add-actions { display: flex; gap: 8px; }
 
+/* ── Key storage notice ───────────────────────────────────────────────── */
+
+.st2-pv-storage {
+  font-size: 12px; line-height: 1.45;
+  border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 6px; padding: 8px 11px; margin: 10px 0 2px;
+}
+.st2-pv-storage.ok {
+  color: var(--muted);
+  border-left-color: var(--ok-line, var(--line-2));
+}
+.st2-pv-storage.warn {
+  color: var(--ink-2);
+  border-left-color: var(--err);
+  background: var(--err-soft, transparent);
+}
+
 /* ── Provider section label ───────────────────────────────────────────── */
 
 .st2-pv-section-label {

@@ -872,6 +872,8 @@
       "addHeader": "Add header",
       "removeHeader": "Remove",
       "saveHeaders": "Save headers",
+      "keyStorageKeyring": "Keys are stored in your OS credential store, not in a config file.",
+      "keyStorageFile": "No OS credential store available — keys are stored in a local file readable only by your account. They are not encrypted.",
       "globalSection": "Global providers",
       "ruSection": "Trial of Faith",
       "yandexHint": "Yandex AI Studio requires <code>x-folder-id</code> \u2014 add it below in Custom Headers.",
@@ -923,7 +925,11 @@
       "remoteRestarting": "Restarting…",
       "remoteLocalOnly": "Remote access is managed on the host computer, not from a connected device.",
       "remoteNoUrls": "No network address detected. Use your PC's LAN IP or a Tailscale address.",
-      "remoteTailscaleHint": "Same Wi‑Fi: use the address above. From anywhere: install Tailscale on both devices and use its address — `tailscale serve` also gives HTTPS, which makes the app installable to the home screen."
+      "remoteTailscaleHint": "Same Wi‑Fi: use the address above. From anywhere: install Tailscale on both devices and use its address — `tailscale serve` also gives HTTPS, which makes the app installable to the home screen.",
+      "remoteRotate": "Rotate token",
+      "remoteRotateConfirm": "Click again to confirm",
+      "remoteRotating": "Rotating…",
+      "remoteRotateHint": "Issues a new token. Every paired device stops working until it scans the new code."
     },
     "backend": {
       "title": "Backend",

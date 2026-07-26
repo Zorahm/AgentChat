@@ -173,6 +173,17 @@ export function ProvidersTab({ settings, statuses, loading, expanded, setExpande
       />
     </div>
 
+    {/* Where keys actually live. Worth stating: the fallback is plaintext, and
+        a user who assumes encryption they didn't get is worse off than one who
+        knows. */}
+    {settings.secret_backend && (
+      <p className={`st2-pv-storage${settings.secret_backend === "keyring" ? " ok" : " warn"}`}>
+        {settings.secret_backend === "keyring"
+          ? t("settings.providers.keyStorageKeyring")
+          : t("settings.providers.keyStorageFile")}
+      </p>
+    )}
+
     <div className="st2-pv-section-label">{t("settings.providers.globalSection")}</div>
     {globalProviders.map(renderCard)}
 

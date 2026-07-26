@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, Check, Copy, DeviceMobile } from "@phosphor-icons/react";
+import { Globe, Check, Copy, DeviceMobile, ArrowsClockwise } from "@phosphor-icons/react";
 import { QRCodeSVG } from "qrcode.react";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Button } from "@astryxdesign/core/Button";
@@ -41,6 +41,10 @@ export function PathsTab() {
   const [selectedUrl, setSelectedUrl] = useState("");
   const [restartHint, setRestartHint] = useState(false);
   const [copied, setCopied] = useState<"url" | "token" | null>(null);
+  // Rotation drops every paired device, so the first click only arms the
+  // button and the second one actually rolls the token.
+  const [confirmRotate, setConfirmRotate] = useState(false);
+  const [rotating, setRotating] = useState(false);
 
   const handleApply = useCallback(() => {
     setBackendUrl(backendUrl);
@@ -75,6 +79,27 @@ export function PathsTab() {
     setRestartHint(true);
     await loadInfo();
   }, [info, updateSettings, loadInfo]);
+
+  const handleRotate = useCallback(async () => {
+    if (!confirmRotate) {
+      setConfirmRotate(true);
+      setTimeout(() => setConfirmRotate(false), 4000);
+      return;
+    }
+    setConfirmRotate(false);
+    setRotating(true);
+    try {
+      const res = await fetch(`${API_BASE}/remote-access/rotate`, { method: "POST" });
+      if (res.ok) {
+        const data = (await res.json()) as RemoteAccessInfo;
+        setInfo(data);
+      }
+    } catch {
+      /* backend unreachable — the old token stays valid */
+    } finally {
+      setRotating(false);
+    }
+  }, [confirmRotate]);
 
   const copy = useCallback(async (value: string, which: "url" | "token") => {
     try {
@@ -173,6 +198,24 @@ export function PathsTab() {
                             {copied === "token" ? <Check weight="bold" /> : <Copy />}
                             {copied === "token" ? t("settings.paths.remoteCopied") : t("settings.paths.remoteCopy")}
                           </button>
+                        </div>
+
+                        <div className="st2-remote-rotate">
+                          <Button
+                            label={
+                              rotating
+                                ? t("settings.paths.remoteRotating")
+                                : confirmRotate
+                                  ? t("settings.paths.remoteRotateConfirm")
+                                  : t("settings.paths.remoteRotate")
+                            }
+                            icon={<ArrowsClockwise weight="bold" />}
+                            onClick={() => void handleRotate()}
+                            isDisabled={rotating}
+                            variant={confirmRotate ? "primary" : "secondary"}
+                            size="sm"
+                          />
+                          <span className="hint">{t("settings.paths.remoteRotateHint")}</span>
                         </div>
                       </div>
                     </div>

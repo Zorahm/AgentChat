@@ -80,6 +80,14 @@
   white-space: nowrap; transition: background .15s, color .15s;
 }
 .st2-remote-copy:hover { background: var(--hover, var(--paper-2)); color: var(--ink); }
+.st2-remote-rotate {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 4px;
+}
+.st2-remote-rotate .hint {
+  flex: 1; min-width: 180px;
+  font-size: 11.5px; line-height: 1.4; color: var(--muted);
+}
 
 /* ── Remote tab (redesigned) ──────────────────────────────────────────── */
 

@@ -21,8 +21,13 @@ import { AgentsTab } from "./tabs/AgentsTab";
 import { ShortcutsTab } from "./tabs/ShortcutsTab";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
+/**
+ * Provider as the backend exposes it. The raw `api_key` is deliberately absent
+ * — the backend never sends it — and `extra_headers` values arrive masked.
+ * Sending a masked value back means "keep the stored one".
+ */
 export interface ProviderConfig {
-  id: string; name: string; api_key: string | null;
+  id: string; name: string;
   api_base: string | null; enabled: boolean; api_key_set: boolean;
   custom?: boolean;
   extra_headers?: Record<string, string> | null;
@@ -68,6 +73,8 @@ export interface SettingsData {
   research_enabled?: boolean;
   research_model?: string;
   mcp_servers?: MCPServerConfig[];
+  /** Where API keys are stored: OS keychain, or the plaintext 0600 fallback. */
+  secret_backend?: "keyring" | "file" | "memory";
   describe_actions?: boolean;
 }
 
