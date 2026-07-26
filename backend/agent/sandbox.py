@@ -6,6 +6,9 @@ Three rules:
      /etc). The model cannot read $HOME, /mnt, or anything outside the cage.
      On macOS (no bwrap, no mount namespaces) the envelope falls back to the
      system ``sandbox-exec`` with an equivalent-in-spirit Seatbelt profile.
+     Windows PowerShell has neither: there the command is only cd'd into the
+     chat dir and refused if it names the agent system folder — a speed bump,
+     which is why keys are kept out of that folder in the first place.
   2. read_file is restricted to ``chat_dir`` — i.e. files the user has
      attached via @-mention (which land under ``chat_dir/uploads/``) plus
      anything the model itself created through write_file/edit_file.
@@ -310,6 +313,15 @@ class SandboxPolicy:
         anything outside chat_dir, so writes stay contained. The user is told
         in Settings that PowerShell mode disables the kernel-level cage.
         """
+        if not self.unrestricted:
+            blocked = self._mentions_blocked_path(inner_cmd)
+            if blocked is not None:
+                return (
+                    f"Write-Error \"[sandbox] this command references the agent system "
+                    f"folder ({blocked}), which is off-limits in restricted mode. "
+                    f"Enable 'Unrestricted mode' in Settings if you really need it.\"; "
+                    f"exit 126"
+                )
         # Force UTF-8 on the captured streams. Windows PowerShell 5.1 emits
         # redirected output in the console's OEM codepage (e.g. cp866 on a
         # Russian Windows), which bash_tool._format_result then mis-decodes as
@@ -335,6 +347,23 @@ class SandboxPolicy:
             f"Set-Location -LiteralPath $d; "
         )
         return enc_prefix + prefix + inner_cmd
+
+    def _mentions_blocked_path(self, command: str) -> str | None:
+        """The first blocked prefix *command* names, or None.
+
+        A speed bump, not a wall: substring matching over a shell command is
+        trivially defeated by string concatenation or an env var, and PowerShell
+        gives us no way to enforce more. It exists to stop the model casually
+        reading the settings/db folder, which used to be the shortest path to
+        every API key. The real fix is that keys no longer live in that folder
+        at all (store/secret_store.py) — this only covers what remains.
+        """
+        haystack = command.replace("/", "\\").lower()
+        for blocked in self.blocked_read_prefixes:
+            needle = blocked.replace("/", "\\").lower()
+            if needle and needle in haystack:
+                return blocked
+        return None
 
 
 # ── helpers ───────────────────────────────────────────────────────────
