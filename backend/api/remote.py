@@ -16,6 +16,7 @@ import subprocess
 
 from fastapi import APIRouter, HTTPException, Request
 
+from api.loopback import is_loopback_request
 from api.schemas.settings import RemoteAccessInfo
 from shell import NO_WINDOW
 
@@ -133,25 +134,35 @@ def _local_ipv4s() -> list[str]:
     return _sort_ips(candidates, primary=primary)
 
 
-def _is_loopback(request: Request) -> bool:
-    client = request.client
-    host = client.host if client else ""
-    return host in {"127.0.0.1", "::1", "localhost"}
+async def _pairing_info(request: Request) -> RemoteAccessInfo:
+    store = request.app.state.settings_store
+    port = _backend_port()
+    ips = await asyncio.to_thread(_local_ipv4s)
+    return RemoteAccessInfo(
+        enabled=store.remote_access_enabled,
+        token=store.remote_token,
+        port=port,
+        urls=[f"http://{ip}:{port}" for ip in ips],
+    )
 
 
 @router.get("/remote-access", response_model=RemoteAccessInfo)
 async def remote_access(request: Request) -> RemoteAccessInfo:
     """Return pairing info (token + URLs). Loopback only."""
-    if not _is_loopback(request):
+    if not is_loopback_request(request):
         raise HTTPException(status_code=403, detail="Pairing info is available locally only.")
+    return await _pairing_info(request)
 
-    store = request.app.state.settings_store
-    port = _backend_port()
-    ips = await asyncio.to_thread(_local_ipv4s)
-    urls = [f"http://{ip}:{port}" for ip in ips]
-    return RemoteAccessInfo(
-        enabled=store.remote_access_enabled,
-        token=store.remote_token,
-        port=port,
-        urls=urls,
-    )
+
+@router.post("/remote-access/rotate", response_model=RemoteAccessInfo)
+async def rotate_remote_token(request: Request) -> RemoteAccessInfo:
+    """Mint a new token and return the fresh pairing info. Loopback only.
+
+    Revoking is the whole point, so every paired device stops working until it
+    scans the new QR. Loopback-guarded like the GET: a remote caller holding
+    the current token must not be able to roll it.
+    """
+    if not is_loopback_request(request):
+        raise HTTPException(status_code=403, detail="Pairing info is available locally only.")
+    request.app.state.settings_store.rotate_remote_token()
+    return await _pairing_info(request)
