@@ -34,7 +34,7 @@ AgentChat/
 ├── backend/                    # Python — FastAPI + agent loop
 │   ├── main.py                 # App factory — composition root; remote-access guard middleware
 │   ├── run.py                  # Uvicorn entry point
-│   ├── paths.py                # Path resolution (data dir, chat dirs)
+│   ├── paths.py                # Path resolution (data dir, chat dirs); AGENTCHAT_DATA_DIR override
 │   ├── shell.py                # Shell abstraction (WSL/PowerShell/posix)
 │   ├── extraction.py           # Content/text extraction utilities
 │   ├── _buildstamp.py          # Version stamped in by build-backend.ps1/.sh
@@ -56,11 +56,13 @@ AgentChat/
 │   │   ├── config_routes.py    # GET /api/config/* — runtime capability probes for the UI
 │   │   ├── usage.py            # /api/usage/* — token/cost dashboard + manual model pricing
 │   │   ├── active_streams.py   # In-flight stream registry — DELETE /chats waits on it before rm -rf
+│   │   ├── loopback.py         # is_loopback_request() — shared by the guard middleware and /remote-access
 │   │   ├── router.py           # Route assembly
 │   │   └── schemas/            # Pydantic request/response models
 │   │       ├── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
 │   │       ├── mcp.py          # MCP schemas
-│   │       ├── settings.py     # Settings schemas
+│   │       ├── settings.py     # Settings schemas; ProviderPublic is the only shape sent over HTTP
+│   │       ├── redaction.py    # MASK + redact_map/unredact_map for secret-bearing maps
 │   │       ├── skills.py       # Skills schemas
 │   │       └── agents.py       # Agent-persona schemas
 │   ├── agent/                  # Agent core logic
@@ -116,7 +118,9 @@ AgentChat/
 │   ├── store/                  # Persistence
 │   │   ├── chat_store.py       # SQLite chat storage (upsert, get, touch)
 │   │   ├── project_store.py    # SQLite project storage
-│   │   ├── settings_store.py   # Settings read/write
+│   │   ├── settings_store.py   # Settings state + validation policy
+│   │   ├── settings_io.py      # settings.json format: atomic I/O + secret split/merge
+│   │   ├── secret_store.py     # Named secrets — OS keychain, 0600 file fallback
 │   │   └── usage_store.py      # SQLite usage/cost log (usage_log + model_pricing tables)
 │   ├── web_search/             # Web search module
 │   │   ├── config.py           # Provider config (native/Tavily/SearXNG)
