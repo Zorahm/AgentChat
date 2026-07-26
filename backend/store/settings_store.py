@@ -8,24 +8,36 @@ route layer), so it sits below the app factory in the dependency graph.
 
 from __future__ import annotations
 
-import json
 import os
 import secrets
-import tempfile
 from pathlib import Path
 
 from api.schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
+from api.schemas.redaction import redact_map, unredact_map
 from api.schemas.settings import (
     ModelConfig,
     ProviderConfig,
     ProviderCreate,
+    ProviderPublic,
     ProviderUpdate,
     SettingsData,
     SettingsUpdate,
 )
 from llm.models_fetcher import ModelsFetcher, looks_thinking
-from mcp_integration.config import MCPServerConfig, MCPServerUpdate
+from mcp_integration.config import (
+    MCP_SECRET_FIELDS,
+    MCPServerConfig,
+    MCPServerUpdate,
+    redact_mcp_server,
+)
 from paths import SEARXNG_URL_ENV, TAVILY_API_KEY
+from store.secret_store import SecretStore
+from store.settings_io import (
+    merge_secrets,
+    read_settings_file,
+    split_secrets,
+    write_settings_file,
+)
 from web_search.config import WebSearchConfig
 
 # ---------------------------------------------------------------------------
@@ -82,14 +94,24 @@ class SettingsStore:
     """Persistent settings store backed by a JSON file.
 
     Models are not persisted — they're discovered live by ``ModelsFetcher``
-    via each provider's ``/models`` endpoint.
+    via each provider's ``/models`` endpoint. Secrets are not persisted here
+    either: they live in a :class:`SecretStore` and are merged back into the
+    in-memory models on load (see ``store.settings_io``).
     """
 
     def __init__(
         self,
         fetcher: ModelsFetcher | None = None,
         settings_path: Path | None = None,
+        secret_store: SecretStore | None = None,
     ) -> None:
+        # Default to a file-backed store beside settings.json. It deliberately
+        # does NOT reach for the OS keychain: only the composition root
+        # (main.create_app) opts into that, so tests and embedders never write
+        # into the developer's real credential store.
+        self._secrets = secret_store or SecretStore(
+            settings_path.parent / "secrets.json" if settings_path else None
+        )
         self._providers: dict[str, ProviderConfig] = {}
         self._mcp_servers: dict[str, MCPServerConfig] = {}
         self._agents: dict[str, AgentConfig] = {
@@ -149,19 +171,14 @@ class SettingsStore:
     def _load(self) -> None:
         """Read settings.json and overlay onto the in-memory defaults.
 
-        Missing file is fine (first run). Corrupt file is logged and ignored
-        — we'd rather lose user prefs than crash on startup.
+        Parsing and secret rehydration live in ``store.settings_io``; what
+        stays here is the per-field type checking that decides which saved
+        values are trustworthy enough to replace a default.
         """
-        if self._settings_path is None or not self._settings_path.is_file():
+        data = read_settings_file(self._settings_path)
+        if not data:
             return
-        try:
-            raw = self._settings_path.read_text("utf-8")
-            data = json.loads(raw)
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"[settings] failed to load {self._settings_path}: {exc}")
-            return
-        if not isinstance(data, dict):
-            return
+        data, needs_migration = merge_secrets(data, self._secrets)
 
         global_block = data.get("global", {})
         if isinstance(global_block, dict):
@@ -242,7 +259,8 @@ class SettingsStore:
                 try:
                     saved = ProviderConfig.model_validate(raw_p)
                 except Exception as exc:  # noqa: BLE001
-                    print(f"[settings] skipping malformed provider {raw_p!r}: {exc}")
+                    # Log the id only — the raw dict carries the API key.
+                    print(f"[settings] skipping malformed provider {raw_p.get('id')!r}: {exc}")
                     continue
                 existing = self._providers.get(saved.id)
                 if existing is None:
@@ -271,7 +289,11 @@ class SettingsStore:
                     try:
                         server = MCPServerConfig.model_validate(raw_s)
                     except Exception as exc:  # noqa: BLE001
-                        print(f"[settings] skipping malformed mcp server {raw_s!r}: {exc}")
+                        # Log the id only — env/headers carry credentials.
+                        print(
+                            f"[settings] skipping malformed mcp server "
+                            f"{raw_s.get('id')!r}: {exc}"
+                        )
                         continue
                     self._mcp_servers[server.id] = server
 
@@ -283,12 +305,19 @@ class SettingsStore:
                 try:
                     agent = AgentConfig.model_validate(raw_a)
                 except Exception as exc:  # noqa: BLE001
-                    print(f"[settings] skipping malformed agent {raw_a!r}: {exc}")
+                    print(f"[settings] skipping malformed agent {raw_a.get('id')!r}: {exc}")
                     continue
                 self._agents[agent.id] = agent
 
+        if needs_migration:
+            # The file still held secrets inline (pre-upgrade layout). Saving
+            # now hands them to the SecretStore and rewrites settings.json
+            # without them. Idempotent: the next start finds nothing to move.
+            print("[settings] migrating secrets out of settings.json")
+            self._save()
+
     def _save(self) -> None:
-        """Atomically persist current state to settings.json."""
+        """Persist current state: secrets to the SecretStore, the rest to JSON."""
         if self._settings_path is None:
             return
         payload = {
@@ -329,32 +358,19 @@ class SettingsStore:
                 a.model_dump() for a in sorted(self._agents.values(), key=lambda x: x.id)
             ],
         }
-        try:
-            self._settings_path.parent.mkdir(parents=True, exist_ok=True)
-            # Write to a sibling tmp file then atomic-rename to avoid partial writes.
-            fd, tmp_path = tempfile.mkstemp(
-                prefix=".settings-", suffix=".json.tmp", dir=self._settings_path.parent
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, indent=2, ensure_ascii=False)
-                os.replace(tmp_path, self._settings_path)
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
-        except OSError as exc:
-            print(f"[settings] failed to save {self._settings_path}: {exc}")
+        write_settings_file(self._settings_path, split_secrets(payload, self._secrets))
 
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
     def get(self) -> SettingsData:
+        """Build the API-facing view. No secret crosses this boundary."""
         return SettingsData(
-            providers=sorted(self._providers.values(), key=lambda p: p.id),
+            providers=[
+                ProviderPublic.from_config(p)
+                for p in sorted(self._providers.values(), key=lambda p: p.id)
+            ],
             models=[],
             default_model=self._default_model,
             temperature=self._temperature,
@@ -376,8 +392,12 @@ class SettingsStore:
             research_enabled=self._research_enabled,
             research_model=self._research_model,
             shortcuts=dict(self._shortcuts),
-            mcp_servers=sorted(self._mcp_servers.values(), key=lambda s: s.id),
+            mcp_servers=[
+                redact_mcp_server(s)
+                for s in sorted(self._mcp_servers.values(), key=lambda s: s.id)
+            ],
             describe_actions=self._describe_actions,
+            secret_backend=self._secrets.backend,
         )
 
     def update(self, patch: SettingsUpdate) -> SettingsData:
@@ -443,6 +463,17 @@ class SettingsStore:
         self._save()
         return self.get()
 
+    def rotate_remote_token(self) -> str:
+        """Mint a fresh remote-access token and return it.
+
+        Every paired phone stops working immediately — that is the point of
+        the button. Enabling/disabling remote access deliberately reuses the
+        existing token, so this is the only way to revoke one.
+        """
+        self._remote_token = secrets.token_urlsafe(32)
+        self._save()
+        return self._remote_token
+
     def update_provider(self, provider_id: str, patch: ProviderUpdate) -> ProviderConfig:
         if provider_id not in self._providers:
             raise ValueError(f"Unknown provider: {provider_id}")
@@ -455,7 +486,10 @@ class SettingsStore:
         if patch.enabled is not None:
             p.enabled = patch.enabled
         if patch.extra_headers is not None:
-            p.extra_headers = dict(patch.extra_headers) or None
+            # The client only ever saw masked values, so resolve those back to
+            # what is stored; anything else is a real edit.
+            resolved = unredact_map(patch.extra_headers, p.extra_headers)
+            p.extra_headers = dict(resolved) if resolved else None
         self._save()
         return p.model_copy()
 
@@ -483,6 +517,10 @@ class SettingsStore:
         if not p.custom:
             raise ValueError(f"Provider '{provider_id}' is built-in and cannot be removed")
         del self._providers[provider_id]
+        # _save only clears secrets for ids still in the payload, so a deleted
+        # provider's key has to be dropped explicitly or it lingers in the
+        # keychain forever.
+        self._secrets.set(f"provider:{provider_id}", None)
         self._save()
 
     def list_providers(self) -> list[ProviderConfig]:
@@ -517,7 +555,17 @@ class SettingsStore:
         if patch.enabled is not None:
             existing.enabled = patch.enabled
         if patch.config is not None:
-            existing.config = patch.config
+            # Same masked round-trip as provider headers — but only when the
+            # transport is unchanged, since env/headers from a different
+            # transport describe a different thing entirely.
+            incoming = patch.config.model_copy(deep=True)
+            if incoming.transport == existing.config.transport:
+                for field in MCP_SECRET_FIELDS:
+                    current = getattr(incoming, field, None)
+                    if isinstance(current, dict):
+                        resolved = unredact_map(current, getattr(existing.config, field, None))
+                        setattr(incoming, field, dict(resolved) if resolved else {})
+            existing.config = incoming
         self._save()
         return existing.model_copy(deep=True)
 
@@ -525,6 +573,7 @@ class SettingsStore:
         if server_id not in self._mcp_servers:
             raise ValueError(f"Unknown MCP server: {server_id}")
         del self._mcp_servers[server_id]
+        self._secrets.set(f"mcp:{server_id}", None)
         self._save()
 
     def upsert_mcp_server(self, cfg: MCPServerConfig) -> None:
@@ -663,6 +712,12 @@ class SettingsStore:
     @property
     def remote_token(self) -> str:
         return self._remote_token
+
+    @property
+    def secret_backend(self) -> str:
+        """Which storage the secrets ended up in — surfaced in Settings so the
+        user can tell an encrypted keychain from the plaintext fallback."""
+        return self._secrets.backend
 
     @property
     def describe_actions(self) -> bool:

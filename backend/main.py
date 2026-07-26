@@ -14,7 +14,6 @@ wires them into a FastAPI app.
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import secrets
 import sys
 from contextlib import asynccontextmanager
@@ -36,13 +35,16 @@ from fastapi.staticfiles import StaticFiles
 
 from agent.system_prompt import build_system_prompt
 from api.active_streams import ActiveStreams
+from api.loopback import is_loopback_request
 from api.router import api_router
 from llm.models_fetcher import ModelsFetcher
 from mcp_integration import MCPManager
 from paths import (
     BUILD_VERSION,
     CHAT_DB_FILE,
+    DATA_DIR_IS_OVERRIDDEN,
     PROJECT_DB_FILE,
+    SECRETS_FILE,
     SETTINGS_FILE,
     USAGE_DB_FILE,
     USER_AGENTS_SKILLS_DIR,
@@ -53,35 +55,16 @@ from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
 from store.project_store import ProjectStore
+from store.secret_store import SecretStore
 from store.settings_store import SettingsStore
 from store.usage_store import UsageStore
 from tools.factory import build_tool_registry
 from web_search.service import WebSearchService
 
-_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
-
 # Endpoints loaded via a plain <img>/<iframe> src (image/PDF/Office preview) —
 # the browser issues that request itself, so there's no way to attach an
 # Authorization header to it. These two accept the token as ?token=… too.
 _QUERY_TOKEN_PATHS = {"/api/files/serve", "/api/files/preview"}
-
-
-def _is_loopback_client(request: Request) -> bool:
-    """True when the request originates from this machine (the desktop app).
-
-    Loopback clients are exempt from remote-access token checks; everything
-    else (LAN / Tailscale / phone) must present the Bearer token.
-    """
-    client = request.client
-    if client is None:
-        return False
-    host = client.host or ""
-    if host in _LOOPBACK_HOSTS:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +86,16 @@ def create_app() -> FastAPI:
 
     installer = GitHubSkillInstaller(USER_AGENTS_SKILLS_DIR, reader)
     models_fetcher = ModelsFetcher()
-    settings_store = SettingsStore(fetcher=models_fetcher, settings_path=SETTINGS_FILE)
+    # The one place that opts into the OS keychain — everywhere else (tests,
+    # embedders) gets the file-backed default so nobody writes into the
+    # developer's real credential store by accident. A relocated data dir means
+    # this isn't the real profile either, so the keychain stays untouched.
+    secret_store = SecretStore(SECRETS_FILE, use_keyring=not DATA_DIR_IS_OVERRIDDEN)
+    settings_store = SettingsStore(
+        fetcher=models_fetcher,
+        settings_path=SETTINGS_FILE,
+        secret_store=secret_store,
+    )
     chat_store = ChatStore(CHAT_DB_FILE)
     project_store = ProjectStore(PROJECT_DB_FILE)
     usage_store = UsageStore(USAGE_DB_FILE)
@@ -173,7 +165,7 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def remote_access_guard(request: Request, call_next: Callable) -> Any:
         path = request.url.path
-        if request.method != "OPTIONS" and path.startswith("/api/") and not _is_loopback_client(
+        if request.method != "OPTIONS" and path.startswith("/api/") and not is_loopback_request(
             request
         ):
             store = request.app.state.settings_store

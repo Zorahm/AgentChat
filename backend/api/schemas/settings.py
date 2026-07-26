@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from api.schemas.redaction import redact_map
 from mcp_integration.config import MCPServerConfig
 
 
@@ -16,6 +17,13 @@ class ModelConfig(BaseModel):
 
 
 class ProviderConfig(BaseModel):
+    """Internal provider record — carries the raw key.
+
+    Never serialize this to an HTTP response; use :class:`ProviderPublic`.
+    The key itself lives in the SecretStore, not in settings.json, and is
+    rehydrated into this model at load time (see store/settings_io.py).
+    """
+
     id: str
     name: str
     api_key: str | None = None
@@ -24,6 +32,39 @@ class ProviderConfig(BaseModel):
     api_key_set: bool = False
     custom: bool = False
     extra_headers: dict[str, str] | None = None
+
+
+class ProviderPublic(BaseModel):
+    """Provider as exposed over the API — the raw key is absent, not masked.
+
+    The UI only ever needed ``api_key_set`` (see ProvidersTab), so dropping the
+    key costs nothing and keeps it off the wire in remote mode, where the
+    backend speaks plain HTTP.
+    """
+
+    id: str
+    name: str
+    api_base: str | None = None
+    enabled: bool = True
+    api_key_set: bool = False
+    custom: bool = False
+    # Header names visible, values masked — see api.schemas.redaction.
+    extra_headers: dict[str, str] | None = None
+
+    @classmethod
+    def from_config(cls, p: ProviderConfig) -> ProviderPublic:
+        return cls(
+            id=p.id,
+            name=p.name,
+            api_base=p.api_base,
+            enabled=p.enabled,
+            # Derived from the secret actually present rather than the
+            # persisted flag, so a wiped keychain shows up as "no key" instead
+            # of a phantom checkmark.
+            api_key_set=bool(p.api_key),
+            custom=p.custom,
+            extra_headers=redact_map(p.extra_headers),
+        )
 
 
 class ProviderCreate(BaseModel):
@@ -35,7 +76,7 @@ class ProviderCreate(BaseModel):
 
 
 class SettingsData(BaseModel):
-    providers: list[ProviderConfig] = Field(default_factory=list)
+    providers: list[ProviderPublic] = Field(default_factory=list)
     models: list[ModelConfig] = Field(default_factory=list)
     default_model: str = "openai/gpt-4o"
     temperature: float = 0.7
@@ -80,7 +121,13 @@ class SettingsData(BaseModel):
     # User keyboard shortcuts: action id → normalized combo (e.g. "Mod+N").
     # Empty/missing entries fall back to the frontend's built-in defaults.
     shortcuts: dict[str, str] = Field(default_factory=dict)
+    # Values inside each server's env/headers are masked — see
+    # api.schemas.redaction. Sending a masked value back keeps the stored one.
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
+    # Where API keys actually ended up: "keyring" (OS credential store),
+    # "file" (0600 plaintext fallback — no keychain reachable) or "memory".
+    # Surfaced so the user isn't left assuming encryption they didn't get.
+    secret_backend: str = "file"
     # When true, tool schemas expose an optional `activity` field and the
     # system prompt asks the model to narrate each call in its own words —
     # the UI shows that instead of the generic system-written status line.

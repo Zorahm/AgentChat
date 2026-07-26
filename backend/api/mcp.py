@@ -24,6 +24,7 @@ from mcp_integration.config import (
     MCPServerCreate,
     MCPServerUpdate,
     MCPStdioConfig,
+    redact_mcp_server,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,13 +37,14 @@ _INSTALL_TIMEOUT_S = 300
 
 
 def _view(cfg: MCPServerConfig, request: Request) -> MCPServerView:
+    """Server as sent to the UI — env vars and auth headers masked."""
     manager = request.app.state.mcp_manager
     status = manager.get_status(cfg.id)
     return MCPServerView(
         id=cfg.id,
         name=cfg.name,
         enabled=cfg.enabled,
-        config=cfg.config.model_dump(),
+        config=redact_mcp_server(cfg).config.model_dump(),
         state=status.state,
         last_error=status.last_error,
         tool_count=len(status.tools),

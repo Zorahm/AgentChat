@@ -25,12 +25,23 @@ if getattr(sys, "frozen", False):
     # Running as a PyInstaller bundle — keep user data in APPDATA, not the temp
     # extraction dir.
     BASE_DIR = Path(sys.executable).parent
-    AGENTS_DIR = Path(os.environ.get("APPDATA", Path.home())) / "AgentChat" / ".agents"
+    _DEFAULT_AGENTS_DIR = Path(os.environ.get("APPDATA", Path.home())) / "AgentChat" / ".agents"
 else:
     BASE_DIR = Path(__file__).resolve().parent
-    AGENTS_DIR = BASE_DIR.parent / ".agents"
+    _DEFAULT_AGENTS_DIR = BASE_DIR.parent / ".agents"
+
+# AGENTCHAT_DATA_DIR relocates settings, databases and the secret fallback.
+# The test suite sets it, because importing ``main`` builds the whole app at
+# module scope: without an override a plain test run reads — and rewrites —
+# the developer's real settings.json and databases.
+_DATA_DIR_ENV = os.environ.get("AGENTCHAT_DATA_DIR")
+DATA_DIR_IS_OVERRIDDEN = bool(_DATA_DIR_ENV)
+AGENTS_DIR = Path(_DATA_DIR_ENV) if _DATA_DIR_ENV else _DEFAULT_AGENTS_DIR
 
 SETTINGS_FILE = AGENTS_DIR / "settings.json"
+# Fallback secret storage, used only when no OS keychain is reachable (headless
+# Linux without a D-Bus session). See store/secret_store.py.
+SECRETS_FILE = AGENTS_DIR / "secrets.json"
 CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
 PROJECT_DB_FILE = AGENTS_DIR / "projects.db"
 USAGE_DB_FILE = AGENTS_DIR / "usage.db"

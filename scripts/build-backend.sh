@@ -48,6 +48,10 @@ echo "    BUILD_VERSION = $VER"
 
 echo "==> Running PyInstaller..."
 cd "$ROOT/backend"
+# The keyring hidden-imports below are load-bearing: store/secret_store.py
+# imports the backend lazily inside a function, so PyInstaller's static scan
+# never sees it. Drop them and the frozen sidecar silently loses the keychain
+# and writes API keys to the plaintext fallback instead.
 pyinstaller run.py \
     --onefile \
     --name agentchat-backend \
@@ -71,6 +75,10 @@ pyinstaller run.py \
     --hidden-import uvicorn.lifespan.off \
     --hidden-import anyio._backends._asyncio \
     --hidden-import python_multipart \
+    --hidden-import keyring.backends.SecretService \
+    --hidden-import keyring.backends.chainer \
+    --hidden-import keyring.backends.fail \
+    --hidden-import secretstorage \
     --add-data "${TIKTOKEN_CACHE}:tiktoken_cache" \
     --add-data "${UI_DIST}:ui_dist" \
     --add-data "${SKILLS_BUNDLE}:bundled_skills"

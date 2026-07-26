@@ -5,6 +5,10 @@ uvicorn>=0.29.0
 sse-starlette>=2.0.0
 watchdog>=4.0.0
 python-multipart>=0.0.5
+# OS credential store for API keys (Windows Credential Manager / libsecret /
+# macOS Keychain). Falls back to a 0600 file when unreachable — see
+# store/secret_store.py.
+keyring>=25.0.0
 httpx>=0.27.0
 mcp>=1.2.0
 python-docx>=1.1.0
