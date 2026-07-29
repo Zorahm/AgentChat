@@ -19,6 +19,9 @@ src-tauri/gen/
 ui/node_modules/
 ui/dist/
 
+# Compiled output of the Node-run UI suites (tests/ui/run.mjs)
+tests/ui/.build/
+
 # Tauri signing key (never commit)
 *.key
 *.key.pub
