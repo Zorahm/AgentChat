@@ -61,6 +61,7 @@
     "disclaimer": "AI can make mistakes. Please double-check important information.",
     "thinking": "Waiting for a response…",
     "slowConnection": "Still waiting — the connection may be slow.",
+    "connectionLost": "The connection to the backend dropped before the reply finished.",
     "dropToAttach": "Drop files here to add to chat",
     "send": "Send",
     "stop": "Stop",

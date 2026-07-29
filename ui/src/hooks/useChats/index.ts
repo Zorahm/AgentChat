@@ -1,7 +1,7 @@
 /** Multi-session chat manager with tree-based variant model. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sseConnect } from "../useSSE";
+import { sseConnect, SSE_CLOSED_EARLY } from "../useSSE";
 import type { SSEEvent, SSEReader } from "../useSSE";
 import type {
   ChatMessage,
@@ -60,6 +60,20 @@ import {
   setUserVariantChild,
 } from "./tree";
 import { isGhostChat, buildGhostSystemMessage, createGhostChatSession } from "./easterEgg";
+import { i18n } from "../../i18n";
+
+/** Events after which the backend has stopped talking. Passing them to
+ * sseConnect is what makes a connection that dies mid-reply (sidecar restart,
+ * phone losing the link) surface as an error instead of ending silently — a
+ * stream that never reports back is never torn down, and its chat stays
+ * "streaming" with the composer disabled until the app is reloaded. */
+const TERMINAL_SSE_EVENTS = ["done", "error"] as const;
+
+/** Text for the error banner. The dropped-connection marker is ours and needs
+ * translating; every other error already carries the backend's own message. */
+function streamErrorMessage(err: Error): string {
+  return err.name === SSE_CLOSED_EARLY ? i18n.t("chat.connectionLost") : err.message;
+}
 
 // ── Public types ───────────────────────────────────────────────────────────
 
@@ -699,9 +713,10 @@ export function useChats(): UseChatResult {
         },
         handler,
         (err: Error) => {
-          if (sid === activeIdRef.current) setError(err.message);
+          if (sid === activeIdRef.current) setError(streamErrorMessage(err));
           dropStream(sid, false);
         },
+        { terminalEvents: TERMINAL_SSE_EVENTS },
       );
       beginStream(sid, sse, assistantNodeId, variantId);
     },
@@ -780,9 +795,10 @@ export function useChats(): UseChatResult {
       },
       handler,
       (err: Error) => {
-        if (sid === activeIdRef.current) setError(err.message);
+        if (sid === activeIdRef.current) setError(streamErrorMessage(err));
         dropStream(sid, false);
       },
+      { terminalEvents: TERMINAL_SSE_EVENTS },
     );
     beginStream(sid, sse, last.nodeId, variantId);
   }, [activeSession, activeId, sessions, makeEventHandler, beginStream, dropStream]);
@@ -862,9 +878,10 @@ export function useChats(): UseChatResult {
         },
         handler,
         (err: Error) => {
-          if (sid === activeIdRef.current) setError(err.message);
+          if (sid === activeIdRef.current) setError(streamErrorMessage(err));
           dropStream(sid, false);
         },
+        { terminalEvents: TERMINAL_SSE_EVENTS },
       );
       beginStream(sid, sse, assistantNodeId, variantId);
     },

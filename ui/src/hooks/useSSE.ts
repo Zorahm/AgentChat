@@ -9,6 +9,21 @@ export interface SSEReader {
   close: () => void;
 }
 
+export interface SSEOptions {
+  /** Event names that legitimately end the stream. When given, a connection
+   *  that closes without one of them is reported through `onError` instead of
+   *  ending silently — see SSE_CLOSED_EARLY. */
+  terminalEvents?: readonly string[];
+}
+
+/** `Error.name` of the failure raised when the response body ended before any
+ *  terminal event arrived — a backend restart, a crashed sidecar, or a phone
+ *  losing the LAN/Tailscale link mid-reply. It has to be reported: the caller
+ *  tears the stream down in its error path, and a stream that is never torn
+ *  down leaves its chat marked "streaming" forever, with the composer disabled.
+ *  Named so callers can show a translated message instead of this marker. */
+export const SSE_CLOSED_EARLY = "SseClosedEarly";
+
 async function* sseGenerator(response: Response): AsyncGenerator<SSEEvent> {
   if (!response.body) {
     throw new Error("Response body is null");
@@ -75,8 +90,10 @@ export function sseConnect(
   body: unknown,
   onEvent: (event: SSEEvent) => void,
   onError: (error: Error) => void,
+  options: SSEOptions = {},
 ): SSEReader {
   const controller = new AbortController();
+  const terminalEvents = options.terminalEvents ?? [];
 
   (async () => {
     try {
@@ -93,8 +110,19 @@ export function sseConnect(
         return;
       }
 
+      let sawTerminal = false;
       for await (const event of sseGenerator(response)) {
+        if (terminalEvents.includes(event.event)) sawTerminal = true;
         onEvent(event);
+      }
+      // The body ran out without the backend saying it was finished. Nothing
+      // threw — the reader simply reached the end — so this is the only place
+      // that can tell the caller its stream is over. Reached after an abort
+      // only in theory: aborting rejects the read and lands in `catch` below.
+      if (terminalEvents.length > 0 && !sawTerminal) {
+        const closed = new Error(SSE_CLOSED_EARLY);
+        closed.name = SSE_CLOSED_EARLY;
+        onError(closed);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
