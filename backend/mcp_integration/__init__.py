@@ -7,18 +7,15 @@ Public surface:
 
 - :class:`MCPManager` — lazy-spawn process supervisor with idle eviction
 - :class:`MCPToolProxy` — adapts a remote tool into a :class:`BaseTool`
-- :class:`MCPServerConfig` — Pydantic schema persisted in ``settings.json``
+- :class:`MCPServerConfig` — re-exported from :mod:`schemas.mcp`, where the
+  Pydantic schema persisted in ``settings.json`` now lives
 """
 
 from __future__ import annotations
 
-from mcp_integration.config import (
-    MCPHttpConfig,
-    MCPServerConfig,
-    MCPStdioConfig,
-)
 from mcp_integration.manager import MCPManager, MCPServerStatus
 from mcp_integration.tool_proxy import MCPToolProxy
+from schemas.mcp import MCPHttpConfig, MCPServerConfig, MCPStdioConfig
 
 __all__ = [
     "MCPHttpConfig",

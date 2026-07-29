@@ -13,7 +13,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 import main  # noqa: E402
 from api.remote import _is_tailscale_ip, _sort_ips  # noqa: E402
-from api.schemas.settings import SettingsUpdate  # noqa: E402
+from schemas.settings import SettingsUpdate  # noqa: E402
 # Imported from api.loopback, not main: importing main constructs the whole app
 # against the user's REAL settings.json and databases as an import side effect.
 from api.loopback import is_loopback_request as _is_loopback_client  # noqa: E402

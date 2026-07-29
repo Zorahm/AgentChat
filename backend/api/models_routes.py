@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from api.schemas.settings import ModelConfig
+from schemas.settings import ModelConfig
 
 router = APIRouter(prefix="/models", tags=["models"])
 

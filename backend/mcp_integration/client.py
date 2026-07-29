@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-from mcp_integration.config import MCPHttpConfig, MCPServerConfig, MCPStdioConfig
+from schemas.mcp import MCPHttpConfig, MCPServerConfig, MCPStdioConfig
 
 # Env vars a child MCP server legitimately needs: locate its binaries, resolve
 # HOME, reach the network, trust the system cert store. Deliberately NOT the

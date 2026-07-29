@@ -10,20 +10,18 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.schemas.mcp import (
+from schemas.mcp import (
+    MCPHttpConfig,
     MCPImportPayload,
     MCPInstallRequest,
     MCPInstallResult,
-    MCPServerView,
-    MCPTestResult,
-    MCPToolView,
-)
-from mcp_integration.config import (
-    MCPHttpConfig,
     MCPServerConfig,
     MCPServerCreate,
     MCPServerUpdate,
+    MCPServerView,
     MCPStdioConfig,
+    MCPTestResult,
+    MCPToolView,
     redact_mcp_server,
 )
 

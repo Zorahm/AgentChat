@@ -2,7 +2,7 @@
 
 An agent is a persisted persona a chat can be attached to: a name, a
 gradient avatar, and an optional system-prompt override (see
-``api.schemas.agents`` for the override semantics). Mirrors the MCP server
+``schemas.agents`` for the override semantics). Mirrors the MCP server
 CRUD pattern — a flat list in ``settings.json``, no separate DB.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from agent.system_prompt import build_system_prompt
-from api.schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
+from schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
 from shell import resolve_active_shell
 
 router = APIRouter(prefix="/agents", tags=["agents"])

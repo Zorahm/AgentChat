@@ -555,7 +555,7 @@ async def install(request: Request) -> ActionResult:
     store = request.app.state.settings_store
 
     def set_url(url: str) -> None:
-        from api.schemas.settings import SettingsUpdate
+        from schemas.settings import SettingsUpdate
 
         store.update(SettingsUpdate(searxng_url=url))
 

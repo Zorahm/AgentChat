@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from agent.host_exec import host_read_bytes, host_read_text, host_run
-from api.schemas.skills import (
+from schemas.skills import (
     CatalogInstallRequest,
     InstallLocalRequest,
     InstallRequest,

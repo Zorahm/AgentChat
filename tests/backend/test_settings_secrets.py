@@ -14,9 +14,9 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from api.schemas.redaction import MASK  # noqa: E402
-from api.schemas.settings import ProviderCreate, ProviderUpdate, SettingsUpdate  # noqa: E402
-from mcp_integration.config import MCPHttpConfig, MCPServerConfig, MCPServerUpdate  # noqa: E402
+from schemas.redaction import MASK  # noqa: E402
+from schemas.settings import ProviderCreate, ProviderUpdate, SettingsUpdate  # noqa: E402
+from schemas.mcp import MCPHttpConfig, MCPServerConfig, MCPServerUpdate  # noqa: E402
 from store.secret_store import SecretStore  # noqa: E402
 from store.settings_store import SettingsStore  # noqa: E402
 

@@ -17,7 +17,7 @@ import subprocess
 from fastapi import APIRouter, HTTPException, Request
 
 from api.loopback import is_loopback_request
-from api.schemas.settings import RemoteAccessInfo
+from schemas.settings import RemoteAccessInfo
 from shell import NO_WINDOW
 
 router = APIRouter(tags=["remote"])

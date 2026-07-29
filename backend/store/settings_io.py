@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from mcp_integration.config import MCP_SECRET_FIELDS
+from schemas.mcp import MCP_SECRET_FIELDS
 from store.secret_store import SecretStore
 
 # settings.json field under "global" → SecretStore name.

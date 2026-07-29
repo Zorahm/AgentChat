@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from mcp_integration.client import open_session
-from mcp_integration.config import MCPServerConfig
+from schemas.mcp import MCPServerConfig
 
 if TYPE_CHECKING:
     from mcp import ClientSession

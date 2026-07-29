@@ -1,17 +1,22 @@
-"""Pydantic models for MCP server configuration.
+"""MCP contracts: the persisted server config and the API's response models.
 
-These types are persisted inside ``settings.json`` under the ``mcp.servers``
-block and round-tripped over the ``/api/mcp/servers`` endpoints.
+The persisted models (:class:`MCPServerConfig` and friends) live under
+``settings.json``'s ``mcp.servers`` block and round-trip over the
+``/api/mcp/servers`` endpoints. They used to sit in ``mcp_integration.config``
+purely so the persistence layer could share them without an import cycle; with
+the contracts collected here that split no longer buys anything, and keeping
+them out of ``mcp_integration`` stops a settings contract from dragging the
+process supervisor (and asyncio, ssl, subprocess) in behind it.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from api.schemas.redaction import redact_map
+from schemas.redaction import redact_map
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 
@@ -21,6 +26,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
 # truth for masking (here) and for the settings.json secret split
 # (store/settings_io.py).
 MCP_SECRET_FIELDS = ("env", "headers")
+
+
+# ── persisted server config ──────────────────────────────────────────────────
 
 
 class MCPStdioConfig(BaseModel):
@@ -87,7 +95,7 @@ def redact_mcp_server(cfg: MCPServerConfig) -> MCPServerConfig:
 
     Returns the same type rather than a parallel "public" model: only the
     values change, and the UI's server editor round-trips the mask back
-    unchanged (see api.schemas.redaction).
+    unchanged (see schemas.redaction).
     """
     out = cfg.model_copy(deep=True)
     for field in MCP_SECRET_FIELDS:
@@ -95,3 +103,67 @@ def redact_mcp_server(cfg: MCPServerConfig) -> MCPServerConfig:
         if isinstance(current, dict):
             setattr(out.config, field, redact_map(current) or {})
     return out
+
+
+# ── API response models ──────────────────────────────────────────────────────
+
+
+class MCPServerView(BaseModel):
+    """A server entry decorated with live runtime status — for the UI list."""
+
+    id: str
+    name: str
+    enabled: bool
+    config: dict[str, Any]
+    state: str  # "stopped" | "running" | "error"
+    last_error: str | None = None
+    tool_count: int = 0
+    last_used: float | None = None
+
+
+class MCPToolView(BaseModel):
+    """A single tool advertised by an MCP server."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPImportPayload(BaseModel):
+    """Bulk import format compatible with ``claude_desktop_config.json``.
+
+    Accepts either ``{ "mcpServers": { id: {...} } }`` or a bare
+    ``{ id: {...} }`` mapping. Each value mirrors the canonical
+    ``{ command, args, env }`` or ``{ url, headers }`` shape.
+    """
+
+    mcpServers: dict[str, dict[str, Any]] | None = None
+    servers: dict[str, dict[str, Any]] | None = None
+
+
+class MCPTestResult(BaseModel):
+    """Outcome of a ``POST /mcp/servers/{id}/test`` call."""
+
+    ok: bool
+    tools: list[MCPToolView] = Field(default_factory=list)
+    error: str | None = None
+
+
+class MCPInstallRequest(BaseModel):
+    """A one-shot install command pasted from an MCP server's README.
+
+    Runs on the *host* shell (PowerShell or CMD) — never WSL — since that is
+    where npx/uvx-based installers expect to write their config.
+    """
+
+    command: str = Field(min_length=1)
+    shell: Literal["powershell", "cmd"] = "powershell"
+
+
+class MCPInstallResult(BaseModel):
+    """Outcome of a ``POST /mcp/install`` run — combined output + exit code."""
+
+    ok: bool
+    exit_code: int
+    output: str
+    timed_out: bool = False

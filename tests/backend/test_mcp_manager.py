@@ -24,7 +24,7 @@ import pytest
 BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from mcp_integration.config import MCPServerConfig, MCPStdioConfig  # noqa: E402
+from schemas.mcp import MCPServerConfig, MCPStdioConfig  # noqa: E402
 from mcp_integration.manager import MCPManager  # noqa: E402
 
 

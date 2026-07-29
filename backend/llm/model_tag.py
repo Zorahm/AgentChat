@@ -13,7 +13,7 @@ model) so the two never drift apart.
 
 from __future__ import annotations
 
-from api.schemas.settings import ProviderConfig
+from schemas.settings import ProviderConfig
 
 
 def retag_model_for_litellm(

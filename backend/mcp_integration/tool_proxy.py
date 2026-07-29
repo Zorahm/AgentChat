@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp_integration.config import MCPServerConfig
 from mcp_integration.manager import MCPManager
+from schemas.mcp import MCPServerConfig
 from tools.base import BaseTool, ToolDefinition, ToolSchema
 
 # Tools are namespaced ``mcp__<server>__<tool>`` so they don't collide with

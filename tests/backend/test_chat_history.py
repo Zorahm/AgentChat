@@ -15,7 +15,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from api.chat import build_agent_messages
-from api.schemas.chat import ChatMessage, ToolCallSpec
+from schemas.chat import ChatMessage, ToolCallSpec
 
 
 def test_plain_turns_pass_through() -> None:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from api.schemas.redaction import redact_map
-from mcp_integration.config import MCPServerConfig
+from schemas.mcp import MCPServerConfig
+from schemas.redaction import redact_map
 
 
 class ModelConfig(BaseModel):
@@ -48,11 +48,23 @@ class ProviderPublic(BaseModel):
     enabled: bool = True
     api_key_set: bool = False
     custom: bool = False
-    # Header names visible, values masked — see api.schemas.redaction.
+    # Header names visible, values masked — see schemas.redaction.
     extra_headers: dict[str, str] | None = None
+    # False for local servers that answer without credentials — the UI stops
+    # nagging for a key instead of asking the user to invent one.
+    key_required: bool = True
+    # The api_base this provider shipped with, so the UI can offer a way back
+    # from a bad edit. None for custom providers (they never had one).
+    default_api_base: str | None = None
 
     @classmethod
-    def from_config(cls, p: ProviderConfig) -> ProviderPublic:
+    def from_config(
+        cls,
+        p: ProviderConfig,
+        *,
+        key_required: bool = True,
+        default_api_base: str | None = None,
+    ) -> ProviderPublic:
         return cls(
             id=p.id,
             name=p.name,
@@ -64,6 +76,8 @@ class ProviderPublic(BaseModel):
             api_key_set=bool(p.api_key),
             custom=p.custom,
             extra_headers=redact_map(p.extra_headers),
+            key_required=key_required,
+            default_api_base=default_api_base,
         )
 
 
@@ -116,13 +130,16 @@ class SettingsData(BaseModel):
     # Sticky on/off state of the per-chat research toggle. Persisted (like
     # web_search_enabled) so it survives restarts and is shared across devices.
     research_enabled: bool = False
-    # Model the inner research loop runs on. "" → fall back to default_model.
-    research_model: str = ""
+    # Model the lead researcher runs on. "" → fall back to default_model.
+    research_lead_model: str = ""
+    # Model the parallel research subagents run on — where most of a run's tokens
+    # go. "" → fall back to the lead's model.
+    research_worker_model: str = ""
     # User keyboard shortcuts: action id → normalized combo (e.g. "Mod+N").
     # Empty/missing entries fall back to the frontend's built-in defaults.
     shortcuts: dict[str, str] = Field(default_factory=dict)
     # Values inside each server's env/headers are masked — see
-    # api.schemas.redaction. Sending a masked value back keeps the stored one.
+    # schemas.redaction. Sending a masked value back keeps the stored one.
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     # Where API keys actually ended up: "keyring" (OS credential store),
     # "file" (0600 plaintext fallback — no keychain reachable) or "memory".
@@ -155,8 +172,10 @@ class SettingsUpdate(BaseModel):
     # Empty string clears the stored key (falls back to TAVILY_API_KEY env).
     tavily_api_key: str | None = None
     research_enabled: bool | None = None
-    # Empty string → fall back to default_model for research.
-    research_model: str | None = None
+    # Empty string → fall back to default_model for the research lead.
+    research_lead_model: str | None = None
+    # Empty string → research subagents run on the lead's model.
+    research_worker_model: str | None = None
     # Full replacement of the keyboard-shortcut map (action id → combo).
     shortcuts: dict[str, str] | None = None
     describe_actions: bool | None = None
