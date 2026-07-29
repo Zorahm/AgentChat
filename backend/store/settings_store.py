@@ -12,9 +12,18 @@ import os
 import secrets
 from pathlib import Path
 
-from api.schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
-from api.schemas.redaction import redact_map, unredact_map
-from api.schemas.settings import (
+from llm.api_base import requires_api_key
+from llm.models_fetcher import ModelsFetcher, looks_thinking
+from paths import SEARXNG_URL_ENV, TAVILY_API_KEY
+from schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
+from schemas.mcp import (
+    MCP_SECRET_FIELDS,
+    MCPServerConfig,
+    MCPServerUpdate,
+    redact_mcp_server,
+)
+from schemas.redaction import redact_map, unredact_map
+from schemas.settings import (
     ModelConfig,
     ProviderConfig,
     ProviderCreate,
@@ -23,14 +32,6 @@ from api.schemas.settings import (
     SettingsData,
     SettingsUpdate,
 )
-from llm.models_fetcher import ModelsFetcher, looks_thinking
-from mcp_integration.config import (
-    MCP_SECRET_FIELDS,
-    MCPServerConfig,
-    MCPServerUpdate,
-    redact_mcp_server,
-)
-from paths import SEARXNG_URL_ENV, TAVILY_API_KEY
 from store.secret_store import SecretStore
 from store.settings_io import (
     merge_secrets,
@@ -63,6 +64,22 @@ DEFAULT_PROVIDERS: list[ProviderConfig] = [
         api_base="https://opencode.ai/zen/go/v1",
     ),
 ]
+
+
+# The URL each built-in shipped with. Kept so the UI can offer "reset to
+# default" once the user is free to edit api_base.
+DEFAULT_API_BASES: dict[str, str] = {
+    p.id: p.api_base for p in DEFAULT_PROVIDERS if p.api_base
+}
+
+
+def to_public(p: ProviderConfig) -> ProviderPublic:
+    """Public view of a provider, with the UI-only hints filled in."""
+    return ProviderPublic.from_config(
+        p,
+        key_required=requires_api_key(p.id, p.api_base),
+        default_api_base=DEFAULT_API_BASES.get(p.id),
+    )
 
 
 def _resolve_env_api_key(provider_id: str) -> str | None:
@@ -138,10 +155,13 @@ class SettingsStore:
         self._searxng_url: str | None = None
         # None → fall back to the TAVILY_API_KEY env var at request time.
         self._tavily_api_key: str | None = None
-        # Sticky research toggle + the model the inner research loop runs on
-        # ("" → fall back to default_model).
+        # Sticky research toggle + the two models a research run uses: the lead
+        # plans and synthesizes, the workers do the parallel digging. Splitting
+        # them matters because the workers are where the tokens actually go.
+        # "" → fall back to default_model.
         self._research_enabled = False
-        self._research_model = ""
+        self._research_lead_model = ""
+        self._research_worker_model = ""
         # Long-lived shared secret for remote (phone) access. Generated lazily
         # the first time remote access is enabled; persisted in settings.json.
         self._remote_token = ""
@@ -239,9 +259,17 @@ class SettingsStore:
             re_ = global_block.get("research_enabled")
             if isinstance(re_, bool):
                 self._research_enabled = re_
-            rm = global_block.get("research_model")
-            if isinstance(rm, str):
-                self._research_model = rm
+            # `research_model` is the pre-split single setting; it seeds the lead
+            # so an upgraded install keeps researching on the model it was told to.
+            legacy_model = global_block.get("research_model")
+            if isinstance(legacy_model, str):
+                self._research_lead_model = legacy_model
+            lead_model = global_block.get("research_lead_model")
+            if isinstance(lead_model, str):
+                self._research_lead_model = lead_model
+            worker_model = global_block.get("research_worker_model")
+            if isinstance(worker_model, str):
+                self._research_worker_model = worker_model
             sc = global_block.get("shortcuts")
             if isinstance(sc, dict):
                 self._shortcuts = {
@@ -341,7 +369,8 @@ class SettingsStore:
                 "searxng_url": self._searxng_url,
                 "tavily_api_key": self._tavily_api_key,
                 "research_enabled": self._research_enabled,
-                "research_model": self._research_model,
+                "research_lead_model": self._research_lead_model,
+                "research_worker_model": self._research_worker_model,
                 "shortcuts": self._shortcuts,
                 "describe_actions": self._describe_actions,
             },
@@ -368,8 +397,7 @@ class SettingsStore:
         """Build the API-facing view. No secret crosses this boundary."""
         return SettingsData(
             providers=[
-                ProviderPublic.from_config(p)
-                for p in sorted(self._providers.values(), key=lambda p: p.id)
+                to_public(p) for p in sorted(self._providers.values(), key=lambda p: p.id)
             ],
             models=[],
             default_model=self._default_model,
@@ -390,7 +418,8 @@ class SettingsStore:
             searxng_url=self._searxng_url,
             tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
             research_enabled=self._research_enabled,
-            research_model=self._research_model,
+            research_lead_model=self._research_lead_model,
+            research_worker_model=self._research_worker_model,
             shortcuts=dict(self._shortcuts),
             mcp_servers=[
                 redact_mcp_server(s)
@@ -451,8 +480,10 @@ class SettingsStore:
             self._tavily_api_key = patch.tavily_api_key.strip() or None
         if patch.research_enabled is not None:
             self._research_enabled = patch.research_enabled
-        if patch.research_model is not None:
-            self._research_model = patch.research_model.strip()
+        if patch.research_lead_model is not None:
+            self._research_lead_model = patch.research_lead_model.strip()
+        if patch.research_worker_model is not None:
+            self._research_worker_model = patch.research_worker_model.strip()
         if patch.shortcuts is not None:
             # Full replacement; drop blank combos so they fall back to defaults.
             self._shortcuts = {
@@ -482,7 +513,8 @@ class SettingsStore:
             p.api_key = patch.api_key if patch.api_key else None
             p.api_key_set = bool(patch.api_key)
         if patch.api_base is not None:
-            p.api_base = patch.api_base if patch.api_base else None
+            base = patch.api_base.strip()
+            p.api_base = base or None
         if patch.enabled is not None:
             p.enabled = patch.enabled
         if patch.extra_headers is not None:
@@ -694,8 +726,13 @@ class SettingsStore:
         return self._research_enabled
 
     @property
-    def research_model(self) -> str:
-        return self._research_model
+    def research_lead_model(self) -> str:
+        return self._research_lead_model
+
+    @property
+    def research_worker_model(self) -> str:
+        """Model for the parallel subagents. "" → the lead's model."""
+        return self._research_worker_model or self._research_lead_model
 
     @property
     def tavily_api_key(self) -> str | None:

@@ -10,7 +10,7 @@ import { ChatView } from "./components/Chat/ChatView";
 import type { ModelItem } from "./components/Chat/ChatView";
 import { ArtifactsSidePanel } from "./components/Artifacts/ArtifactsSidePanel";
 import { FilesPanel } from "./components/Artifacts/FilesPanel";
-import { ResearchPanel } from "./components/Chat/ResearchPanel";
+import { ResearchPanel } from "./components/Chat/Research/ResearchPanel";
 import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel";
 import { LibraryPage } from "./components/LibraryPage";
 import { ProjectsView } from "./components/Projects/ProjectsView";

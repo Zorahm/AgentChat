@@ -16,7 +16,7 @@ import type { ChatSession } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import type { LiveFile } from "../../types/artifact";
 import { API_BASE } from "../../utils/apiBase";
-import { applyResearchEvent } from "../../utils/research";
+import { applyResearchEvent, emptyResearch } from "../../utils/research";
 import {
   type WebSearchPref,
   type SessionSeed,
@@ -406,9 +406,7 @@ export function useChats(): UseChatResult {
               name: toolName,
               input: (data.input as Record<string, unknown>) ?? {},
               status: "running",
-              ...(toolName === "research"
-                ? { research: { status: "running" as const, steps: [], startedAt: Date.now() } }
-                : {}),
+              ...(toolName === "research" ? { research: emptyResearch(Date.now()) } : {}),
             };
             setSessions((prev) =>
               prev.map((s) => {

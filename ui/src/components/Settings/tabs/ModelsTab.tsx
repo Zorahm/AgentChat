@@ -47,6 +47,20 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
     return map;
   }, [settings.models]);
 
+  // Provider-grouped Selector sections, shared by both research-role pickers.
+  const modelSections = useMemo(
+    () =>
+      Array.from(grouped.entries()).map(([provider, models]) => ({
+        type: "section" as const,
+        title: provider,
+        options: models.map((m) => ({
+          value: m.id,
+          label: `${m.name ?? m.id}${m.thinking ? " · thinking" : ""}`,
+        })),
+      })),
+    [grouped],
+  );
+
   const temp = localTemp;
   const tempLabel = temp <= 0.3 ? t("settings.models.tempPrecise") : temp <= 1.0 ? t("settings.models.tempBalanced") : t("settings.models.tempCreative");
 
@@ -101,32 +115,48 @@ export function ModelsTab({ settings, loading, onUpdate, onRefresh }: ModelsTabP
         </div>
       </section>
 
-      {/* 02 Research model */}
+      {/* 02 Research models — a run splits across two roles, priced very differently */}
       <section>
         <div className="st2-mh">
           <span className="st2-mn">02</span>
-          <h2>{t("settings.models.researchModel")}</h2>
+          <h2>{t("settings.models.researchLeadModel")}</h2>
         </div>
         <p className="st2-md">
-          {t("settings.models.researchModelHint")}
+          {t("settings.models.researchLeadModelHint")}
         </p>
         <div className="st2-mrows">
           <div className="st2-mrow">
             <div className="st2-mlab">
-              <p className="t">{t("settings.models.researchModel")}</p>
-              <p className="d">{t("settings.models.researchModelHint")}</p>
+              <p className="t">{t("settings.models.researchLeadModel")}</p>
+              <p className="d">{t("settings.models.researchLeadModelHint")}</p>
             </div>
             <div className="st2-mctl">
               <Selector
-                label={t("settings.models.researchModel")}
+                label={t("settings.models.researchLeadModel")}
                 isLabelHidden
-                value={settings.research_model || ""}
-                onChange={(val) => onUpdate({ research_model: val })}
+                value={settings.research_lead_model || ""}
+                onChange={(val) => onUpdate({ research_lead_model: val })}
                 options={[
                   { value: "", label: t("settings.models.researchUseDefault") },
-                  ...Array.from(grouped.entries()).flatMap(([provider, models]) => [
-                    { type: "section" as const, title: provider, options: models.map((m) => ({ value: m.id, label: `${m.name ?? m.id}${m.thinking ? " · thinking" : ""}` })) },
-                  ]),
+                  ...modelSections,
+                ]}
+              />
+            </div>
+          </div>
+          <div className="st2-mrow">
+            <div className="st2-mlab">
+              <p className="t">{t("settings.models.researchWorkerModel")}</p>
+              <p className="d">{t("settings.models.researchWorkerModelHint")}</p>
+            </div>
+            <div className="st2-mctl">
+              <Selector
+                label={t("settings.models.researchWorkerModel")}
+                isLabelHidden
+                value={settings.research_worker_model || ""}
+                onChange={(val) => onUpdate({ research_worker_model: val })}
+                options={[
+                  { value: "", label: t("settings.models.researchWorkerUseLead") },
+                  ...modelSections,
                 ]}
               />
             </div>

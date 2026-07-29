@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { DebugComposerHarness } from "./DebugComposerHarness";
+import { DebugResearchHarness } from "./DebugResearchHarness";
 import { DebugUpdateHarness } from "./DebugUpdateHarness";
 import { DebugUsageHarness } from "./DebugUsageHarness";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -38,6 +39,7 @@ createRoot(document.getElementById("root")!).render(
       {window.location.search.includes("debug-composer") ? <DebugComposerHarness />
         : window.location.search.includes("debug-update") ? <DebugUpdateHarness />
         : window.location.search.includes("debug-usage") ? <DebugUsageHarness />
+        : window.location.search.includes("debug-research") ? <DebugResearchHarness />
         : <App />}
     </ErrorBoundary>
   </StrictMode>

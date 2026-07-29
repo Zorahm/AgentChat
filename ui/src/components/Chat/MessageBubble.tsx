@@ -13,7 +13,7 @@ import { parseMcpToolName } from "../../utils/mcpName";
 import { API_BASE, withToken } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo, MessageUsage } from "../../types/chat";
 import type { ToolCall, ToolCallStatus, ProcessStep } from "../../types/tool-call";
-import { ResearchCard } from "./ResearchCard";
+import { ResearchCard } from "./Research/ResearchCard";
 import { SourcesBox } from "./SourcesBox";
 import { aggregateUrls, extractUrls } from "../../utils/research";
 import { ArtifactCard } from "../Artifacts/ArtifactCard";

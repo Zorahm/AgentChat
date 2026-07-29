@@ -31,6 +31,10 @@ export interface ProviderConfig {
   api_base: string | null; enabled: boolean; api_key_set: boolean;
   custom?: boolean;
   extra_headers?: Record<string, string> | null;
+  /** False for local endpoints that answer without credentials. */
+  key_required?: boolean;
+  /** The URL a built-in shipped with, so a bad edit can be undone. */
+  default_api_base?: string | null;
 }
 export interface ModelConfig {
   id: string; name?: string | null; thinking?: boolean | null;
@@ -71,7 +75,10 @@ export interface SettingsData {
   searxng_url?: string | null;
   tavily_api_key_set?: boolean;
   research_enabled?: boolean;
-  research_model?: string;
+  /** "" → the chat's default model. */
+  research_lead_model?: string;
+  /** "" → the lead's model. */
+  research_worker_model?: string;
   mcp_servers?: MCPServerConfig[];
   /** Where API keys are stored: OS keychain, or the plaintext 0600 fallback. */
   secret_backend?: "keyring" | "file" | "memory";

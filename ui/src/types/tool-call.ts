@@ -14,17 +14,44 @@ export interface ResearchSource {
   domain: string;
 }
 
-/** One node in the research timeline, built live from tool_progress events. */
-export type ResearchStep =
-  | { kind: "plan"; text?: string }
-  | { kind: "search"; query: string; sources: ResearchSource[]; callId?: string }
+/** One sub-question the lead researcher published via `plan_research`. */
+export interface ResearchPlanStep {
+  id: string;
+  title: string;
+}
+
+/** One thing an agent did. Mirrors the backend's `agent_step` event. */
+export type ResearchAgentStep =
+  | { kind: "search"; query: string }
   | { kind: "read"; url: string };
 
-/** Live state of a `research` tool call — drives the card + the side panel. */
+export type ResearchAgentStatus = "running" | "ok" | "failed" | "timeout" | "cancelled";
+
+/** The lead or one subagent, with its own slice of the timeline. */
+export interface ResearchAgent {
+  /** "lead" for the lead researcher, "a1"/"a2"/… for subagents. */
+  id: string;
+  title: string;
+  status: ResearchAgentStatus;
+  steps: ResearchAgentStep[];
+  sources: ResearchSource[];
+  summary?: string;
+}
+
+/** A free-form line the lead wrote about what it was doing. */
+export interface ResearchNote {
+  text: string;
+}
+
+/** Live state of a `research` tool call — drives the card + the side panel.
+ *  Rebuilt from `tool_progress` events; see ui/src/utils/research.ts. */
 export interface ResearchData {
   title?: string;
   status: "running" | "complete" | "cancelled";
-  steps: ResearchStep[];
+  plan: ResearchPlanStep[];
+  agents: ResearchAgent[];
+  notes: ResearchNote[];
+  reportPath?: string;
   startedAt: number;
   durationMs?: number;
 }

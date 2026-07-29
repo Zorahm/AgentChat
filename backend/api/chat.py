@@ -16,12 +16,13 @@ from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
 from agent.host_exec import host_write_bytes
-from api.schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
+from schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
 from llm.model_tag import retag_model_for_litellm
 from mcp_integration.manager import MCPManager
 from mcp_integration.registry_view import MCPAwareRegistry
 from mcp_integration.tool_proxy import MCPToolProxy
+from research.types import ModelEndpoint
 from shell import resolve_active_shell
 from tools.base import BaseTool
 from tools.bash_tool import BashTool
@@ -36,21 +37,42 @@ from tools.write_file import WriteFileTool
 
 INLINE_CONTENT_LIMIT = 50_000
 
-# Appended to the system prompt when the research toggle is on, so the agent
-# knows the `research` tool exists and to surface its report.md afterwards.
+# Appended to the system prompt when the research toggle is on. The tool schema
+# already describes what a brief must contain; this only covers what the schema
+# can't — when to ask before spending several minutes and a lot of tokens.
 _RESEARCH_NUDGE = (
     "## Research tool\n\n"
-    "The `research` tool is available this turn. For questions that need thorough, "
-    "source-backed investigation across multiple web sources (current events, "
-    "comparisons, market/literature scans), call `research(topic=...)` (optional "
-    "depth 1-3, language). ALWAYS pass `language` = the user's language so the report "
-    "is written in it. It runs a multi-step search → read → synthesize loop and saves a "
-    "cited report. When it returns, call present_files with the EXACT absolute report "
-    "path it gives you back (not a relative name) to show the report, then give the "
-    "user a brief summary. Don't use it for simple lookups a single web_search would answer."
+    "The `research` tool is available this turn. A run takes minutes and spends real "
+    "tokens, so before calling it: if the request is genuinely ambiguous in a way that "
+    "changes what gets researched — time period, region, depth, audience, which of "
+    "several readings is meant — ask ONE `ask_user` question with concrete options "
+    "first. Otherwise go straight ahead on the most reasonable reading.\n\n"
+    "You write the brief, and it is all the research team ever sees — restate the "
+    "user's actual goal in it, and always name the user's language as the report's "
+    "language. Don't reach for it when a single `web_search` would answer."
 )
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
+
+
+def _research_endpoint(store: Any, model: str) -> ModelEndpoint:
+    """Resolve one research role's configured model into a ready-to-use endpoint.
+
+    An empty setting falls back to the chat's default model, so research works on
+    a fresh install without the user configuring anything extra.
+    """
+    resolved = model or store.default_model
+    provider = store.get_provider(resolved)
+    api_key = provider.api_key if provider else None
+    lite_model, api_key = retag_model_for_litellm(provider, resolved, api_key)
+    return ModelEndpoint(
+        provider_id=provider.id if provider else "",
+        model=resolved,
+        lite_model=lite_model,
+        api_key=api_key,
+        api_base=provider.api_base if provider else None,
+        extra_headers=provider.extra_headers if provider else None,
+    )
 
 
 def _rejected_native_web_search(exc: Exception) -> bool:
@@ -446,7 +468,7 @@ async def chat(
     # entirely — the agent editor warns the user about the risk, and the
     # skills manifest / project block are still appended after either way
     # (see agent.loop._build_messages), so those keep working regardless.
-    from api.schemas.agents import DEFAULT_AGENT_ID
+    from schemas.agents import DEFAULT_AGENT_ID
 
     agent = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(DEFAULT_AGENT_ID)
     if agent is not None and agent.system_prompt.strip():
@@ -498,34 +520,21 @@ async def chat(
             overlay_tools.append(WebSearchTool(ws_service, ws_config, resolved.effective))
 
     # ── research wiring ─────────────────────────────────────────────────
-    # Deep multi-step research is a separate `research` tool, gated by its own
-    # sticky toggle and run on its own model. It resolves a web backend itself
+    # Deep research is a separate `research` tool, gated by its own sticky toggle
+    # and run on its own models: a lead that plans and synthesizes, and cheaper
+    # workers for the parallel digging. It resolves a web backend itself
     # (independently of the chat model + web-search toggle above).
     research_on = (
         body.research_enabled if body.research_enabled is not None else store.research_enabled
     )
     if research_on:
-        research_model = store.research_model or store.default_model
-        r_provider = store.get_provider(research_model)
-        r_api_key = r_provider.api_key if r_provider else None
-        r_api_base = r_provider.api_base if r_provider else None
-        r_extra_headers = r_provider.extra_headers if r_provider else None
-        r_lite_model, r_api_key = retag_model_for_litellm(r_provider, research_model, r_api_key)
         overlay_tools.append(
             ResearchTool(
                 store=store,
                 web_search_service=app_state.web_search_service,
-                provider_id=r_provider.id if r_provider else "",
-                model=research_model,
-                lite_model=r_lite_model,
-                api_key=r_api_key,
-                api_base=r_api_base,
-                extra_headers=r_extra_headers,
-                usage_metadata={
-                    **usage_metadata,
-                    "provider": r_provider.id if r_provider else "unknown",
-                    "canonical_model": research_model,
-                },
+                lead=_research_endpoint(store, store.research_lead_model),
+                worker=_research_endpoint(store, store.research_worker_model),
+                usage_metadata=usage_metadata,
             )
         )
         system_prompt = f"{system_prompt}\n\n{_RESEARCH_NUDGE}"

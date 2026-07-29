@@ -24,6 +24,12 @@
 - Black formatting: 100 char line length, double quotes
 - Ruff for linting (replaces isort, flake8, pyupgrade)
 - `from __future__ import annotations` at top of each file
+- **Import layering:** shared Pydantic contracts live in `backend/schemas/`, a leaf that
+  imports nothing from the app. Lower layers (`store/`, `llm/`, `mcp_integration/`,
+  `research/`) import *down* into it and must never reach up into `api/`. Keep package
+  `__init__.py` files import-free unless the package is a genuine façade — an eager
+  re-export turns the package into a cycle hub, and the resulting `ImportError` only
+  appears when a module is imported first in a process (see `tests/backend/test_import_graph.py`)
 
 <!-- ASTRYX:START -->
 Astryx v0.1.8 · 153 components
@@ -88,14 +94,15 @@ AgentChat/
 │   │   ├── usage.py            # /api/usage/* — token/cost dashboard + manual model pricing
 │   │   ├── active_streams.py   # In-flight stream registry — DELETE /chats waits on it before rm -rf
 │   │   ├── loopback.py         # is_loopback_request() — shared by the guard middleware and /remote-access
-│   │   ├── router.py           # Route assembly
-│   │   └── schemas/            # Pydantic request/response models
-│   │       ├── chat.py         # ChatRequest, ChatMessage, AttachmentInfo
-│   │       ├── mcp.py          # MCP schemas
-│   │       ├── settings.py     # Settings schemas; ProviderPublic is the only shape sent over HTTP
-│   │       ├── redaction.py    # MASK + redact_map/unredact_map for secret-bearing maps
-│   │       ├── skills.py       # Skills schemas
-│   │       └── agents.py       # Agent-persona schemas
+│   │   ├── router.py           # Route assembly — import this, NOT `api` (see api/__init__.py)
+│   │   └── __init__.py         # Deliberately import-free; re-exporting the router made the cycle
+│   ├── schemas/                # Pydantic request/response contracts — a LEAF package
+│   │   ├── chat.py             # ChatRequest, ChatMessage, AttachmentInfo
+│   │   ├── mcp.py              # MCP contracts: persisted MCPServerConfig + API views
+│   │   ├── settings.py         # Settings schemas; ProviderPublic is the only shape sent over HTTP
+│   │   ├── redaction.py        # MASK + redact_map/unredact_map for secret-bearing maps
+│   │   ├── skills.py           # Skills schemas
+│   │   └── agents.py           # Agent-persona schemas
 │   ├── agent/                  # Agent core logic
 │   │   ├── loop.py             # AgentLoop — run_stream() is the main path
 │   │   ├── config.py           # AgentConfig dataclass
@@ -115,9 +122,22 @@ AgentChat/
 │   │   ├── host_exec.py        # Platform dispatch — host_run/host_read_*/host_write_* (single import point)
 │   │   ├── posix_exec.py       # Native Linux/macOS execution (bash/zsh) + AppImage env scrub
 │   │   ├── wsl_exec.py         # WSL-only execution — tunnels through wsl.exe
-│   │   ├── reasoning_split.py  # Splits model output into thinking/text
-│   │   ├── research_prompt.py  # System prompt for the research sub-agent
-│   │   └── research_runner.py  # Drives a nested AgentLoop for the research tool
+│   │   └── reasoning_split.py  # Splits model output into thinking/text
+│   ├── research/               # Multi-agent research: lead + parallel subagents
+│   │   ├── lead.py             # LeadResearcher — drives one run, brief → report
+│   │   ├── worker.py           # SubagentRunner — one delegated task → Finding
+│   │   ├── fanout.py           # Parallel round: timeouts, error + cancel isolation
+│   │   ├── lead_tools.py       # plan_research / note / submit_report
+│   │   ├── delegate_tool.py    # run_subagents — the lead spawns a round
+│   │   ├── worker_tools.py     # submit_findings — a subagent's structured hand-off
+│   │   ├── prompts.py          # Thin role contracts; the BRIEF carries the content
+│   │   ├── budget.py           # ResearchBudget caps + BudgetTracker spend counters
+│   │   ├── toolset.py          # Web-backend resolution + per-agent tool registries
+│   │   ├── observer.py         # Loop events → progress steps + source list
+│   │   ├── progress.py         # ProgressEmitter — the tool_progress vocabulary
+│   │   ├── sources.py          # URL extraction/dedup + citation audit
+│   │   ├── report.py           # research-<slug>.md path resolution + write
+│   │   └── types.py            # ModelEndpoint, SubagentTask, Finding, ResearchOutcome
 │   ├── tools/                  # Tool implementations (agent-callable)
 │   │   ├── base.py             # BaseTool ABC
 │   │   ├── registry.py         # ToolRegistry — register/execute tools
@@ -130,19 +150,19 @@ AgentChat/
 │   │   ├── read_skill.py       # ReadSkillTool — reads SKILL.md
 │   │   ├── read_photo.py       # ReadPhotoTool — image content extraction
 │   │   ├── ask_user.py         # AskUserTool — pauses the turn for user input
-│   │   ├── research_tool.py    # ResearchTool — wraps research_runner
+│   │   ├── research_tool.py    # ResearchTool — model-written brief → research/lead
 │   │   ├── show_widget.py      # ShowWidgetTool — inline HTML/SVG visualizations
 │   │   ├── web_search_tool.py  # WebSearchTool
 │   │   └── web_fetch_tool.py   # WebFetchTool
 │   ├── llm/                    # LLM client layer
 │   │   ├── client.py           # LLMClient — wraps LiteLLM
 │   │   ├── model_tag.py        # Re-tags custom/OpenAI-compatible model ids
+│   │   ├── api_base.py         # is_local_base/requires_api_key — local endpoints need no key
 │   │   ├── models_fetcher.py   # Fetches available models from providers
 │   │   ├── usage_logging.py    # litellm.callbacks hook — writes one usage_log row per LLM call
 │   │   └── token_breakdown.py  # Local estimate of where prompt tokens went (system/tools/history/...)
-│   ├── mcp_integration/        # Model Context Protocol
+│   ├── mcp_integration/        # Model Context Protocol (runtime only — models in schemas/mcp.py)
 │   │   ├── client.py           # MCP client (stdio/HTTP)
-│   │   ├── config.py           # MCP server config
 │   │   ├── manager.py          # MCPManager — server lifecycle
 │   │   ├── registry_view.py    # Exposes MCP tools to agent
 │   │   └── tool_proxy.py       # Proxies MCP tool calls
@@ -165,7 +185,7 @@ AgentChat/
 │   └── src/
 │       ├── main.tsx            # React entry point; also routes ?debug-* query params to the harnesses below
 │       ├── App.tsx             # Root component, settings context, layout (Astryx AppShell/Theme)
-│       ├── Debug{Composer,Update,Usage}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage) — render one component tree in isolation against fabricated props for visual verification without a live backend
+│       ├── Debug{Composer,Update,Usage,Research}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage/-research) — render one component tree in isolation against fabricated props for visual verification without a live backend
 │       ├── hooks/
 │       │   ├── useChats/           # Multi-session chat manager (THE main hook)
 │       │   │   ├── index.ts        # useChats() — composes the pieces below
@@ -197,8 +217,8 @@ AgentChat/
 │       │   │   ├── MCPChip.tsx          # MCP indicator chip + composer "Connectors" row
 │       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
 │       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
-│       │   │   ├── ResearchCard.tsx     # Research tool-call summary card
-│       │   │   ├── ResearchPanel.tsx    # Research report side panel
+│       │   │   ├── Research/            # ResearchCard, ResearchPanel (agent tree),
+│       │   │   │                        # AgentNode, PlanList
 │       │   │   ├── SourcesBox.tsx       # Web-search/research source list
 │       │   │   └── SupportCard.tsx
 │       │   ├── Mobile/
@@ -213,7 +233,9 @@ AgentChat/
 │       │   │       ├── AppearanceTab.tsx
 │       │   │       ├── TerminalTab.tsx
 │       │   │       ├── SandboxTab.tsx
-│       │   │       ├── ProvidersTab.tsx
+│       │   │       ├── ProvidersTab.tsx    # shell — provider list, add form, web search
+│       │   │       ├── providers/          # ProviderCard, AddProviderForm, HeadersEditor,
+│       │   │       │                       # WebSearchSettings, SearxngInstaller, YandexSetup
 │       │   │       ├── ModelsTab.tsx
 │       │   │       ├── PathsTab.tsx
 │       │   │       ├── MCPTab.tsx

@@ -255,7 +255,11 @@ AgentChat/
 │   │   ├── sandbox.py       # SandboxPolicy — path access control
 │   │   ├── untrusted.py     # Fences web_fetch/upload tool output
 │   │   ├── host_exec.py     # Platform dispatch (WSL/native posix/PowerShell)
-│   │   └── research_runner.py / research_prompt.py / reasoning_split.py
+│   │   └── reasoning_split.py
+│   ├── research/            # Multi-agent research — lead + parallel subagents
+│   │   ├── lead.py          # Drives one run: brief → plan → delegate → report
+│   │   ├── worker.py        # One delegated task in its own loop
+│   │   └── fanout.py        # Parallel round with timeout + failure isolation
 │   ├── tools/
 │   │   ├── factory.py       # build_tool_registry() — per-request assembly
 │   │   ├── registry.py      # ToolRegistry — register/execute tools

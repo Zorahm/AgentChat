@@ -1,7 +1,20 @@
-/** Helpers for the research card + side panel: domain extraction, source
- *  aggregation, and applying live tool_progress events to ResearchData. */
+/** Research state: the reducer that turns `tool_progress` events into the tree
+ *  the card and side panel render, plus shared source/domain helpers.
+ *
+ *  The event vocabulary is defined by backend/research/progress.py — a field
+ *  added there has to be handled here or it is silently dropped. */
 
-import type { ResearchData, ResearchSource } from "../types/tool-call";
+import type {
+  ResearchAgent,
+  ResearchAgentStatus,
+  ResearchAgentStep,
+  ResearchData,
+  ResearchPlanStep,
+  ResearchSource,
+} from "../types/tool-call";
+
+/** Agent id the backend reserves for the lead researcher. */
+export const LEAD_AGENT_ID = "lead";
 
 /** Bare hostname for a URL (www. stripped), best-effort. */
 export function domainOf(url: string): string {
@@ -10,6 +23,13 @@ export function domainOf(url: string): string {
   } catch {
     return url.replace(/^https?:\/\//, "").split("/")[0] ?? url;
   }
+}
+
+/** Favicon URL for a domain, as an Astryx `Citation` source icon.
+ *  Google's service degrades to a generic globe for unknown domains, so a chip
+ *  never ends up showing a broken image. */
+export function faviconUrl(domain: string): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
 }
 
 export interface SourceAgg {
@@ -51,14 +71,37 @@ export function aggregateUrls(urls: string[]): SourceAgg {
   return { total: seen.size, domains };
 }
 
-/** Aggregate every research source (search results + read pages). */
+/** Every source any agent in the run touched. */
 export function aggregateSources(data: ResearchData): SourceAgg {
   const urls: string[] = [];
-  for (const step of data.steps) {
-    if (step.kind === "search") urls.push(...step.sources.map((s) => s.url));
-    else if (step.kind === "read") urls.push(step.url);
+  for (const agent of data.agents ?? []) {
+    for (const source of agent.sources) urls.push(source.url);
   }
   return aggregateUrls(urls);
+}
+
+/** First non-empty line of the brief — a stand-in title while the run is still
+ *  going and the report has none yet. */
+export function briefTitle(brief: string): string {
+  const line = brief.split("\n").find((l) => l.trim().length > 0) ?? "";
+  return line.replace(/^#+\s*/, "").trim().slice(0, 120);
+}
+
+/** A fresh, empty run. */
+export function emptyResearch(startedAt: number): ResearchData {
+  return { status: "running", plan: [], agents: [], notes: [], startedAt };
+}
+
+/** Fill in fields a chat saved before the multi-agent rewrite doesn't have.
+ *  Reloading an old chat must not blank the panel or throw on a missing array. */
+export function normalizeResearch(data: ResearchData): ResearchData {
+  if (data.plan && data.agents && data.notes) return data;
+  return {
+    ...data,
+    plan: data.plan ?? [],
+    agents: data.agents ?? [],
+    notes: data.notes ?? [],
+  };
 }
 
 /** Apply one structured tool_progress event onto the research state (immutable). */
@@ -66,58 +109,115 @@ export function applyResearchEvent(
   data: ResearchData,
   event: Record<string, unknown>,
 ): ResearchData {
+  const state = normalizeResearch(data);
   const kind = String(event.kind ?? "");
 
-  if (kind === "plan") {
-    const text = event.text ? String(event.text) : undefined;
-    const idx = data.steps.findIndex((s) => s.kind === "plan");
-    if (idx >= 0) {
-      if (!text) return data;
-      const steps = [...data.steps];
-      steps[idx] = { kind: "plan", text };
-      return { ...data, steps };
+  switch (kind) {
+    case "plan":
+      return { ...state, plan: readPlan(event.steps) };
+    case "agent_start":
+      return withAgent(state, String(event.agentId ?? ""), (agent) => ({
+        ...agent,
+        title: String(event.title ?? "") || agent.title,
+        status: "running",
+      }));
+    case "agent_step": {
+      const step = readStep(event);
+      if (!step) return state;
+      return withAgent(state, String(event.agentId ?? ""), (agent) => ({
+        ...agent,
+        steps: [...agent.steps, step],
+      }));
     }
-    return { ...data, steps: [...data.steps, { kind: "plan", text }] };
-  }
-
-  if (kind === "search") {
-    const query = String(event.query ?? "");
-    const callId = event.callId ? String(event.callId) : undefined;
-    return { ...data, steps: [...data.steps, { kind: "search", query, sources: [], callId }] };
-  }
-
-  if (kind === "sources") {
-    const urls = Array.isArray(event.urls) ? (event.urls as unknown[]).map(String) : [];
-    const sources: ResearchSource[] = urls.map((url) => ({ url, domain: domainOf(url) }));
-    const callId = event.callId ? String(event.callId) : undefined;
-    const steps = [...data.steps];
-    // Prefer the search step with the matching call id (the model can fire
-    // several searches in one turn); fall back to the most recent search.
-    let idx = callId
-      ? steps.findIndex((s) => s.kind === "search" && s.callId === callId)
-      : -1;
-    if (idx < 0) {
-      for (let i = steps.length - 1; i >= 0; i--) {
-        if (steps[i]!.kind === "search") { idx = i; break; }
-      }
+    case "agent_sources": {
+      const urls = Array.isArray(event.urls) ? (event.urls as unknown[]).map(String) : [];
+      if (urls.length === 0) return state;
+      return withAgent(state, String(event.agentId ?? ""), (agent) => ({
+        ...agent,
+        sources: mergeSources(agent.sources, urls),
+      }));
     }
-    const target = idx >= 0 ? steps[idx] : undefined;
-    if (target && target.kind === "search") {
-      steps[idx] = { ...target, sources: [...target.sources, ...sources] };
-      return { ...data, steps };
+    case "agent_end":
+      return withAgent(state, String(event.agentId ?? ""), (agent) => ({
+        ...agent,
+        status: readStatus(event.status),
+        summary: event.summary ? String(event.summary) : agent.summary,
+      }));
+    case "note": {
+      const text = String(event.text ?? "").trim();
+      return text ? { ...state, notes: [...state.notes, { text }] } : state;
     }
-    return data;
+    case "done":
+      return {
+        ...state,
+        title: event.title ? String(event.title) : state.title,
+        reportPath: event.path ? String(event.path) : state.reportPath,
+      };
+    default:
+      return state;
   }
+}
 
-  if (kind === "read") {
-    const url = String(event.url ?? "");
-    if (!url) return data;
-    return { ...data, steps: [...data.steps, { kind: "read", url }] };
+/** Insert or update one agent, keeping arrival order (the lead arrives first). */
+function withAgent(
+  state: ResearchData,
+  agentId: string,
+  update: (agent: ResearchAgent) => ResearchAgent,
+): ResearchData {
+  if (!agentId) return state;
+  const index = state.agents.findIndex((a) => a.id === agentId);
+  const existing = index >= 0 ? state.agents[index] : undefined;
+  const base: ResearchAgent = existing ?? {
+    id: agentId,
+    title: "",
+    status: "running",
+    steps: [],
+    sources: [],
+  };
+  const next = update(base);
+  const agents = [...state.agents];
+  if (index >= 0) agents[index] = next;
+  else agents.push(next);
+  return { ...state, agents };
+}
+
+function mergeSources(current: ResearchSource[], urls: string[]): ResearchSource[] {
+  const seen = new Set(current.map((s) => s.url));
+  const added: ResearchSource[] = [];
+  for (const url of urls) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    added.push({ url, domain: domainOf(url) });
   }
+  return added.length > 0 ? [...current, ...added] : current;
+}
 
-  if (kind === "done") {
-    return { ...data, title: event.title ? String(event.title) : data.title };
-  }
+function readPlan(raw: unknown): ResearchPlanStep[] {
+  if (!Array.isArray(raw)) return [];
+  const steps: ResearchPlanStep[] = [];
+  raw.forEach((item, i) => {
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      const title = String(record.title ?? "").trim();
+      if (title) steps.push({ id: String(record.id ?? `s${i + 1}`), title });
+    } else if (typeof item === "string" && item.trim()) {
+      steps.push({ id: `s${i + 1}`, title: item.trim() });
+    }
+  });
+  return steps;
+}
 
-  return data;
+function readStep(event: Record<string, unknown>): ResearchAgentStep | null {
+  const value = String(event.value ?? "").trim();
+  const step = String(event.step ?? "");
+  if (step === "search") return { kind: "search", query: value };
+  if (step === "read" && value) return { kind: "read", url: value };
+  return null;
+}
+
+function readStatus(raw: unknown): ResearchAgentStatus {
+  const value = String(raw ?? "");
+  return value === "ok" || value === "failed" || value === "timeout" || value === "cancelled"
+    ? value
+    : "running";
 }
