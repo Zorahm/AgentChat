@@ -194,6 +194,21 @@
     max-width: 140px;
   }
 
+  .st2-pv-body {
+    padding: 12px 12px 14px;
+  }
+
+  /* Give the field its own line so the buttons wrap below it side by side —
+     a 44px-tall input plus two buttons never fits one row on a phone. */
+  .st2-pv-input,
+  .st2-pv-key-wrap {
+    flex: 1 1 100%;
+  }
+
+  .st2-pv-danger .st2-pv-hint {
+    flex: 1 1 100%;
+  }
+
   .st2-add-form {
     padding: 14px 12px;
   }

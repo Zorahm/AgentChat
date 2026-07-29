@@ -2,18 +2,8 @@
 
 /* ── Status badges ────────────────────────────────────────────────────── */
 
-.st2-pv-badge {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 100px;
-  border: 1px solid var(--line-2);
-  background: var(--surface-2);
-  color: var(--muted);
-  margin-right: 8px;
-  white-space: nowrap;
-}
-.st2-pv-badge.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
-.st2-pv-badge.err { color: var(--err); border-color: var(--err-line); background: var(--err-soft); cursor: help; }
+/* The Badge itself carries no tooltip prop — this wrapper holds the title. */
+.st2-pv-badge-wrap { display: inline-flex; cursor: help; }
 
 .st2-pv-err {
   font-size: 12px; color: var(--err); margin-top: 6px; padding: 6px 10px;
@@ -28,20 +18,6 @@
 }
 
 /* ── Add-provider form ────────────────────────────────────────────────── */
-
-.st2-add-btn {
-  width: 100%;
-  padding: 14px;
-  border: 1.5px dashed var(--line-2);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--ink-soft);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-top: 12px;
-  transition: background .15s, border-color .15s, color .15s;
-}
 
 .st2-add-form {
   background: var(--surface);
@@ -72,7 +48,7 @@
 .st2-add-name-wrap {
   display: flex; align-items: center; gap: 10px;
 }
-.st2-add-name-wrap .st2-field { flex: 1; }
+.st2-add-name-wrap .st2-field { flex: 1; min-width: 0; }
 
 .st2-add-slug {
   font-family: var(--font-mono); font-size: 11px; color: var(--muted);
@@ -103,6 +79,10 @@
 
 .st2-add-actions { display: flex; gap: 8px; }
 
+/* Astryx buttons fill their flex parent; this keeps a lone one at its own
+   intrinsic width instead of spanning the card. */
+.st2-pv-inline-btn { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
 /* ── Key storage notice ───────────────────────────────────────────────── */
 
 .st2-pv-storage {
@@ -130,7 +110,7 @@
   text-transform: uppercase;
   font-weight: 500;
   padding: 4px 0 8px;
-  margin-top: 4px;
+  margin-top: 18px;
 }
 
 /* ── Provider card ────────────────────────────────────────────────────── */
@@ -166,7 +146,7 @@
 .st2-provider.is-off .st2-pv-logo { opacity: .4; }
 .st2-provider.is-off .st2-pv-name,
 .st2-provider.is-off .st2-pv-key,
-.st2-provider.is-off .st2-pv-badge { opacity: .55; }
+.st2-provider.is-off .st2-pv-meta .astryx-badge { opacity: .55; }
 
 .st2-pv-logo {
   width: 34px; height: 34px; border-radius: 8px;
@@ -198,17 +178,84 @@
   max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.st2-pv-key {
-  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
-  padding: 4px 10px; background: var(--paper-2);
-  border: 1px solid var(--ink-soft); border-radius: 6px;
-}
+/* Wrapper only — the key state renders as an Astryx Badge. Kept as its own
+   element so the mobile rules can drop it without touching the models badge. */
+.st2-pv-key { display: inline-flex; }
 
 .st2-pv-body {
   border-top: 1.5px solid var(--ink);
   background: var(--paper-2);
-  padding: 12px 18px 14px;
+  padding: 14px 18px 16px;
 }
+
+/* ── Provider body: sections & fields ─────────────────────────────────── */
+
+.st2-pv-sec {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 600; color: var(--ink-soft);
+  letter-spacing: .6px; text-transform: uppercase;
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.st2-pv-sec:first-child { margin-top: 2px; }
+.st2-pv-err + .st2-pv-sec { margin-top: 14px; }
+
+.st2-pv-sec-count {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 100px; padding: 0 7px; line-height: 16px;
+}
+
+.st2-pv-field { margin-bottom: 14px; }
+
+.st2-pv-field-label {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+  margin-bottom: 6px;
+  width: fit-content;
+}
+
+.st2-pv-optional {
+  font-size: 11px; font-weight: 400; color: var(--faint);
+  font-style: italic;
+}
+
+.st2-pv-field-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* The input has to be able to shrink below its content, or a long URL pushes
+   the Save button out of the card. */
+.st2-pv-input { flex: 1 1 240px; min-width: 0; }
+.st2-field.st2-pv-input {
+  height: 34px; padding: 0 11px;
+  border-color: var(--line-2); background: var(--surface);
+  transition: border-color .15s;
+}
+.st2-field.st2-pv-input:focus { border-color: var(--ink-2); }
+
+.st2-pv-key-wrap {
+  display: flex; align-items: center; gap: 2px;
+  flex: 1 1 240px; min-width: 0;
+}
+.st2-pv-key-wrap .st2-pv-input { flex: 1 1 auto; }
+
+.st2-pv-hint {
+  display: block; font-size: 11.5px; color: var(--faint);
+  line-height: 1.45; margin-top: 6px;
+}
+
+.st2-pv-models { margin-top: 2px; }
+
+.st2-pv-danger {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.st2-pv-danger .st2-pv-hint { margin-top: 0; flex: 1 1 200px; }
 
 .st2-pv-row {
   display: flex; align-items: center; gap: 12px;
@@ -281,11 +328,6 @@
   display: block; font-size: 11px; color: var(--faint); margin-top: 2px; font-style: italic;
 }
 
-.st2-pv-key-row {
-  display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
 /* ── Web search settings ──────────────────────────────────────────────── */
 
 .st2-ws { margin-top: 6px; }
@@ -300,26 +342,43 @@
   transition: border-color .15s, box-shadow .15s;
 }
 .st2-ws-item:hover { border-color: var(--ink-soft); }
-.st2-ws-item.selected { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.st2-ws-item.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 
 .st2-ws-item-head {
-  display: flex; align-items: center; gap: 12px;
-  width: 100%; padding: 13px 15px;
-  background: none; border: none; cursor: pointer;
-  font: inherit; text-align: left; color: inherit;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: start; gap: 12px;
+  padding: 13px 15px;
+  cursor: pointer; user-select: none;
+  outline: none;
+}
+.st2-ws-item-head:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.st2-ws-radio {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--line-2); flex-shrink: 0;
+  position: relative; margin-top: 1px;
+  transition: border-color .12s;
 }
 .st2-ws-item:hover .st2-ws-radio { border-color: var(--ink-soft); }
-.st2-ws-item.selected .st2-ws-radio { border-color: var(--accent); }
-.st2-ws-item.selected .st2-ws-radio::after {
+.st2-ws-radio.on { border-color: var(--accent); }
+.st2-ws-radio.on::after {
   content: ""; position: absolute; inset: 3px;
   border-radius: 50%; background: var(--accent);
 }
+
+.st2-ws-item-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.st2-ws-item-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .st2-ws-item-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
 
 .st2-ws-status {
   font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
   letter-spacing: .4px; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 100px; flex-shrink: 0;
+  padding: 2px 7px; border-radius: 100px;
+  flex-shrink: 0; white-space: nowrap; margin-top: 2px;
 }
 .st2-ws-status.ok { color: var(--ok); background: var(--ok-soft); border: 1px solid var(--ok-line); }
 .st2-ws-status.off { color: var(--err); background: var(--err-soft); border: 1px solid var(--err-line); cursor: help; }
@@ -344,8 +403,8 @@
 .st2-ws-hint { font-size: 11.5px; color: var(--faint); margin: 2px 0 0; line-height: 1.45; }
 .st2-ws-hint-sub { font-size: 11px; color: var(--faint); margin: 0; line-height: 1.45; opacity: 0.85; }
 .st2-ws-ok { font-size: 11px; color: var(--ok, #2a8a3e); font-weight: 600; }
-.st2-ws-keyrow { display: flex; gap: 8px; }
-.st2-ws-keyrow input { flex: 1; }
+.st2-ws-keyrow { display: flex; gap: 8px; align-items: center; }
+.st2-ws-keyrow input { flex: 1; min-width: 0; }
 
 .st2-ws-install {
   margin-top: 8px; padding: 12px;

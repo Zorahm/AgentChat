@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.schemas.settings import (
+from schemas.settings import (
     ProviderCreate,
-    ProviderPublic,
     ProviderUpdate,
     SettingsData,
     SettingsUpdate,
 )
+from store.settings_store import to_public
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -39,7 +39,7 @@ async def update_provider(
         provider = request.app.state.settings_store.update_provider(provider_id, body)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return {"status": "ok", "provider": ProviderPublic.from_config(provider).model_dump()}
+    return {"status": "ok", "provider": to_public(provider).model_dump()}
 
 
 @router.post("/providers")
@@ -49,7 +49,7 @@ async def add_provider(request: Request, body: ProviderCreate) -> dict[str, obje
         provider = request.app.state.settings_store.add_provider(body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return {"status": "ok", "provider": ProviderPublic.from_config(provider).model_dump()}
+    return {"status": "ok", "provider": to_public(provider).model_dump()}
 
 
 @router.delete("/providers/{provider_id}")

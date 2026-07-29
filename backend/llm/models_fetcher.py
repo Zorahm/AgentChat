@@ -18,7 +18,8 @@ from typing import Any
 
 import httpx
 
-from api.schemas.settings import ModelConfig, ProviderConfig
+from schemas.settings import ModelConfig, ProviderConfig
+from llm.api_base import requires_api_key
 
 
 # Substrings that suggest a model is a "thinking" / reasoning model.
@@ -162,7 +163,7 @@ async def _fetch_provider_models(p: ProviderConfig) -> list[dict[str, Any]]:
     """Return list of model info dicts with id, name, thinking, thinking_types, effort_levels."""
     if not p.api_base:
         raise ValueError("api_base not configured")
-    if not p.api_key and p.id not in {"lmstudio", "litellm_proxy"}:
+    if not p.api_key and requires_api_key(p.id, p.api_base):
         raise ValueError("api_key not set")
 
     base = p.api_base.rstrip("/")
