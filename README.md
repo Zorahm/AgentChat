@@ -34,12 +34,14 @@ The shipped binary is native and self-updating; the brain stays in the language 
 - **Multi-provider** — OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, or any OpenAI-compatible endpoint, switchable per chat.
 - **Agentic loop** — the model can run shell commands, read/write files, and call skills, streamed live over SSE with inline file/edit rendering.
 - **Sandboxed by default** — the agent sees only the current chat's folder. Shell execution adapts to the host: WSL on Windows (PowerShell fallback if WSL isn't installed), native bash on Linux/macOS. An opt-in unrestricted mode lifts the cage.
-- **Android client** — a thin Tauri Android app (no bundled backend) pairs with a desktop instance via QR code or a manual URL + token, then talks to it over the network like a remote control.
+- **Agent personas** — define named agents with their own avatar and system-prompt override, switchable per chat.
+- **Android client** — a thin Tauri Android app (no bundled backend) pairs with a desktop instance via QR code or a manual URL + token, then talks to it over the network like a remote control. The pairing token can be rotated from Settings.
 - **Projects** — per-project system prompt and file set, so related chats share context.
 - **Skills** — install from GitHub or an archive; hot-reloaded from `~/.agents/skills/`.
 - **MCP** — connect Model Context Protocol servers (stdio or HTTP) to expose external tools.
+- **Usage dashboard** — per-model token/cost breakdown, daily chart, and top chats by spend.
 - **Multi-language UI** — interface localization via react-i18next.
-- **Local-first** — keys, chats, and settings stay on your machine; the only outbound traffic is the provider API calls you configure.
+- **Local-first** — provider keys live in the OS keychain (not a plaintext config file), chats and settings stay on your machine, and the only outbound traffic is the provider API calls you configure.
 - **Self-updating** — the installed app checks for releases on launch and updates in place.
 
 ## Providers supported
@@ -193,12 +195,13 @@ Everything is stored locally — there is no AgentChat account or cloud sync.
 
 | What | Windows | Linux |
 |---|---|---|
-| Settings + provider keys | `%APPDATA%/AgentChat/.agents/settings.json` | `~/AgentChat/.agents/settings.json` |
+| Settings (no keys) | `%APPDATA%/AgentChat/.agents/settings.json` | `~/AgentChat/.agents/settings.json` |
+| Provider keys + remote-access token | OS keychain (Credential Manager), 0600 file fallback | OS keychain (Secret Service), 0600 file fallback |
 | Chats | `%APPDATA%/AgentChat/.agents/agentchat.db` (SQLite) | `~/AgentChat/.agents/agentchat.db` |
 | Projects | `%APPDATA%/AgentChat/.agents/projects.db` (SQLite) | `~/AgentChat/.agents/projects.db` |
 | Skills | `~/.agents/skills/` | `~/.agents/skills/` |
 
-In development these live under `<repo>/.agents/` instead.
+In development these live under `<repo>/.agents/` instead. Provider keys and other secrets are never written to `settings.json` — they're stored under a single `AgentChat` keychain service, one entry per secret name, and only a masked form is ever returned to the UI.
 
 ## Remote / mobile access
 
@@ -207,7 +210,7 @@ The desktop app is the host: turn on remote access in **Settings → Paths** to 
 - **Android APK** — scan the QR code (encodes the URL + token) or enter them manually on the connect screen; reconnecting later (token rotated, network changed) reopens the same screen.
 - **Browser / PWA** — open the desktop's address from any phone/laptop browser; the UI is served straight from the backend, same token-based pairing.
 
-Either way it's a thin client: chats, settings, and the agent loop all run on the desktop instance.
+The token can be rotated on demand from Settings, which immediately invalidates every previously paired client — useful if you suspect the URL/QR leaked. Either way it's a thin client: chats, settings, and the agent loop all run on the desktop instance.
 
 ## Project structure
 
@@ -233,18 +236,25 @@ AgentChat/
 │   │   ├── models_routes.py # GET /api/models
 │   │   ├── mcp.py           # MCP server management
 │   │   ├── projects.py      # Projects CRUD
-│   │   ├── remote.py        # Remote access (token, toggle, QR)
+│   │   ├── agents.py        # Agent-persona CRUD (name, avatar, system-prompt override)
+│   │   ├── remote.py        # Remote access (token, rotation, toggle, QR)
 │   │   ├── searxng.py       # SearXNG proxy
 │   │   ├── win_deps.py      # Windows dependency detection
+│   │   ├── config_routes.py # Runtime capability probes for the UI
+│   │   ├── usage.py         # Token/cost dashboard + manual model pricing
+│   │   ├── active_streams.py# In-flight stream registry
+│   │   ├── loopback.py      # Shared loopback-request check
 │   │   ├── router.py        # Route assembly
-│   │   └── schemas/         # Pydantic request/response models
+│   │   └── schemas/         # Pydantic request/response models (incl. redaction.py — secret masking)
 │   ├── agent/
 │   │   ├── loop.py          # AgentLoop — run_stream() is the main path
 │   │   ├── config.py        # AgentConfig dataclass
-│   │   ├── system_prompt.py # System prompt builder
+│   │   ├── system_prompt.py # Thin wrapper over the agent/prompt module registry
+│   │   ├── prompt/          # System-prompt module registry (ordered, cache-prefix-safe)
 │   │   ├── types.py         # Agent event/message types
 │   │   ├── sandbox.py       # SandboxPolicy — path access control
-│   │   ├── wsl_exec.py      # WSL/posix/PowerShell execution hub
+│   │   ├── untrusted.py     # Fences web_fetch/upload tool output
+│   │   ├── host_exec.py     # Platform dispatch (WSL/native posix/PowerShell)
 │   │   └── research_runner.py / research_prompt.py / reasoning_split.py
 │   ├── tools/
 │   │   ├── factory.py       # build_tool_registry() — per-request assembly
@@ -269,11 +279,15 @@ AgentChat/
 │   ├── llm/
 │   │   ├── client.py        # LLMClient — wraps LiteLLM
 │   │   ├── model_tag.py     # Re-tags custom/OpenAI-compatible model ids
-│   │   └── models_fetcher.py
+│   │   ├── models_fetcher.py
+│   │   └── usage_logging.py / token_breakdown.py
 │   ├── store/
 │   │   ├── chat_store.py    # SQLite chat storage
 │   │   ├── project_store.py # SQLite project storage
-│   │   └── settings_store.py
+│   │   ├── settings_store.py# Settings state + validation policy
+│   │   ├── settings_io.py   # settings.json atomic I/O + secret split/merge
+│   │   ├── secret_store.py  # Named secrets — OS keychain, 0600 file fallback
+│   │   └── usage_store.py   # SQLite usage/cost log
 │   ├── web_search/          # Web search (native/Tavily/SearXNG)
 │   │   ├── config.py
 │   │   └── service.py
@@ -284,7 +298,7 @@ AgentChat/
 │
 ├── ui/src/
 │   ├── App.tsx              # Root — settings context, layout
-│   ├── hooks/               # useChats, useSSE, useProjects, useIsMobile, ...
+│   ├── hooks/               # useChats, useSSE, useProjects, useAgents, useIsMobile, ...
 │   ├── contexts/
 │   │   └── SettingsContext.tsx
 │   ├── shortcuts/
@@ -293,25 +307,27 @@ AgentChat/
 │   │   ├── Chat/            # ChatView, ChatInput, MessageBubble, web-search/research menus, ...
 │   │   ├── Mobile/          # MobileConnect — backend connect/reconnect (APK + PWA)
 │   │   ├── BottomSheet.tsx  # Generic mobile bottom-sheet primitive
-│   │   ├── Settings/        # SettingsPanel + tabs (Profile/Appearance/Terminal/Sandbox/Providers/...)
+│   │   ├── AgentAvatar.tsx  # Gradient agent-persona avatar
+│   │   ├── Settings/        # SettingsPanel + tabs (Profile/Appearance/Terminal/Sandbox/Providers/Models/Paths/MCP/Agents/Shortcuts/About)
 │   │   ├── Projects/        # ProjectsView, ProjectDetail
 │   │   ├── Artifacts/       # ArtifactCard, ArtifactViews, FilesPanel, WidgetView, ...
 │   │   ├── Skills/          # SkillsManager (master-detail, mobile-swappable)
-│   │   ├── ToolCalls/       # ToolCallBlock, UserQuestionCard
+│   │   ├── ToolCalls/       # UserQuestionCard
+│   │   ├── Usage/           # UsageDashboardPage — token/cost summary, breakdown, daily chart
 │   │   ├── Onboarding/      # OnboardingWizard
-│   │   ├── Markdown/        # Markdown renderer
 │   │   ├── Sidebar.tsx
+│   │   ├── LibraryPage.tsx  # Chats | Files tab switcher
 │   │   ├── AllChatsPage.tsx
 │   │   ├── FilesGalleryPage.tsx
 │   │   └── GlobalDropZone.tsx
-│   ├── types/               # chat.ts, tool-call.ts, artifact.ts, project.ts
+│   ├── types/               # chat.ts, tool-call.ts, artifact.ts, project.ts, agent.ts
 │   ├── i18n/                # react-i18next setup, en/ru catalogs
 │   └── utils/               # apiBase (+withToken/disconnect events), tauri, downloadAndOpen, ...
 │
 ├── src-tauri/               # Tauri shell — Rust
 │   ├── src/                 # main.rs (desktop entry) + lib.rs (shared run()) + desktop_backend.rs
 │   └── capabilities/        # default.json, desktop-downloads.json (desktop-only fs write), mobile.json
-└── tests/backend/           # pytest — agent loop, tools, streaming, sandbox, research
+└── tests/backend/           # pytest — agent loop, tools, streaming, sandbox, secrets/redaction, research
 ```
 
 </details>
