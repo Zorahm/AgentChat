@@ -33,7 +33,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from agent.system_prompt import build_system_prompt
+from agent.agent_prompt import build_agent_prompt
+from agent.prompt.modules import PromptBuild
 from api.active_streams import ActiveStreams
 from api.loopback import is_loopback_request
 from api.router import api_router
@@ -200,12 +201,20 @@ def create_app() -> FastAPI:
     # Lets DELETE /chats/{id} wait for a chat's stream to finish before it
     # purges the working folder out from under the running tools.
     app.state.active_streams = ActiveStreams()
-    app.state.system_prompt_factory: Callable[[str], str] = lambda model="": build_system_prompt(
-        user_name=settings_store.user_name,
-        shell=resolve_active_shell(settings_store.shell_preference),
-        model=model,
-        describe_actions=settings_store.describe_actions,
-    )
+    def system_prompt_factory(**kwargs: Any) -> PromptBuild:
+        """Bind the settings-derived inputs; the caller supplies the rest.
+
+        Read lazily on every call so a mid-session change to the user name or
+        the shell preference reaches the next request's prompt.
+        """
+        return build_agent_prompt(
+            user_name=settings_store.user_name,
+            shell=resolve_active_shell(settings_store.shell_preference),
+            describe_actions=settings_store.describe_actions,
+            **kwargs,
+        )
+
+    app.state.system_prompt_factory: Callable[..., PromptBuild] = system_prompt_factory
 
     # --- routers ---
     app.include_router(api_router)

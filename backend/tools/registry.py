@@ -69,6 +69,22 @@ class ToolRegistry:
         """Return all registered tool names."""
         return list(self._tools.keys())
 
+    def describe(self) -> str:
+        """A `- name — description` roster of the registered tools.
+
+        Backs the ``{tools}`` prompt variable, so an agent persona that wants to
+        reason about its own toolset reflects the registry actually assembled
+        for that request — MCP proxies and the web-search overlay included —
+        rather than a list captured when the persona was written. The first
+        line of each description is enough; the full text already ships in the
+        API ``tools`` param.
+        """
+        lines: list[str] = []
+        for tool in self._tools.values():
+            summary = tool.get_definition().function.description.strip().split("\n", 1)[0]
+            lines.append(f"- {tool.name} — {summary}" if summary else f"- {tool.name}")
+        return "\n".join(lines)
+
     def to_openai_schema(self, describe_actions: bool = False) -> list[dict[str, Any]]:
         """Produce the list of OpenAI-compatible tool dicts for LiteLLM."""
         schemas = [tool.get_definition().model_dump() for tool in self._tools.values()]

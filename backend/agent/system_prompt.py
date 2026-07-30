@@ -1,20 +1,22 @@
 """System prompt entry point — a thin wrapper over the module registry.
 
-The body now lives in :mod:`agent.prompt` (a registry of :class:`PromptModule`
-records). This module only gathers the per-request dynamic inputs (resolved
-user name, current day) into a :class:`PromptContext` and assembles them, so the
-long-standing ``build_system_prompt`` signature keeps working for callers.
+The body lives in :mod:`agent.prompt` (a registry of :class:`PromptModule`
+records). This module gathers the per-request dynamic inputs (resolved user
+name, current day and clock) into a :class:`PromptContext` and assembles them,
+so the long-standing ``build_system_prompt`` signature keeps working while
+agent-aware callers can pass a persona and runtime facts as well.
 """
 
 from __future__ import annotations
 
 import os
+import platform
+from collections.abc import Iterable
 from datetime import datetime
 
-from agent.prompt.context import PromptContext
-from agent.prompt.modules import assemble
-from agent.prompt.registry import build_registry
-
+from agent.prompt.context import AgentSpec, PromptContext, RuntimeFacts
+from agent.prompt.modules import PromptBuild, assemble
+from agent.prompt.registry import TOGGLEABLE_MODULES, build_registry
 
 _MONTHS = (
     "January", "February", "March", "April", "May", "June",
@@ -48,6 +50,64 @@ def _format_today(now: datetime) -> str:
     return f"{now:%d} {_MONTHS[now.month - 1]} {now:%Y}"
 
 
+def normalize_disabled(names: Iterable[str]) -> frozenset[str]:
+    """Keep only module names an agent is actually allowed to switch off.
+
+    Silently dropping the rest means a stale settings.json naming a module that
+    has since been renamed (or was never toggleable) can't quietly strip the
+    sandbox rules out of every prompt.
+    """
+    return frozenset(n for n in names if n in TOGGLEABLE_MODULES)
+
+
+def make_context(
+    *,
+    user_name: str = "",
+    shell: str = "wsl",
+    model: str = "",
+    describe_actions: bool = False,
+    show_widget: bool = True,
+    has_skills: bool = True,
+    agent: AgentSpec | None = None,
+    runtime: RuntimeFacts | None = None,
+    now: datetime | None = None,
+) -> PromptContext:
+    """Resolve the per-request inputs into the record the registry renders from.
+
+    ``now`` is injectable so tests and the settings preview can pin the clock;
+    everything else mirrors :func:`build_system_prompt`.
+    """
+    stamp = now or datetime.now()
+    spec = agent or AgentSpec()
+    facts = runtime or RuntimeFacts()
+    return PromptContext(
+        user_name=_resolve_user_name(user_name),
+        shell=shell,
+        model=model,
+        describe_actions=describe_actions,
+        show_widget=show_widget,
+        has_skills=has_skills,
+        today=_format_today(stamp),
+        now_time=f"{stamp:%H:%M}",
+        os_name=facts.os_name or platform.system(),
+        cwd=facts.cwd,
+        tools_block=facts.tools_block,
+        tool_names=facts.tool_names,
+        skills_block=facts.skills_block,
+        mcp_block=facts.mcp_block,
+        lang=facts.lang,
+        agent_name=spec.name,
+        persona=spec.persona,
+        prompt_mode=spec.prompt_mode,
+        disabled_modules=normalize_disabled(spec.disabled_modules),
+    )
+
+
+def build_prompt(ctx: PromptContext) -> PromptBuild:
+    """Assemble *ctx* into text plus its provenance (modules + cache hash)."""
+    return assemble(build_registry(ctx), ctx)
+
+
 def build_system_prompt(
     user_name: str = "",
     shell: str = "wsl",
@@ -56,6 +116,8 @@ def build_system_prompt(
     *,
     show_widget: bool = True,
     has_skills: bool = True,
+    agent: AgentSpec | None = None,
+    runtime: RuntimeFacts | None = None,
 ) -> str:
     """Build the system prompt for one request.
 
@@ -65,14 +127,17 @@ def build_system_prompt(
     ``describe_actions`` mirrors the Settings toggle that adds an ``activity``
     field to tool schemas. ``show_widget`` / ``has_skills`` gate the widget and
     skills sections; both default true so existing callers are unaffected.
+    ``agent`` supplies a persona (appended, or replacing the built-in prompt)
+    and ``runtime`` the facts its ``{…}`` variables interpolate.
     """
-    ctx = PromptContext(
-        user_name=_resolve_user_name(user_name),
+    ctx = make_context(
+        user_name=user_name,
         shell=shell,
         model=model,
         describe_actions=describe_actions,
         show_widget=show_widget,
         has_skills=has_skills,
-        today=_format_today(datetime.now()),
+        agent=agent,
+        runtime=runtime,
     )
-    return assemble(build_registry(ctx), ctx).text
+    return build_prompt(ctx).text

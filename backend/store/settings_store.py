@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import secrets
 from pathlib import Path
+from typing import Any
 
 from llm.api_base import requires_api_key
 from llm.models_fetcher import ModelsFetcher, looks_thinking
@@ -100,6 +101,20 @@ def _resolve_env_api_key(provider_id: str) -> str | None:
     if key:
         return os.environ.get(key)
     return None
+
+
+def _migrate_agent(raw: dict[str, Any]) -> dict[str, Any]:
+    """Bring a persisted agent up to the current schema.
+
+    Before prompt modes, a non-empty ``system_prompt`` always meant "replace the
+    whole built-in prompt". Defaulting those records to the new ``append`` mode
+    would silently change what every existing agent does, so records written
+    before the field existed are pinned to ``replace``.
+    """
+    if "prompt_mode" in raw:
+        return raw
+    legacy_override = bool(str(raw.get("system_prompt", "")).strip())
+    return {**raw, "prompt_mode": "replace" if legacy_override else "append"}
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +346,7 @@ class SettingsStore:
                 if not isinstance(raw_a, dict) or "id" not in raw_a:
                     continue
                 try:
-                    agent = AgentConfig.model_validate(raw_a)
+                    agent = AgentConfig.model_validate(_migrate_agent(raw_a))
                 except Exception as exc:  # noqa: BLE001
                     print(f"[settings] skipping malformed agent {raw_a.get('id')!r}: {exc}")
                     continue
@@ -633,6 +648,8 @@ class SettingsStore:
             color_from=body.color_from,
             color_to=body.color_to,
             system_prompt=body.system_prompt,
+            prompt_mode=body.prompt_mode,
+            disabled_modules=list(body.disabled_modules),
         )
         self._agents[agent.id] = agent
         self._save()
@@ -652,6 +669,10 @@ class SettingsStore:
             agent.color_to = patch.color_to
         if patch.system_prompt is not None:
             agent.system_prompt = patch.system_prompt
+        if patch.prompt_mode is not None:
+            agent.prompt_mode = patch.prompt_mode
+        if patch.disabled_modules is not None:
+            agent.disabled_modules = list(patch.disabled_modules)
         self._save()
         return agent.model_copy()
 
@@ -700,6 +721,15 @@ class SettingsStore:
     @property
     def user_name(self) -> str:
         return self._user_name
+
+    @property
+    def language(self) -> str:
+        """UI language code, or "" when the user never picked one.
+
+        Read by prompt assembly for the ``{lang}`` persona variable — the app
+        does not otherwise tell the model which language the interface is in.
+        """
+        return self._language
 
     @property
     def theme(self) -> str:

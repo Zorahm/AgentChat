@@ -460,21 +460,17 @@ async def chat(
                 extra_body = {}
             extra_body["reasoning_effort"] = body.effort
 
-    # Build fresh system prompt (includes current date + model identity +
-    # artifact instructions). The model id goes in so the assistant knows
-    # which LLM it is when asked.
-    #
-    # An attached agent whose system_prompt is non-empty REPLACES this
-    # entirely — the agent editor warns the user about the risk, and the
-    # skills manifest / project block are still appended after either way
-    # (see agent.loop._build_messages), so those keep working regardless.
+    # Resolve the attached persona. A chat pointing at an agent that was since
+    # deleted falls back to the default one rather than losing its prompt.
+    # The prompt itself is assembled further down, once the tool registry and
+    # the chat's working directory exist — its {tools} / {cwd} variables need
+    # them, and a persona built any earlier would describe a toolset that
+    # doesn't match the one this request actually ships.
     from schemas.agents import DEFAULT_AGENT_ID
 
-    agent = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(DEFAULT_AGENT_ID)
-    if agent is not None and agent.system_prompt.strip():
-        system_prompt: str = agent.system_prompt
-    else:
-        system_prompt = app_state.system_prompt_factory(model)
+    agent_cfg = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(
+        DEFAULT_AGENT_ID
+    )
 
     # Fresh tool set per request: each call stamps its sandbox policy onto the
     # filesystem tools, and multiple chats can now stream at once — sharing one
@@ -537,7 +533,6 @@ async def chat(
                 usage_metadata=usage_metadata,
             )
         )
-        system_prompt = f"{system_prompt}\n\n{_RESEARCH_NUDGE}"
 
     registry: ToolRegistry = (
         MCPAwareRegistry(base_registry, overlay_tools) if overlay_tools else base_registry
@@ -575,6 +570,25 @@ async def chat(
             ]
             await _sync_unextracted_to_sandbox(unextracted, chat_dir, active_shell)
             project_block = _build_project_block(project_ctx, chat_dir, active_shell)
+
+    # Now that the registry, the MCP set and the sandbox path are settled, the
+    # persona's template variables can be resolved against what this request
+    # actually carries. Rebuild the skills index first so {skills} — and the
+    # manifest handed to the loop below — reflect a skill installed a moment ago.
+    app_state.skill_reader.rebuild()
+    skills_manifest = app_state.skill_reader.render_prompt()
+    prompt_build = app_state.system_prompt_factory(
+        agent=agent_cfg,
+        model=model,
+        registry=registry,
+        cwd=str(chat_dir),
+        mcp_names=body.mcp_enabled_servers or [],
+        skills_block=skills_manifest,
+        lang=store.language,
+    )
+    system_prompt = prompt_build.text
+    if research_on:
+        system_prompt = f"{system_prompt}\n\n{_RESEARCH_NUDGE}"
 
     config = AgentConfig(
         model=lite_model,
@@ -629,8 +643,7 @@ async def chat(
         chat_id=body.chat_id or "",
         usage_metadata=usage_metadata,
     )
-    app_state.skill_reader.rebuild()
-    agent.set_manifest(app_state.skill_reader.render_prompt())
+    agent.set_manifest(skills_manifest)
     if project_block:
         agent.set_project_context(project_block)
 
