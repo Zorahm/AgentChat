@@ -87,6 +87,18 @@
   margin: 0 0 4px;
 }
 
+/* Section heading with a control on the trailing edge (the chart's metric
+   switch). Wraps on narrow widths rather than squeezing the title. */
+.usage-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.usage-section-head .usage-section-title { margin: 0; }
+
 .usage-section-hint {
   font-size: 12px;
   color: var(--muted);
@@ -202,6 +214,27 @@
   display: flex;
   align-items: flex-end;
   min-width: 4px;
+  /* A month with two active days must not draw two 300px slabs — cap the width
+     so a sparse period still reads as a bar chart. */
+  max-width: 72px;
+}
+
+/* Day labels under the bars, sharing the chart's flex geometry so each label
+   sits under its own column. */
+.usage-chart-days {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+.usage-chart-day {
+  flex: 1;
+  min-width: 4px;
+  max-width: 72px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .usage-chart-bar {
@@ -247,6 +280,18 @@
 }
 
 .usage-top-chat-row { justify-content: flex-start; text-align: left; }
+
+/* Deleted chats aren't buttons — there's nothing to open. Matches the row
+   metrics of the live list so the two sections read as one scale. */
+.usage-deleted-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.usage-deleted-chat-row svg { flex-shrink: 0; opacity: .65; }
 
 /* Astryx Button's children slot is a plain (non-flex) span — wrap multi-element
    content in our own flex row rather than fighting the button's own box model. */

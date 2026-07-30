@@ -66,7 +66,7 @@ def test_message_usage_null_cost_when_any_call_unpriced(store: UsageStore) -> No
     assert agg["cost_usd"] is None
 
 
-def test_by_model_and_top_chats(store: UsageStore) -> None:
+def test_by_model_and_chat_totals(store: UsageStore) -> None:
     now = int(time.time())
     store.insert_usage(
         chat_id="chat-a", message_id="m1", provider="openai", model="gpt",
@@ -80,8 +80,90 @@ def test_by_model_and_top_chats(store: UsageStore) -> None:
     by_model = store.by_model(now - 10)
     assert by_model[0]["cost"] == 1.5  # ordered by cost desc
 
-    top = store.top_chats(now - 10)
-    assert top[0]["chat_id"] == "chat-a"
+    totals = store.chat_totals(now - 10)
+    assert [r["chat_id"] for r in totals] == ["chat-a", "chat-b"]
+
+
+def test_chat_totals_are_unlimited_so_deleted_chats_cannot_crowd_out_live_ones(
+    store: UsageStore,
+) -> None:
+    # The old query took the top 10 by cost. With a run of deleted chats above
+    # them, live chats never reached the caller at all — the dashboard showed
+    # nine "(deleted chat)" rows and one real one.
+    now = int(time.time())
+    for i in range(15):
+        store.insert_usage(
+            chat_id=f"chat-{i:02d}", message_id=f"m{i}", provider="openai", model="gpt",
+            prompt_tokens=10, completion_tokens=1, cost_usd=1.0, usage_source="api", ts=now,
+        )
+    assert len(store.chat_totals(now - 10)) == 15
+
+
+def test_chat_totals_break_cost_ties_by_call_count(store: UsageStore) -> None:
+    # Local and free-tier models log cost 0, so without a tie-break the order
+    # among them was whatever the group-by happened to emit.
+    now = int(time.time())
+    for chat, calls in (("quiet", 1), ("busy", 4)):
+        for n in range(calls):
+            store.insert_usage(
+                chat_id=chat, message_id=f"{chat}-{n}", provider="local", model="nemotron",
+                prompt_tokens=10, completion_tokens=1, cost_usd=0.0, usage_source="api", ts=now,
+            )
+    totals = store.chat_totals(now - 10)
+    assert [r["chat_id"] for r in totals] == ["busy", "quiet"]
+
+
+def test_chat_totals_skip_rows_with_no_chat(store: UsageStore) -> None:
+    now = int(time.time())
+    store.insert_usage(
+        chat_id="", message_id="m1", provider="openai", model="gpt",
+        prompt_tokens=10, completion_tokens=1, cost_usd=1.0, usage_source="api", ts=now,
+    )
+    assert store.chat_totals(now - 10) == []
+
+
+def test_daily_reports_tokens_even_when_a_provider_costs_nothing(store: UsageStore) -> None:
+    # The dashboard chart plots these. Local and free-tier providers log a real
+    # token count against cost 0, so a chart scaled by cost alone drew nothing
+    # for them — they vanished from a chart whose legend still listed them.
+    now = int(time.time())
+    store.insert_usage(
+        chat_id="c", message_id="m1", provider="anthropic", model="claude",
+        prompt_tokens=100, completion_tokens=20, cost_usd=0.05, usage_source="api", ts=now,
+    )
+    store.insert_usage(
+        chat_id="c", message_id="m2", provider="local", model="nemotron",
+        prompt_tokens=7000, completion_tokens=200, cost_usd=0.0, usage_source="api", ts=now,
+    )
+
+    rows = {r["provider"]: r for r in store.daily(now - 10)}
+    assert rows["local"]["cost"] == 0.0
+    assert rows["local"]["tokens"] == 7200
+    assert rows["anthropic"]["tokens"] == 120
+
+
+@pytest.mark.asyncio
+async def test_top_chats_endpoint_splits_live_from_deleted(store: UsageStore) -> None:
+    from api.usage import top_chats
+
+    now = int(time.time())
+    for chat, cost in (("gone-1", 3.0), ("alive", 2.0), ("gone-2", 1.0)):
+        store.insert_usage(
+            chat_id=chat, message_id=f"m-{chat}", provider="openai", model="gpt",
+            prompt_tokens=10, completion_tokens=1, cost_usd=cost, usage_source="api", ts=now,
+        )
+
+    chat_store = SimpleNamespace(list_chats=lambda: [{"id": "alive", "title": "Still here"}])
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(usage_store=store, chat_store=chat_store))
+    )
+
+    result = await top_chats(request, period="all", limit=10)  # type: ignore[arg-type]
+
+    # The two most expensive chats are deleted; the live one must still show.
+    assert [c["chat_id"] for c in result["chats"]] == ["alive"]
+    assert result["chats"][0]["title"] == "Still here"
+    assert [c["chat_id"] for c in result["deleted"]] == ["gone-1", "gone-2"]
 
 
 def test_manual_pricing_fallback(store: UsageStore) -> None:

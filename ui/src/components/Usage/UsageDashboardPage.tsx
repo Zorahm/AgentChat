@@ -6,10 +6,15 @@ import { useTranslation } from "react-i18next";
 import { ChartBar, ChatCircle } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
-import { ToggleButtonGroup } from "@astryxdesign/core/ToggleButton";
+import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { API_BASE } from "../../utils/apiBase";
 
 type Period = "day" | "week" | "month" | "all";
+
+/** What the daily chart plots. Cost alone hides every provider on a free tier
+ * or a local model — their spend is genuinely $0, so those bars had nothing to
+ * draw and the provider vanished from a chart its own legend still listed. */
+type Metric = "tokens" | "cost";
 
 interface Summary {
   cost: number;
@@ -39,6 +44,13 @@ interface TopChatRow {
   cost: number;
   calls: number;
   title: string | null;
+}
+
+/** Chats that still exist, and spend logged against ones that were deleted.
+ * Kept apart so a run of deleted chats can't crowd the live ones out. */
+interface TopChats {
+  chats: TopChatRow[];
+  deleted: TopChatRow[];
 }
 
 interface Breakdown {
@@ -119,7 +131,8 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [byModel, setByModel] = useState<ByModelRow[]>([]);
   const [daily, setDaily] = useState<DailyRow[]>([]);
-  const [topChats, setTopChats] = useState<TopChatRow[]>([]);
+  const [metric, setMetric] = useState<Metric>("tokens");
+  const [topChats, setTopChats] = useState<TopChats>({ chats: [], deleted: [] });
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +145,7 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
       fetchJson<Summary>(`/usage/summary?period=${period}`),
       fetchJson<ByModelRow[]>(`/usage/by-model?period=${period}`),
       fetchJson<DailyRow[]>(`/usage/daily?period=${period}`),
-      fetchJson<TopChatRow[]>(`/usage/top-chats?period=${period}&limit=10`),
+      fetchJson<TopChats>(`/usage/top-chats?period=${period}&limit=10`),
       fetchJson<Breakdown | null>(`/usage/breakdown?period=${period}`),
     ])
       .then(([s, m, d, c, b]) => {
@@ -159,10 +172,11 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
   const days = useMemo(() => Array.from(new Set(daily.map((r) => r.day))).sort(), [daily]);
   const dayTotals = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const row of daily) totals.set(row.day, (totals.get(row.day) ?? 0) + row.cost);
+    for (const row of daily) totals.set(row.day, (totals.get(row.day) ?? 0) + row[metric]);
     return totals;
-  }, [daily]);
-  const maxDayCost = useMemo(() => Math.max(1e-9, ...Array.from(dayTotals.values())), [dayTotals]);
+  }, [daily, metric]);
+  const maxDay = useMemo(() => Math.max(0, ...Array.from(dayTotals.values())), [dayTotals]);
+  const fmtMetric = metric === "cost" ? fmtCost : fmtTokens;
 
   return (
     <div className="usage-page">
@@ -255,7 +269,18 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
           </section>
 
           <section className="usage-section">
-            <h2 className="usage-section-title">{t("usage.daily.title")}</h2>
+            <div className="usage-section-head">
+              <h2 className="usage-section-title">{t("usage.daily.title")}</h2>
+              <SegmentedControl
+                label={t("usage.daily.metric")}
+                size="sm"
+                value={metric}
+                onChange={(v) => setMetric(v as Metric)}
+              >
+                <SegmentedControlItem value="tokens" label={t("usage.daily.metricTokens")} />
+                <SegmentedControlItem value="cost" label={t("usage.daily.metricCost")} />
+              </SegmentedControl>
+            </div>
             {days.length === 0 ? (
               <EmptyHint loading={loading} text={t("usage.daily.empty")} />
             ) : (
@@ -265,22 +290,39 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
                     const rows = daily.filter((r) => r.day === day);
                     const total = dayTotals.get(day) ?? 0;
                     return (
-                      <div key={day} className="usage-chart-col" title={`${day}: ${fmtCost(total)}`}>
-                        <div className="usage-chart-bar" style={{ height: `${Math.max(2, (total / maxDayCost) * 100)}%` }}>
+                      <div
+                        key={day}
+                        className="usage-chart-col"
+                        title={`${day}: ${fmtMetric(total)}`}
+                      >
+                        {/* A day whose whole spend is $0 (local or free-tier
+                            models) gets no bar rather than the 2% sliver the
+                            old floor drew — that sliver read as "a tiny bit of
+                            activity" when the truth is "activity, no cost". */}
+                        <div
+                          className="usage-chart-bar"
+                          style={{ height: total > 0 ? `${Math.max(2, (total / maxDay) * 100)}%` : "0%" }}
+                        >
                           {rows.map((r) => (
                             <div
                               key={r.provider}
                               className="usage-chart-seg"
                               style={{
-                                height: `${(r.cost / (total || 1)) * 100}%`,
+                                height: `${total > 0 ? (r[metric] / total) * 100 : 0}%`,
                                 background: colorFor(r.provider, providers),
                               }}
+                              title={`${r.provider} · ${fmtMetric(r[metric])}`}
                             />
                           ))}
                         </div>
                       </div>
                     );
                   })}
+                </div>
+                <div className="usage-chart-days">
+                  {days.map((day) => (
+                    <span key={day} className="usage-chart-day">{day.slice(5)}</span>
+                  ))}
                 </div>
                 <div className="usage-legend">
                   {providers.map((p) => (
@@ -290,29 +332,31 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
                     </span>
                   ))}
                 </div>
+                {metric === "cost" && maxDay === 0 && (
+                  <p className="usage-section-hint">{t("usage.daily.allFree")}</p>
+                )}
               </>
             )}
           </section>
 
           <section className="usage-section">
             <h2 className="usage-section-title">{t("usage.topChats.title")}</h2>
-            {topChats.length === 0 ? (
+            {topChats.chats.length === 0 ? (
               <EmptyHint loading={loading} text={t("usage.topChats.empty")} />
             ) : (
               <div className="usage-top-chats">
-                {topChats.map((c) => (
+                {topChats.chats.map((c) => (
                   <Button
                     key={c.chat_id}
-                    label={c.title ?? t("usage.topChats.deletedChat")}
+                    label={c.title ?? ""}
                     variant="ghost"
                     icon={<ChatCircle size={16} />}
                     onClick={() => onGotoChat(c.chat_id)}
-                    isDisabled={!c.title}
                     width="100%"
                     className="usage-top-chat-row"
                   >
                     <span className="usage-top-chat-content">
-                      <span className="usage-top-chat-title">{c.title ?? t("usage.topChats.deletedChat")}</span>
+                      <span className="usage-top-chat-title">{c.title}</span>
                       <span className="usage-top-chat-meta">
                         {fmtCost(c.cost)} · {c.calls} {t("usage.topChats.callsAbbrev")}
                       </span>
@@ -322,6 +366,27 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
               </div>
             )}
           </section>
+
+          {/* Spend against chats that no longer exist. Still real money, so it
+              stays in the totals — but it can't be opened, and mixing it into
+              the list above pushed every live chat out of view. */}
+          {topChats.deleted.length > 0 && (
+            <section className="usage-section">
+              <h2 className="usage-section-title">{t("usage.topChats.deletedTitle")}</h2>
+              <p className="usage-section-hint">{t("usage.topChats.deletedHint")}</p>
+              <div className="usage-top-chats">
+                {topChats.deleted.map((c) => (
+                  <div key={c.chat_id} className="usage-deleted-chat-row">
+                    <ChatCircle size={16} />
+                    <span className="usage-top-chat-title">{t("usage.topChats.deletedChat")}</span>
+                    <span className="usage-top-chat-meta">
+                      {fmtCost(c.cost)} · {c.calls} {t("usage.topChats.callsAbbrev")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>

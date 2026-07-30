@@ -102,10 +102,24 @@ async def delete_pricing(
 
 
 @router.get("/top-chats")
-async def top_chats(request: Request, period: Period = Query("month"), limit: int = Query(10, ge=1, le=50)) -> list[dict]:
+async def top_chats(
+    request: Request, period: Period = Query("month"), limit: int = Query(10, ge=1, le=50)
+) -> dict[str, list[dict]]:
+    """Top chats by cost, split into the ones that still exist and the rest.
+
+    Spend logged against a deleted chat is still real money and stays in the
+    totals, but it can't be opened and it shouldn't push live chats out of the
+    list — so the two are counted separately and ``limit`` applies to each.
+    """
     store = request.app.state.usage_store
-    rows = await asyncio.to_thread(store.top_chats, _from_ts(period), limit)
+    rows = await asyncio.to_thread(store.chat_totals, _from_ts(period))
     # list_chats() skips the (potentially large) root_json blob — cheaper than
     # get_chat() per row for what's just a title lookup.
     titles = {c["id"]: c["title"] for c in request.app.state.chat_store.list_chats()}
-    return [{**row, "title": titles.get(row["chat_id"])} for row in rows]
+
+    live: list[dict] = []
+    deleted: list[dict] = []
+    for row in rows:
+        title = titles.get(row["chat_id"])
+        (live if title is not None else deleted).append({**row, "title": title})
+    return {"chats": live[:limit], "deleted": deleted[:limit]}

@@ -280,13 +280,25 @@ class UsageStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def top_chats(self, from_ts: int, limit: int = 10) -> list[dict[str, Any]]:
+    def chat_totals(self, from_ts: int) -> list[dict[str, Any]]:
+        """Per-chat cost and call counts for the period, biggest first.
+
+        Deliberately unlimited: the caller splits these into surviving and
+        deleted chats, and only it knows which is which. Topping the list here
+        would let a run of deleted chats crowd every live one out of the result
+        — which is exactly what the previous ``LIMIT 10`` did. One period's
+        worth of distinct chat ids is small enough to sort in the caller.
+
+        ``calls`` breaks ties so chats on a free or unpriced model — every cost
+        zero — still come back in a stable, meaningful order instead of
+        whatever the group-by happened to emit.
+        """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT chat_id, COALESCE(SUM(cost_usd), 0) AS cost, COUNT(*) AS calls "
-                "FROM usage_log WHERE ts >= ? AND chat_id IS NOT NULL "
-                "GROUP BY chat_id ORDER BY cost DESC LIMIT ?",
-                (from_ts, limit),
+                "FROM usage_log WHERE ts >= ? AND chat_id IS NOT NULL AND chat_id != '' "
+                "GROUP BY chat_id ORDER BY cost DESC, calls DESC",
+                (from_ts,),
             ).fetchall()
         return [dict(r) for r in rows]
 
