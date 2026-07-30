@@ -10,7 +10,8 @@ only explains it.
 Categories mirror Claude Code's context-window breakdown where AgentChat has
 a direct analogue: system prompt, skills manifest ("Skills"), project
 instructions + extracted files ("Memory files", AgentChat's CLAUDE.md
-equivalent), built-in tool schemas ("System tools"), MCP tool schemas ("MCP
+equivalent), the agent's own remembered facts ("Agent memory" — no Claude Code
+analogue), built-in tool schemas ("System tools"), MCP tool schemas ("MCP
 tools"), prior conversation, and the newest message. There's no equivalent of
 Claude Code's autocompact buffer / deferred-tool slots — AgentChat resends
 the full context every call, it doesn't manage a context budget.
@@ -37,6 +38,7 @@ def estimate_prompt_breakdown(
     tools: list[dict[str, Any]] | None,
     history: list[dict[str, Any]],
     new_user_message: bool,
+    agent_memory: str = "",
 ) -> dict[str, int]:
     """``history`` is ``AgentLoop.messages`` (no system message in it). When
     ``new_user_message`` is True, the trailing user message is split out as
@@ -64,6 +66,11 @@ def estimate_prompt_breakdown(
         return {
             "system": count_text(system_prompt),
             "memory": count_text(project_context),
+            # The agent's own remembered facts. Its own bucket rather than a
+            # share of "memory": that one is the project's files, and folding
+            # the two together would report a persona's recollections as the
+            # user's documents.
+            "agent_memory": count_text(agent_memory),
             "skills": count_text(skills_manifest),
             "tools": count_tools(builtin_tools),
             "mcp_tools": count_tools(mcp_tools),

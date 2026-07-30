@@ -45,6 +45,9 @@ SECRETS_FILE = AGENTS_DIR / "secrets.json"
 CHAT_DB_FILE = AGENTS_DIR / "agentchat.db"
 PROJECT_DB_FILE = AGENTS_DIR / "projects.db"
 USAGE_DB_FILE = AGENTS_DIR / "usage.db"
+# Per-agent remembered facts. Its own database rather than a table in
+# agentchat.db because it outlives chats: purging every chat must not touch it.
+MEMORY_DB_FILE = AGENTS_DIR / "memory.db"
 # Cross-agent shared locations per the Agent Skills convention.
 USER_AGENTS_DIR = Path.home() / ".agents"
 USER_AGENTS_SKILLS_DIR = USER_AGENTS_DIR / "skills"

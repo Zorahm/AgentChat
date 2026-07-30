@@ -16,6 +16,8 @@ from agent.config import AgentConfig
 from agent.loop import AgentLoop
 from agent.sandbox import SandboxPolicy
 from agent.host_exec import host_write_bytes
+from api.agent_runtime import resolve_agent_runtime
+from schemas.agents import DEFAULT_AGENT_ID
 from schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
 from llm.model_tag import retag_model_for_litellm
@@ -427,8 +429,25 @@ async def chat(
     new_message = body.messages[-1].content
     history = body.messages[:-1]
 
-    # Resolve model and provider
-    model = body.model or store.default_model
+    # Resolve the attached persona first — it can pin its own model and its own
+    # temperature, so it has to be known before the provider is looked up. A
+    # chat pointing at an agent that was since deleted falls back to the default
+    # one rather than losing its prompt. The *prompt* is assembled much further
+    # down, once the tool registry and the chat's working directory exist: its
+    # {tools} / {cwd} variables need them, and a persona built any earlier would
+    # describe a toolset that doesn't match the one this request ships.
+    agent_cfg = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(
+        DEFAULT_AGENT_ID
+    )
+    runtime = resolve_agent_runtime(
+        agent=agent_cfg,
+        requested_model=body.model,
+        default_model=store.default_model,
+        default_temperature=store.temperature,
+        memory_store=app_state.memory_store,
+    )
+
+    model = runtime.model
     provider = store.get_provider(model)
 
     if provider is None and "/" in model:
@@ -460,26 +479,27 @@ async def chat(
                 extra_body = {}
             extra_body["reasoning_effort"] = body.effort
 
-    # Resolve the attached persona. A chat pointing at an agent that was since
-    # deleted falls back to the default one rather than losing its prompt.
-    # The prompt itself is assembled further down, once the tool registry and
-    # the chat's working directory exist — its {tools} / {cwd} variables need
-    # them, and a persona built any earlier would describe a toolset that
-    # doesn't match the one this request actually ships.
-    from schemas.agents import DEFAULT_AGENT_ID
-
-    agent_cfg = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(
-        DEFAULT_AGENT_ID
-    )
-
+    # The agent's tool policy governs everything wired below. `full` is the
+    # only policy that gets the built-in tools, the MCP proxies, web search and
+    # research; `memory_only` and `none` stop at the memory tools (which the
+    # factory adds when — and only when — a store is passed).
+    #
     # Fresh tool set per request: each call stamps its sandbox policy onto the
     # filesystem tools, and multiple chats can now stream at once — sharing one
     # set would let their policies race. See tools.factory.build_tool_registry.
     from tools.factory import build_tool_registry
 
-    base_registry: ToolRegistry = build_tool_registry(app_state.skill_reader)
-    mcp_proxies = await _build_mcp_proxies(
-        body.mcp_enabled_servers, store, app_state.mcp_manager
+    base_registry: ToolRegistry = build_tool_registry(
+        app_state.skill_reader,
+        tool_policy=runtime.tool_policy,
+        memory_store=runtime.memory_store,
+        agent_id=runtime.agent_id,
+        chat_id=body.chat_id or "",
+    )
+    mcp_proxies = (
+        await _build_mcp_proxies(body.mcp_enabled_servers, store, app_state.mcp_manager)
+        if runtime.allows_overlays
+        else []
     )
 
     # ── web search wiring ───────────────────────────────────────────────
@@ -504,7 +524,7 @@ async def chat(
         "canonical_model": model,
         "context": "chat",
     }
-    if body.web_search_enabled:
+    if body.web_search_enabled and runtime.allows_overlays:
         ws_service = app_state.web_search_service
         ws_config = build_web_search_config(store)
         requested = body.web_search_mode or store.web_search_mode
@@ -520,7 +540,7 @@ async def chat(
     # and run on its own models: a lead that plans and synthesizes, and cheaper
     # workers for the parallel digging. It resolves a web backend itself
     # (independently of the chat model + web-search toggle above).
-    research_on = (
+    research_on = runtime.allows_overlays and (
         body.research_enabled if body.research_enabled is not None else store.research_enabled
     )
     if research_on:
@@ -577,6 +597,7 @@ async def chat(
     # manifest handed to the loop below — reflect a skill installed a moment ago.
     app_state.skill_reader.rebuild()
     skills_manifest = app_state.skill_reader.render_prompt()
+
     prompt_build = app_state.system_prompt_factory(
         agent=agent_cfg,
         model=model,
@@ -585,6 +606,7 @@ async def chat(
         mcp_names=body.mcp_enabled_servers or [],
         skills_block=skills_manifest,
         lang=store.language,
+        agent_memory=runtime.memory_block,
     )
     system_prompt = prompt_build.text
     if research_on:
@@ -595,7 +617,7 @@ async def chat(
         system_prompt=system_prompt,
         api_key=api_key,
         api_base=api_base,
-        temperature=store.temperature,
+        temperature=runtime.temperature,
         max_iterations=store.max_iterations,
         extra_body=extra_body,
         extra_headers=extra_headers,
@@ -646,6 +668,8 @@ async def chat(
     agent.set_manifest(skills_manifest)
     if project_block:
         agent.set_project_context(project_block)
+    if runtime.appended_memory:
+        agent.set_agent_memory(runtime.appended_memory)
 
     agent.messages.extend(build_agent_messages(history))
 

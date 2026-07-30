@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from agent.prompt import variables
 from agent.prompt.context import AgentSpec, RuntimeFacts
 from agent.prompt.modules import PromptBuild
 from agent.system_prompt import build_prompt, make_context
@@ -38,6 +39,8 @@ def _facts(
     mcp_names: Sequence[str],
     skills_block: str,
     lang: str,
+    user_persona: str,
+    agent_memory: str,
 ) -> RuntimeFacts:
     return RuntimeFacts(
         cwd=cwd,
@@ -46,6 +49,8 @@ def _facts(
         skills_block=skills_block,
         mcp_block=", ".join(mcp_names),
         lang=lang,
+        user_persona=user_persona,
+        agent_memory=agent_memory,
     )
 
 
@@ -63,6 +68,7 @@ def build_agent_prompt(
     mcp_names: Sequence[str] = (),
     skills_block: str = "",
     lang: str = "",
+    agent_memory: str = "",
 ) -> PromptBuild:
     """Assemble the system prompt for *agent* (or the built-in one when None).
 
@@ -70,6 +76,10 @@ def build_agent_prompt(
     logs ``active_modules`` and ``cache_prefix_hash``, and the editor shows them.
     Passing ``registry`` late — after the per-request tool set, MCP proxies and
     the sandbox path are known — is what makes ``{tools}`` and ``{cwd}`` truthful.
+
+    ``agent_memory`` only reaches the prompt through an explicit ``{memory}``
+    in the persona; otherwise the caller appends the block after assembly (see
+    ``AgentLoop.set_agent_memory``) so it stays out of the cacheable prefix.
     """
     ctx = make_context(
         user_name=user_name,
@@ -79,6 +89,47 @@ def build_agent_prompt(
         show_widget=show_widget,
         has_skills=has_skills,
         agent=_spec(agent),
-        runtime=_facts(registry, cwd, mcp_names, skills_block, lang),
+        runtime=_facts(
+            registry,
+            cwd,
+            mcp_names,
+            skills_block,
+            lang,
+            agent.user_persona if agent is not None else "",
+            agent_memory,
+        ),
     )
     return build_prompt(ctx)
+
+
+def render_agent_text(
+    text: str,
+    *,
+    agent: AgentConfig | None,
+    user_name: str,
+    shell: str,
+    lang: str = "",
+) -> str:
+    """Substitute an agent's template variables in a standalone string.
+
+    For text that is not part of the system prompt — today, the greeting.
+    Rendering it here rather than in the UI keeps one implementation of the
+    variable syntax: a second one in TypeScript would drift the first time a
+    variable is added, and would have to be taught which ones are volatile.
+
+    Tool- and sandbox-derived variables resolve to empty: a greeting is
+    written before any chat (and therefore any working directory or registry)
+    exists.
+    """
+    if not text:
+        return ""
+    ctx = make_context(
+        user_name=user_name,
+        shell=shell,
+        agent=_spec(agent),
+        runtime=RuntimeFacts(
+            lang=lang,
+            user_persona=agent.user_persona if agent is not None else "",
+        ),
+    )
+    return variables.render(text, ctx)

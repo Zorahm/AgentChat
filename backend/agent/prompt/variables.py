@@ -71,9 +71,15 @@ CATALOG: dict[str, VariableSpec] = {
         _spec("skills", lambda c: c.skills_block),
         _spec("mcp", lambda c: c.mcp_block),
         _spec("lang", lambda c: c.lang),
+        _spec("user_persona", lambda c: c.user_persona),
         _spec("date", lambda c: c.today, volatile=True),
         _spec("time", lambda c: c.now_time, volatile=True),
         _spec("model", lambda c: c.model, volatile=True),
+        # Volatile because the agent rewrites it mid-conversation: the turn
+        # after a `remember` call the block differs, and any cached prefix
+        # containing it would be invalidated anyway. Marking it here is what
+        # lets split_volatile keep the persona's stable head cacheable.
+        _spec("memory", lambda c: c.agent_memory, volatile=True),
     )
 }
 
@@ -117,6 +123,18 @@ def unknown_names(text: str) -> tuple[str, ...]:
 def is_volatile(text: str) -> bool:
     """True when *text* references a variable that changes between requests."""
     return any(name in VOLATILE_NAMES for name in used_names(text))
+
+
+def references(text: str, name: str) -> bool:
+    """True when *text* actually interpolates the catalog variable *name*.
+
+    Used to let an explicit ``{memory}`` in a persona suppress the block the
+    chat route would otherwise append: placed twice, the model reads its own
+    memory in two places and treats the second copy as a separate, competing
+    set of facts. Goes through :func:`used_names` rather than a substring
+    check so prose braces and JSON in a persona never count as a placement.
+    """
+    return name in used_names(text)
 
 
 def split_volatile(text: str) -> tuple[str, str]:

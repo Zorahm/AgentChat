@@ -47,6 +47,11 @@ class RuntimeFacts:
     skills_block: str = ""
     mcp_block: str = ""
     lang: str = ""
+    # Who the user is playing, from the agent record. Session-stable.
+    user_persona: str = ""
+    # The rendered core-memory block. Changes the moment the agent remembers
+    # something, so the {memory} variable that exposes it is marked volatile.
+    agent_memory: str = ""
 
 
 @dataclass(frozen=True)
@@ -87,10 +92,15 @@ class PromptContext:
     skills_block: str = ""
     mcp_block: str = ""
     lang: str = ""
+    user_persona: str = ""
     # Clock time down to the minute. Poison for the cache prefix by design —
     # only ever reachable through the {time} variable, never rendered by a
     # built-in module.
     now_time: str = ""
+    # Same deal as now_time: reachable only through the volatile {memory}
+    # variable. When a persona doesn't place it, api.chat appends the block
+    # after the assembled prompt instead — see AgentLoop.set_agent_memory.
+    agent_memory: str = ""
 
     # ── agent persona ─────────────────────────────────────────────────────
     agent_name: str = ""

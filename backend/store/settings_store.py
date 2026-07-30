@@ -640,41 +640,41 @@ class SettingsStore:
         return a.model_copy() if a is not None else None
 
     def add_agent(self, body: AgentCreate) -> AgentConfig:
+        """``AgentCreate`` and ``AgentConfig`` share ``AgentFields``, so the
+        record copies across wholesale — no per-field list to forget to extend.
+        """
         if body.id in self._agents:
             raise ValueError(f"Agent '{body.id}' already exists")
-        agent = AgentConfig(
-            id=body.id,
-            name=body.name,
-            color_from=body.color_from,
-            color_to=body.color_to,
-            system_prompt=body.system_prompt,
-            prompt_mode=body.prompt_mode,
-            disabled_modules=list(body.disabled_modules),
-        )
+        agent = AgentConfig.model_validate(body.model_dump())
         self._agents[agent.id] = agent
         self._save()
         return agent.model_copy()
 
     def update_agent(self, agent_id: str, patch: AgentUpdate) -> AgentConfig:
+        """Merge *patch* onto the stored record and re-validate the result.
+
+        ``exclude_unset`` is what distinguishes "not sent" from "sent as null":
+        the first leaves a field alone, the second applies — which is the only
+        way ``temperature`` can be handed back to the global setting. Merging
+        and re-validating (rather than assigning field by field) also means the
+        cross-field rules in ``AgentFields`` run on every edit, so a patch can
+        never write a record that fails to load on the next boot.
+
+        The resulting ``ValidationError`` is a ``ValueError`` subclass; the
+        route catches it first and answers 400, leaving plain ``ValueError``
+        to mean "no such agent".
+        """
         if agent_id == DEFAULT_AGENT_ID:
             raise PermissionError("The default agent cannot be edited")
         agent = self._agents.get(agent_id)
         if agent is None:
             raise ValueError(f"Unknown agent: {agent_id}")
-        if patch.name is not None:
-            agent.name = patch.name
-        if patch.color_from is not None:
-            agent.color_from = patch.color_from
-        if patch.color_to is not None:
-            agent.color_to = patch.color_to
-        if patch.system_prompt is not None:
-            agent.system_prompt = patch.system_prompt
-        if patch.prompt_mode is not None:
-            agent.prompt_mode = patch.prompt_mode
-        if patch.disabled_modules is not None:
-            agent.disabled_modules = list(patch.disabled_modules)
+        merged = AgentConfig.model_validate(
+            {**agent.model_dump(), **patch.model_dump(exclude_unset=True)}
+        )
+        self._agents[agent_id] = merged
         self._save()
-        return agent.model_copy()
+        return merged.model_copy()
 
     def remove_agent(self, agent_id: str) -> None:
         if agent_id == DEFAULT_AGENT_ID:

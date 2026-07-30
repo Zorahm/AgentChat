@@ -96,6 +96,8 @@ def make_context(
         skills_block=facts.skills_block,
         mcp_block=facts.mcp_block,
         lang=facts.lang,
+        user_persona=facts.user_persona,
+        agent_memory=facts.agent_memory,
         agent_name=spec.name,
         persona=spec.persona,
         prompt_mode=spec.prompt_mode,

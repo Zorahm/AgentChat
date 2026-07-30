@@ -44,6 +44,7 @@ from paths import (
     BUILD_VERSION,
     CHAT_DB_FILE,
     DATA_DIR_IS_OVERRIDDEN,
+    MEMORY_DB_FILE,
     PROJECT_DB_FILE,
     SECRETS_FILE,
     SETTINGS_FILE,
@@ -55,6 +56,7 @@ from shell import resolve_active_shell
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
+from store.memory_store import MemoryStore
 from store.project_store import ProjectStore
 from store.secret_store import SecretStore
 from store.settings_store import SettingsStore
@@ -100,6 +102,7 @@ def create_app() -> FastAPI:
     chat_store = ChatStore(CHAT_DB_FILE)
     project_store = ProjectStore(PROJECT_DB_FILE)
     usage_store = UsageStore(USAGE_DB_FILE)
+    memory_store = MemoryStore(MEMORY_DB_FILE)
 
     # LiteLLM usage/cost logging — one callback covers every provider, streaming
     # and non-streaming alike. See llm/usage_logging.py.
@@ -194,6 +197,7 @@ def create_app() -> FastAPI:
     app.state.chat_store = chat_store
     app.state.project_store = project_store
     app.state.usage_store = usage_store
+    app.state.memory_store = memory_store
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager

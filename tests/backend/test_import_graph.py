@@ -31,8 +31,11 @@ STANDALONE_MODULES = [
     "schemas.chat",
     "schemas.mcp",
     "schemas.skills",
+    "schemas.memory",
     "store.settings_store",
     "store.settings_io",
+    "store.memory_store",
+    "tools.memory_tools",
     "llm.model_tag",
     "llm.models_fetcher",
     "mcp_integration.registry_view",
@@ -105,7 +108,7 @@ def test_schemas_package_stays_a_leaf() -> None:
     }
     result = _run_in_fresh_interpreter(
         "import schemas.settings, schemas.agents, schemas.chat, schemas.mcp, "
-        "schemas.skills, schemas.redaction, sys\n"
+        "schemas.skills, schemas.redaction, schemas.memory, sys\n"
         f"app = {app_packages!r}\n"
         "leaked = sorted(m for m in sys.modules if m.split('.')[0] in app)\n"
         "assert not leaked, f'schemas pulled app layers: {leaked}'"

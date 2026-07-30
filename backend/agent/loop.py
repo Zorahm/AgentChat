@@ -148,6 +148,19 @@ def _strip_image_blocks(messages: list[dict[str, Any]], error: str) -> bool:
     return found
 
 
+# Tool names the two documentation tails in _build_messages belong to. Kept
+# here as plain strings rather than imported from tools.factory: the loop must
+# not pull the whole tool package (and its subprocess plumbing) in just to name
+# two of them. tests/backend/test_prompt_capability_leak.py builds a real
+# registry and checks these still match.
+READ_SKILL_TOOL = "read_skill"
+# Tools whose contract is written in terms of the chat working directory —
+# bash cd's into it, the file tools resolve relative paths against it.
+WORKSPACE_TOOLS: frozenset[str] = frozenset(
+    {"bash_tool", "read_file", "write_file", "edit_file"}
+)
+
+
 class AgentLoop:
     """Orchestrates the agentic loop: call LLM, execute tools, repeat.
 
@@ -181,6 +194,7 @@ class AgentLoop:
         self.steps: list[dict[str, Any]] = []
         self._manifest_text: str = ""
         self._project_context_text: str = ""
+        self._agent_memory_text: str = ""
         self._chat_id: str = chat_id
         # Forwarded to every LiteLLM call as `metadata=` so the usage/cost
         # logging callback (llm/usage_logging.py) can attribute the call to a
@@ -190,6 +204,14 @@ class AgentLoop:
 
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
+
+    def _has_tool(self, name: str) -> bool:
+        """Whether *name* was registered for this request.
+
+        The registry is the single source of truth for what the agent can do,
+        so the prompt asks it rather than re-deriving the tool policy.
+        """
+        return self.tools.get(name) is not None
 
     def _absolutize_tool_paths(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         """Rewrite a file tool's path arg(s) from chat-relative to absolute.
@@ -258,6 +280,7 @@ class AgentLoop:
                         if cwd_line else self.config.system_prompt
                     ),
                     project_context=self._project_context_text,
+                    agent_memory=self._agent_memory_text,
                     skills_manifest=self._manifest_text,
                     tools=tool_defs_or_none,
                     history=self.messages,
@@ -526,6 +549,14 @@ class AgentLoop:
         """
         self._project_context_text = text
 
+    def set_agent_memory(self, text: str) -> None:
+        """Update the agent's core-memory block. Call before ``run()``.
+
+        Skipped by ``api.chat`` when the persona places ``{memory}`` itself —
+        two copies of the same facts read to the model as two competing sets.
+        """
+        self._agent_memory_text = text
+
     # ------------------------------------------------------------------
     # internal helpers
     # ------------------------------------------------------------------
@@ -536,16 +567,33 @@ class AgentLoop:
 
         The full prompt body now lives in ``build_system_prompt``; here we only
         append the per-request dynamic tails: project instructions, the
-        installed-skills manifest, and the chat's working directory.
+        installed-skills manifest, the chat's working directory, and the
+        agent's memory.
+
+        Order is load-bearing. Providers cache the longest identical *head* of
+        a request, so the parts are appended least- to most-volatile: memory
+        goes last because it changes the moment the agent remembers anything,
+        and everything placed after it would be re-billed on that turn too.
+
+        Two of these tails are *tool documentation* and are gated on the tool
+        actually being registered for this request. A roleplay agent
+        (``tool_policy="memory_only"``) used to receive the whole skills
+        catalogue and its working directory regardless: a 47-character persona
+        against 5 kB of text whose first entry describes "AgentChat itself, the
+        app they are using right now", plus a path with the product name in it.
+        The character introduced itself as AgentChat, which is the only honest
+        reading of the prompt it was given.
         """
         result: list[dict[str, Any]] = []
         prompt = self.config.system_prompt
         if self._project_context_text:
             prompt = f"{prompt}\n\n{self._project_context_text}"
-        if self._manifest_text:
+        if self._manifest_text and self._has_tool(READ_SKILL_TOOL):
             prompt = f"{prompt}\n\n{self._manifest_text}"
-        if self._policy.chat_dir:
+        if self._policy.chat_dir and any(self._has_tool(n) for n in WORKSPACE_TOOLS):
             prompt = f"{prompt}\n\nCurrent working directory: {self._policy.chat_dir}"
+        if self._agent_memory_text:
+            prompt = f"{prompt}\n\n{self._agent_memory_text}"
         if prompt:
             result.append({"role": "system", "content": prompt})
         result.extend(self.messages)
