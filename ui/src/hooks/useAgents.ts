@@ -2,13 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
-import type { Agent } from "../types/agent";
+import type { Agent, AgentEditorMeta, AgentPreview, PromptMode } from "../types/agent";
+
+const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [] };
 
 export interface AgentPatch {
   name?: string;
   color_from?: string;
   color_to?: string;
   system_prompt?: string;
+  prompt_mode?: PromptMode;
+  disabled_modules?: string[];
+}
+
+/** The unsaved editor state a preview is assembled from. */
+export interface AgentDraft {
+  name: string;
+  system_prompt: string;
+  prompt_mode: PromptMode;
+  disabled_modules: string[];
 }
 
 export interface UseAgentsResult {
@@ -18,7 +30,8 @@ export interface UseAgentsResult {
   createAgent: (id: string, name: string) => Promise<Agent | null>;
   updateAgent: (id: string, patch: AgentPatch) => Promise<Agent | null>;
   deleteAgent: (id: string) => Promise<void>;
-  fetchDefaultPrompt: () => Promise<string>;
+  fetchEditorMeta: () => Promise<AgentEditorMeta>;
+  fetchPreview: (draft: AgentDraft) => Promise<AgentPreview | null>;
 }
 
 export function useAgents(): UseAgentsResult {
@@ -91,16 +104,40 @@ export function useAgents(): UseAgentsResult {
     [refresh],
   );
 
-  const fetchDefaultPrompt = useCallback(async (): Promise<string> => {
+  const fetchEditorMeta = useCallback(async (): Promise<AgentEditorMeta> => {
     try {
-      const r = await fetch(`${API_BASE}/agents/default-prompt`);
-      if (!r.ok) return "";
-      const data = (await r.json()) as { prompt: string };
-      return data.prompt;
+      const r = await fetch(`${API_BASE}/agents/variables`);
+      if (!r.ok) return EMPTY_META;
+      return (await r.json()) as AgentEditorMeta;
     } catch {
-      return "";
+      return EMPTY_META;
     }
   }, []);
 
-  return { agents, loading, refresh, createAgent, updateAgent, deleteAgent, fetchDefaultPrompt };
+  /** Assemble the prompt this draft would produce, using the same backend path
+   * the chat route uses — so what the editor shows is what actually runs. */
+  const fetchPreview = useCallback(async (draft: AgentDraft): Promise<AgentPreview | null> => {
+    try {
+      const r = await fetch(`${API_BASE}/agents/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      if (!r.ok) return null;
+      return (await r.json()) as AgentPreview;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  return {
+    agents,
+    loading,
+    refresh,
+    createAgent,
+    updateAgent,
+    deleteAgent,
+    fetchEditorMeta,
+    fetchPreview,
+  };
 }

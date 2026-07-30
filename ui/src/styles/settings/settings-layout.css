@@ -32,10 +32,11 @@
   font-family: var(--font-mono); font-size: 10.5px; color: var(--faint);
   letter-spacing: .3px;
   display: flex; align-items: center; gap: 8px;
+  width: 100%; background: transparent; text-align: left; cursor: pointer;
+  transition: color .15s;
 }
-.st2-nav-dot {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
-}
+.st2-nav-foot:hover { color: var(--ink-soft); }
+.st2-nav-foot-ver { margin-left: auto; }
 
 .st2-group {
   font-family: var(--font-mono);

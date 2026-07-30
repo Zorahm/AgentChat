@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, Robot, CaretLeft, CaretRight, X as XIcon } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { API_BASE } from "../../utils/apiBase";
+import { useBackendStatus, type BackendState } from "../../hooks/useBackendStatus";
 import { useSettings } from "../../contexts/SettingsContext";
 import { SkillsManager } from "../Skills/SkillsManager";
 import { ProfileTab } from "./tabs/ProfileTab";
@@ -17,7 +19,7 @@ import { ModelsTab } from "./tabs/ModelsTab";
 import { PathsTab } from "./tabs/PathsTab";
 import { AboutTab } from "./tabs/AboutTab";
 import { MCPTab } from "./tabs/MCPTab";
-import { AgentsTab } from "./tabs/AgentsTab";
+import { AgentsTab } from "./tabs/agents/AgentsTab";
 import { ShortcutsTab } from "./tabs/ShortcutsTab";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
@@ -266,9 +268,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
         <NavItem t="agents" cur={tab} label={t("settings.nav.agents")} ic={<Robot size={16} />} onClick={handleTabClick} />
 
         <div className="st2-nav-pad" />
-        <div className="st2-nav-foot">
-          <span className="st2-nav-dot" />
-        </div>
+        <BackendStatusFoot />
       </nav>
 
       {isMobile && mobileShowList ? (
@@ -340,6 +340,36 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
 
 function NavItem({ t, cur, label, ic, onClick }: { t: NavTab; cur: NavTab; label: string; ic: React.ReactNode; onClick: (v: NavTab) => void }) {
   return <a className={`st2-nav-item${cur === t ? " active" : ""}`} onClick={() => onClick(t)}><span className="st2-nav-ic">{ic}</span>{label}</a>;
+}
+
+const BACKEND_DOT: Record<BackendState, "success" | "error" | "neutral"> = {
+  online: "success",
+  offline: "error",
+  checking: "neutral",
+};
+
+/** Real backend reachability, not decoration — click to re-check immediately. */
+function BackendStatusFoot() {
+  const { t } = useTranslation();
+  const { state, version, refresh } = useBackendStatus();
+  const label = t(`settings.backendStatus.${state}`);
+
+  return (
+    <button
+      type="button"
+      className="st2-nav-foot"
+      onClick={refresh}
+      title={t("settings.backendStatus.recheck")}
+    >
+      <StatusDot
+        variant={BACKEND_DOT[state]}
+        label={label}
+        isPulsing={state === "checking"}
+      />
+      <span>{label}</span>
+      {state === "online" && version && <span className="st2-nav-foot-ver">v{version}</span>}
+    </button>
+  );
 }
 
 /* ── Loading / Error ───────────────── */
