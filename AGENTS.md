@@ -86,7 +86,8 @@ AgentChat/
 │   │   ├── models_routes.py    # GET /api/models
 │   │   ├── mcp.py              # MCP server management routes
 │   │   ├── projects.py         # Projects CRUD
-│   │   ├── agents.py           # Agent-persona CRUD (name, gradient avatar, system-prompt override)
+│   │   ├── agents.py           # Agent-persona CRUD + memory CRUD + rendered greeting
+│   │   ├── agent_runtime.py    # resolve_agent_runtime() — model/temperature/tool-policy/memory the agent contributes
 │   │   ├── remote.py           # Remote access (token, toggle, QR)
 │   │   ├── searxng.py          # SearXNG proxy
 │   │   ├── win_deps.py         # Windows dependency detection
@@ -102,7 +103,8 @@ AgentChat/
 │   │   ├── settings.py         # Settings schemas; ProviderPublic is the only shape sent over HTTP
 │   │   ├── redaction.py        # MASK + redact_map/unredact_map for secret-bearing maps
 │   │   ├── skills.py           # Skills schemas
-│   │   └── agents.py           # Agent-persona schemas
+│   │   ├── agents.py           # Agent-persona schemas (AgentFields base; tool policy, RP fields)
+│   │   └── memory.py           # Agent-memory contracts (MemoryFact/Create/Update)
 │   ├── agent/                  # Agent core logic
 │   │   ├── loop.py             # AgentLoop — run_stream() is the main path
 │   │   ├── config.py           # AgentConfig dataclass
@@ -152,6 +154,7 @@ AgentChat/
 │   │   ├── ask_user.py         # AskUserTool — pauses the turn for user input
 │   │   ├── research_tool.py    # ResearchTool — model-written brief → research/lead
 │   │   ├── show_widget.py      # ShowWidgetTool — inline HTML/SVG visualizations
+│   │   ├── memory_tools.py     # remember/recall/forget — bound to one agent per request
 │   │   ├── web_search_tool.py  # WebSearchTool
 │   │   └── web_fetch_tool.py   # WebFetchTool
 │   ├── llm/                    # LLM client layer
@@ -172,7 +175,8 @@ AgentChat/
 │   │   ├── settings_store.py   # Settings state + validation policy
 │   │   ├── settings_io.py      # settings.json format: atomic I/O + secret split/merge
 │   │   ├── secret_store.py     # Named secrets — OS keychain, 0600 file fallback
-│   │   └── usage_store.py      # SQLite usage/cost log (usage_log + model_pricing tables)
+│   │   ├── usage_store.py      # SQLite usage/cost log (usage_log + model_pricing tables)
+│   │   └── memory_store.py     # SQLite agent memory + FTS5; core() is the ranked always-on window, search() the archive
 │   ├── web_search/             # Web search module
 │   │   ├── config.py           # Provider config (native/Tavily/SearXNG)
 │   │   └── service.py          # WebSearchService — routes to active provider
