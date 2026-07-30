@@ -21,6 +21,7 @@ import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
 import { API_BASE, getBackendOverride, onBackendDisconnected, resetBackendDisconnected } from "./utils/apiBase";
 import { isAndroidTauri } from "./utils/tauri";
+import { shouldPlayGreeting } from "./utils/agentGreeting";
 import { setNotifySoundEnabled, setNotifySound, playNotificationSound } from "./utils/notify";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
@@ -282,11 +283,20 @@ export function App() {
 
   // Agent selection is per-chat only (unlike web search/research) — no
   // global sticky default to persist, just update the active session.
+  //
+  // Attaching an agent that has an opening line also plays it, so a roleplay
+  // chat starts in the character's voice rather than on an empty screen.
+  // seedGreeting no-ops unless the chat is still empty, so switching agents
+  // mid-conversation stays silent.
   const handleAgentChange = useCallback(
     (agentId: string) => {
       chats.setAgent(agentId);
+      const agent = agents.agents.find((a) => a.id === agentId);
+      if (shouldPlayGreeting(agent)) {
+        void agents.fetchGreeting(agentId).then(chats.seedGreeting);
+      }
     },
-    [chats],
+    [chats, agents],
   );
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);

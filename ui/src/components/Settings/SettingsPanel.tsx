@@ -327,7 +327,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
           {tab === "paths" && <PathsTab />}
           {tab === "skills" && <SkillsManager />}
           {tab === "mcp" && <MCPTab />}
-          {tab === "agents" && <AgentsTab />}
+          {tab === "agents" && <AgentsTab settings={settings} />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
         </div>

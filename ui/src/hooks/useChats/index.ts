@@ -138,6 +138,8 @@ export interface UseChatResult {
   /** Agent profile attached to the active chat ("default" when unset). */
   activeAgentId: string;
   setAgent: (agentId: string) => void;
+  /** Write an agent's opening line into the active chat, if it is still empty. */
+  seedGreeting: (text: string) => void;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -580,6 +582,7 @@ export function useChats(): UseChatResult {
                     breakdown: {
                       system: Number(rawBreakdown.system ?? 0),
                       memory: Number(rawBreakdown.memory ?? 0),
+                      agentMemory: Number(rawBreakdown.agent_memory ?? 0),
                       skills: Number(rawBreakdown.skills ?? 0),
                       tools: Number(rawBreakdown.tools ?? 0),
                       mcpTools: Number(rawBreakdown.mcp_tools ?? 0),
@@ -1126,6 +1129,40 @@ export function useChats(): UseChatResult {
     [activeId],
   );
 
+  /** Write an agent's opening line into the active chat as its first message.
+   *
+   * No model call — the text is already rendered by the backend. It goes into
+   * the tree as a normal assistant node so it becomes part of the history the
+   * next turn sends, which is the point: the character has spoken, and the
+   * model must see that it did.
+   *
+   * Only ever lands in an *empty* chat. The guard lives here rather than at
+   * the call site because attaching an agent mid-conversation is a normal
+   * thing to do, and a greeting appearing between two exchanges reads as the
+   * model losing its place.
+   */
+  const seedGreeting = useCallback(
+    (text: string) => {
+      const body = text.trim();
+      if (!body) return;
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== activeId || s.root.length > 0) return s;
+          const node: AssistantNode = {
+            id: newId(),
+            role: "assistant",
+            variants: [
+              { id: newId(), content: body, createdAt: Date.now(), children: [] },
+            ],
+            activeVariantIdx: 0,
+          };
+          return { ...s, root: [node] };
+        }),
+      );
+    },
+    [activeId],
+  );
+
   const pinChat = useCallback((id: string) => {
     // localStorage read/write must happen here, once — not inside the
     // setSessions updater below, which StrictMode double-invokes in dev and
@@ -1185,6 +1222,7 @@ export function useChats(): UseChatResult {
     setResearch,
     setResearchDefault,
     setAgent,
+    seedGreeting,
     setThinkingDefault,
     setEffortDefault,
   };

@@ -147,8 +147,20 @@ export function ModelSelector({
     </div>
   );
 
+  // An agent that pins a model wins over this picker (see api/agent_runtime).
+  // Without saying so, changing the model here looks broken.
+  const pinnedNote = currentAgent?.model ? (
+    <div className="ms-pinned-note">
+      {t("chat.model_pinned_by_agent", {
+        agent: currentAgent.name,
+        model: currentAgent.model,
+      })}
+    </div>
+  ) : null;
+
   const renderMobileContent = () => (
     <div className="ms-panel ms-panel--sheet">
+      {pinnedNote}
       <div className="ms-list" onClick={() => setSub(null)}>
         {topModels.map(renderItem)}
       </div>
@@ -322,6 +334,7 @@ export function ModelSelector({
         content={
           <div className={`ms-menu${dropUp ? "" : " ms-menu--down"}`}>
             <div className="ms-panel">
+              {pinnedNote}
               <div className="ms-list" onMouseEnter={() => setSub(null)}>
                 {topModels.map(renderItem)}
               </div>

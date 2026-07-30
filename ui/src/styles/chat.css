@@ -655,3 +655,10 @@ a.support-line-val:hover { color: var(--accent); text-decoration: underline; }
 .iter-exhausted-actions {
   display: flex; gap: 8px; flex-wrap: wrap;
 }
+
+/* Shown when the attached agent pins its own model — without it, changing the
+   model in this picker looks like it silently did nothing. */
+.ms-pinned-note {
+  padding: 8px 11px; font-size: 11.5px; line-height: 1.4;
+  color: var(--muted); border-bottom: 1px solid var(--line);
+}

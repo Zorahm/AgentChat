@@ -61,16 +61,18 @@ interface Breakdown {
   mcp_tools: number;
   history: number;
   message: number;
+  agent_memory: number;
 }
 
 // Order matches roughly biggest-to-smallest in the common case. i18n keys are
 // camelCase ("mcpTools") while the API/DB keys stay snake_case ("mcp_tools").
 const BREAKDOWN_KEYS: readonly (keyof Breakdown)[] = [
-  "system", "tools", "mcp_tools", "memory", "skills", "history", "message",
+  "system", "tools", "mcp_tools", "memory", "agent_memory", "skills", "history", "message",
 ];
 const BREAKDOWN_I18N_KEY: Record<keyof Breakdown, string> = {
   system: "system",
   memory: "memory",
+  agent_memory: "agentMemory",
   skills: "skills",
   tools: "tools",
   mcp_tools: "mcpTools",
@@ -82,6 +84,7 @@ const BREAKDOWN_COLORS: Record<keyof Breakdown, string> = {
   tools: "#f59e0b",
   mcp_tools: "#0ea5e9",
   memory: "#a855f7",
+  agent_memory: "#8b5cf6",
   skills: "#14b8a6",
   history: "#22c55e",
   message: "#ec4899",

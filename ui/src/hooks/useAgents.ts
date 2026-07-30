@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
-import type { Agent, AgentEditorMeta, AgentPreview, PromptMode } from "../types/agent";
+import type {
+  Agent,
+  AgentEditorMeta,
+  AgentPreview,
+  MemoryFact,
+  PromptMode,
+  ToolPolicy,
+} from "../types/agent";
 
 const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [] };
 
@@ -13,6 +20,15 @@ export interface AgentPatch {
   system_prompt?: string;
   prompt_mode?: PromptMode;
   disabled_modules?: string[];
+  tool_policy?: ToolPolicy;
+  memory_enabled?: boolean;
+  user_persona?: string;
+  greeting?: string;
+  /** `null` is meaningful — it hands temperature back to the global setting.
+   * The backend distinguishes an absent key from an explicit null, so this
+   * must not be dropped when serialising. */
+  temperature?: number | null;
+  model?: string;
 }
 
 /** The unsaved editor state a preview is assembled from. */
@@ -21,6 +37,13 @@ export interface AgentDraft {
   system_prompt: string;
   prompt_mode: PromptMode;
   disabled_modules: string[];
+  user_persona: string;
+}
+
+export interface MemoryPatch {
+  text?: string;
+  topic?: string;
+  pinned?: boolean;
 }
 
 export interface UseAgentsResult {
@@ -32,6 +55,11 @@ export interface UseAgentsResult {
   deleteAgent: (id: string) => Promise<void>;
   fetchEditorMeta: () => Promise<AgentEditorMeta>;
   fetchPreview: (draft: AgentDraft) => Promise<AgentPreview | null>;
+  fetchMemory: (agentId: string) => Promise<MemoryFact[]>;
+  addMemory: (agentId: string, text: string, topic?: string) => Promise<MemoryFact | null>;
+  updateMemory: (agentId: string, factId: number, patch: MemoryPatch) => Promise<MemoryFact | null>;
+  deleteMemory: (agentId: string, factId: number) => Promise<void>;
+  fetchGreeting: (agentId: string) => Promise<string>;
 }
 
 export function useAgents(): UseAgentsResult {
@@ -130,6 +158,82 @@ export function useAgents(): UseAgentsResult {
     }
   }, []);
 
+  // ── memory ──────────────────────────────────────────────────────────
+  // Not held in state: the list is only ever open in one editor at a time, and
+  // caching it here would go stale the moment the agent remembers something in
+  // a chat running alongside the settings panel.
+
+  const memoryUrl = (agentId: string, factId?: number) =>
+    `${API_BASE}/agents/${encodeURIComponent(agentId)}/memory` +
+    (factId === undefined ? "" : `/${factId}`);
+
+  const fetchMemory = useCallback(async (agentId: string): Promise<MemoryFact[]> => {
+    try {
+      const r = await fetch(memoryUrl(agentId));
+      if (!r.ok) return [];
+      return (await r.json()) as MemoryFact[];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const addMemory = useCallback(
+    async (agentId: string, text: string, topic = ""): Promise<MemoryFact | null> => {
+      try {
+        const r = await fetch(memoryUrl(agentId), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, topic }),
+        });
+        if (!r.ok) return null;
+        return (await r.json()) as MemoryFact;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const updateMemory = useCallback(
+    async (agentId: string, factId: number, patch: MemoryPatch): Promise<MemoryFact | null> => {
+      try {
+        const r = await fetch(memoryUrl(agentId, factId), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!r.ok) return null;
+        return (await r.json()) as MemoryFact;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const deleteMemory = useCallback(async (agentId: string, factId: number): Promise<void> => {
+    try {
+      await fetch(memoryUrl(agentId, factId), { method: "DELETE" });
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
+  /** The greeting with its `{user}` / `{user_persona}` variables resolved.
+   * Rendered by the backend so the template syntax has exactly one
+   * implementation. */
+  const fetchGreeting = useCallback(async (agentId: string): Promise<string> => {
+    try {
+      const r = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}/greeting`, {
+        method: "POST",
+      });
+      if (!r.ok) return "";
+      return ((await r.json()) as { text: string }).text;
+    } catch {
+      return "";
+    }
+  }, []);
+
   return {
     agents,
     loading,
@@ -139,5 +243,10 @@ export function useAgents(): UseAgentsResult {
     deleteAgent,
     fetchEditorMeta,
     fetchPreview,
+    fetchMemory,
+    addMemory,
+    updateMemory,
+    deleteMemory,
+    fetchGreeting,
   };
 }

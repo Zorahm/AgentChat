@@ -12,16 +12,24 @@ import { Button } from "@astryxdesign/core/Button";
 import { useAgents } from "../../../../hooks/useAgents";
 import { AgentAvatar } from "../../../AgentAvatar";
 import type { AgentEditorMeta } from "../../../../types/agent";
+import type { SettingsData } from "../../SettingsPanel";
 import { AddAgentForm } from "./AddAgentForm";
 import { AgentCard } from "./AgentCard";
 
 const DEFAULT_AGENT_ID = "default";
 const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [] };
 
-export function AgentsTab() {
+interface AgentsTabProps {
+  /** For the two fields an agent can override: the global temperature it falls
+   * back to, and the model ids it may pin itself to. */
+  settings: SettingsData;
+}
+
+export function AgentsTab({ settings }: AgentsTabProps) {
   const { t } = useTranslation();
   const {
     agents, loading, createAgent, updateAgent, deleteAgent, fetchEditorMeta, fetchPreview,
+    fetchMemory, addMemory, updateMemory, deleteMemory,
   } = useAgents();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -39,6 +47,7 @@ export function AgentsTab() {
 
   const customAgents = agents.filter((a) => a.id !== DEFAULT_AGENT_ID);
   const builtIn = agents.find((a) => a.id === DEFAULT_AGENT_ID);
+  const availableModels = settings.models.map((m) => m.id);
 
   return (
     <>
@@ -77,6 +86,9 @@ export function AgentsTab() {
             onDelete={() => onDelete(a.id)}
             onSave={(patch) => updateAgent(a.id, patch)}
             fetchPreview={fetchPreview}
+            globalTemperature={settings.temperature}
+            availableModels={availableModels}
+            memory={{ fetchMemory, addMemory, updateMemory, deleteMemory }}
           />
         ))}
       </div>

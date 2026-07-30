@@ -60,6 +60,11 @@
 }
 .ag-warning svg { flex-shrink: 0; margin-top: 1px; color: var(--warn, #e0a030); }
 .ag-warning--soft { padding: 7px 10px; font-size: 11.5px; }
+/* Informational, not hazardous: the amber icon of .ag-warning would read
+   as "you broke something" on a note that only states where a boundary
+   lives. */
+.ag-warning--info svg { color: var(--muted); }
+.ag-warning--info { line-height: 1.5; }
 
 .ag-hint { font-size: 11.5px; color: var(--muted); margin: 0; line-height: 1.45; }
 
@@ -136,3 +141,80 @@
   font-size: 14px; font-weight: 600; margin-bottom: 12px;
 }
 .ag-add-form .st2-add-slug { display: inline-block; margin-top: 6px; }
+
+/* ── roleplay preset, sampling, model ────────────────────────────────── */
+
+.ag-preset {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 11px; border-radius: 8px;
+  background: var(--surface-2, var(--paper-2)); border: 1px solid var(--line);
+}
+.ag-preset .ag-hint { flex: 1 1 200px; }
+/* The applied state. It replaces the button rather than leaving a gap: the
+   preset changes fields on other tabs, so without a trace here the click
+   reads as having done nothing. */
+.ag-preset--done { align-items: flex-start; }
+.ag-preset--done svg { color: var(--ok, #3f9c53); flex-shrink: 0; margin-top: 1px; }
+
+/* ── editor tabs ─────────────────────────────────────────────────────── */
+
+/* The panel keeps the column layout the body used to provide directly, so the
+   per-tab field spacing matches what it was before the split. */
+.ag-tabpanel { display: flex; flex-direction: column; gap: 10px; }
+
+/* Marks the Memory tab when the agent keeps facts — cheaper to read than
+   opening the tab to find out. */
+.ag-tab-dot {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--ink-soft); vertical-align: middle;
+}
+
+.ag-temp-row { display: flex; align-items: center; gap: 10px; }
+.ag-temp-row input[type="range"] { flex: 1; accent-color: var(--ink); }
+.ag-temp-value {
+  min-width: 34px; text-align: right;
+  font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink-soft);
+}
+
+.ag-select-label { font-size: 12px; font-weight: 500; color: var(--ink-soft); }
+.ag-select {
+  padding: 7px 9px; border-radius: 8px; font-size: 12.5px;
+  border: 1px solid var(--line); background: var(--surface, var(--paper-2)); color: var(--ink);
+}
+
+/* ── memory list ─────────────────────────────────────────────────────── */
+
+.ag-memory-head { display: flex; align-items: center; gap: 8px; }
+.ag-memory-count { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.ag-memory-head > :last-child { margin-left: auto; }
+
+.ag-memory-list {
+  list-style: none; margin: 4px 0 0; padding: 0;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
+/* Rows, edge to edge — one fact is one line, not a card. */
+.ag-memory-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; font-size: 12.5px; font-weight: 400; color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.ag-memory-row:last-child { border-bottom: none; }
+.ag-memory-row:hover { background: var(--surface-2, var(--paper-2)); }
+.ag-memory-row--pinned { background: var(--surface-2, var(--paper-2)); }
+
+.ag-memory-id {
+  font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); flex-shrink: 0;
+}
+.ag-memory-text { flex: 1; min-width: 0; line-height: 1.4; }
+
+.ag-memory-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0; padding: 0;
+  border: none; border-radius: 6px; background: transparent;
+  color: var(--muted); cursor: pointer;
+}
+.ag-memory-btn:hover { background: var(--line); color: var(--ink); }
+.ag-memory-btn--danger:hover { color: var(--danger, #d4574e); }
+
+.ag-memory-add { display: flex; align-items: flex-end; gap: 8px; margin-top: 6px; }
+.ag-memory-add > :first-child { flex: 1; }

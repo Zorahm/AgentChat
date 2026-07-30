@@ -244,6 +244,7 @@ function buildUsageTooltip(usage: MessageUsage, t: (key: string, opts?: Record<s
     const rows: [keyof typeof b, string][] = [
       ["system", "chat.usage.breakdown.system"],
       ["memory", "chat.usage.breakdown.memory"],
+      ["agentMemory", "chat.usage.breakdown.agentMemory"],
       ["skills", "chat.usage.breakdown.skills"],
       ["tools", "chat.usage.breakdown.tools"],
       ["mcpTools", "chat.usage.breakdown.mcpTools"],

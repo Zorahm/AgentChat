@@ -152,11 +152,22 @@ export function PersonaEditor({
         </p>
       )}
 
-      <ModuleToggles
-        toggleable={meta.toggleable_modules}
-        disabled={draft.disabled_modules}
-        onChange={onModulesChange}
-      />
+      {/* In replace mode with a non-empty persona NO built-in module renders
+          at all (see agent/prompt/registry.build_registry), so these toggles
+          switch off sections that were never going to ship. Left visible they
+          read as the way to strip the built-in identity — which is exactly
+          what they can't do. The condition mirrors PromptContext.replaces_base
+          exactly: replace mode with an EMPTY persona still falls back to the
+          built-in prompt, and there the toggles do work. */}
+      {replaceMode && draft.system_prompt.trim() !== "" ? (
+        <p className="ag-hint">{t("settings.agents.modulesInertHint")}</p>
+      ) : (
+        <ModuleToggles
+          toggleable={meta.toggleable_modules}
+          disabled={draft.disabled_modules}
+          onChange={onModulesChange}
+        />
+      )}
 
       <PromptPreview
         open={previewOpen}

@@ -15,6 +15,9 @@ const models: ModelItem[] = [
   { id: "openai/gpt-5", name: "GPT-5", thinking: false },
 ];
 
+// No roleplay/memory fields here on purpose: they are optional on `Agent`, and
+// leaving them out is also the shape an older backend serves — so the composer
+// is exercised against exactly that record.
 const agents: Agent[] = [
   { id: "default", name: "Default", color_from: "#8a5a3b", color_to: "#c98a4f", system_prompt: "", prompt_mode: "append", disabled_modules: [] },
   { id: "pirate", name: "Pirate captain", color_from: "#2a6f6f", color_to: "#54c1c1", system_prompt: "Arr.", prompt_mode: "append", disabled_modules: [] },

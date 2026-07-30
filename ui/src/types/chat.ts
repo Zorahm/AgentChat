@@ -57,6 +57,9 @@ export interface TokenBreakdown {
   /** Project instructions + extracted file text — AgentChat's CLAUDE.md
    * equivalent ("Memory files" in Claude Code). */
   memory: number;
+  /** The agent's own remembered facts. Separate from `memory`: that one is the
+   * project's files, this one is what the persona chose to keep. */
+  agentMemory: number;
   /** Installed-skills manifest injected into the system prompt. */
   skills: number;
   /** Built-in tool schemas (bash_tool, write_file, ...). */
