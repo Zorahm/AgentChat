@@ -133,7 +133,16 @@ impl BackendProcess {
 /// effect. run.py re-reads settings.json on start and re-picks 127.0.0.1 vs
 /// 0.0.0.0. Loopback-only concern, invoked from Settings.
 #[tauri::command]
-pub fn restart_backend(state: tauri::State<'_, BackendProcess>) -> Result<(), String> {
+pub fn restart_backend(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendProcess>,
+) -> Result<(), String> {
+    // In server mode we never spawned a sidecar, so there is nothing to cycle —
+    // and spawning one here would bind 8787 behind the user's back. Settings
+    // hides the button too; this is the backstop.
+    if crate::server_mode::is_enabled(&app.config().identifier) {
+        return Err("server mode: this client has no local backend to restart".to_string());
+    }
     // Stop the tracked child (and its tree).
     if let Ok(mut guard) = state.child.lock() {
         if let Some(ref mut child) = *guard {

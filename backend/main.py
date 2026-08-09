@@ -38,6 +38,7 @@ from agent.prompt.modules import PromptBuild
 from api.active_streams import ActiveStreams
 from api.loopback import is_loopback_request
 from api.router import api_router
+from images.service import ImageGenService
 from llm.models_fetcher import ModelsFetcher
 from mcp_integration import MCPManager
 from paths import (
@@ -52,6 +53,7 @@ from paths import (
     USER_AGENTS_SKILLS_DIR,
     resolve_ui_dist,
 )
+import server_mode
 from shell import resolve_active_shell
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
@@ -68,6 +70,34 @@ from web_search.service import WebSearchService
 # the browser issues that request itself, so there's no way to attach an
 # Authorization header to it. These two accept the token as ?token=… too.
 _QUERY_TOKEN_PATHS = {"/api/files/serve", "/api/files/preview"}
+
+
+def _token_denial(request: Request, path: str) -> JSONResponse | None:
+    """Reject the request unless it carries the right Bearer token.
+
+    Returns ``None`` when the caller is authorised. Split out of the middleware
+    so the exemption rule below stays one readable line.
+    """
+    if server_mode.enabled():
+        expected = server_mode.server_token()
+    else:
+        store = request.app.state.settings_store
+        if not store.remote_access_enabled:
+            return JSONResponse(
+                {"detail": "Remote access is disabled on this backend."},
+                status_code=401,
+            )
+        expected = store.remote_token
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    if not token and path in _QUERY_TOKEN_PATHS:
+        token = request.query_params.get("token", "")
+    if not expected or not token or not secrets.compare_digest(token, expected):
+        return JSONResponse(
+            {"detail": "Invalid or missing remote access token."},
+            status_code=401,
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +154,9 @@ def create_app() -> FastAPI:
 
     web_search_service = WebSearchService(capability_lookup=_native_web_search_cap)
 
+    # --- image generation (stateless router over the local/hosted backends) ---
+    image_service = ImageGenService()
+
     # --- MCP manager (lazy-spawn supervisor for external MCP servers) ---
     mcp_manager = MCPManager()
 
@@ -164,30 +197,21 @@ def create_app() -> FastAPI:
     # --- remote access guard ---
     # Protects /api/* only. The static SPA shell stays public so a phone can
     # load index.html (and read its ?token=) before it has a token to send.
-    # Loopback (the local desktop app) is always exempt; any other origin must
-    # present the Bearer token, and only while remote access is enabled.
+    # On a desktop backend loopback is exempt (that's the local app talking to
+    # its own sidecar); everything else must present the Bearer token, and only
+    # while remote access is enabled.
     @app.middleware("http")
     async def remote_access_guard(request: Request, call_next: Callable) -> Any:
         path = request.url.path
-        if request.method != "OPTIONS" and path.startswith("/api/") and not is_loopback_request(
-            request
-        ):
-            store = request.app.state.settings_store
-            if not store.remote_access_enabled:
-                return JSONResponse(
-                    {"detail": "Remote access is disabled on this backend."},
-                    status_code=401,
-                )
-            expected = store.remote_token
-            header = request.headers.get("authorization", "")
-            token = header[7:].strip() if header[:7].lower() == "bearer " else ""
-            if not token and path in _QUERY_TOKEN_PATHS:
-                token = request.query_params.get("token", "")
-            if not expected or not token or not secrets.compare_digest(token, expected):
-                return JSONResponse(
-                    {"detail": "Invalid or missing remote access token."},
-                    status_code=401,
-                )
+        if request.method != "OPTIONS" and path.startswith("/api/"):
+            # Server mode drops the loopback exemption: behind a reverse proxy
+            # every request arrives from 127.0.0.1, so exempting loopback would
+            # skip the token check for the entire internet.
+            exempt = not server_mode.enabled() and is_loopback_request(request)
+            if not exempt:
+                denial = _token_denial(request, path)
+                if denial is not None:
+                    return denial
         return await call_next(request)
 
     # --- attach state for route handlers ---
@@ -202,6 +226,7 @@ def create_app() -> FastAPI:
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager
     app.state.web_search_service = web_search_service
+    app.state.image_service = image_service
     # Lets DELETE /chats/{id} wait for a chat's stream to finish before it
     # purges the working folder out from under the running tools.
     app.state.active_streams = ActiveStreams()

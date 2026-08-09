@@ -118,6 +118,23 @@ def resolve_bundled_skills() -> Path | None:
     return None
 
 
+def resolve_bundled_workflows() -> Path:
+    """Locate the bundled ComfyUI workflow templates (``backend/images/workflows``).
+
+    Unlike the skills bundle this is not optional — without it the ComfyUI
+    backend has no graph to submit — so it returns a path either way and lets
+    the caller report a missing file. The frozen sidecar carries it under
+    ``_MEIPASS/image_workflows`` (see build-backend.ps1/.sh:
+    ``--add-data "backend/images/workflows;image_workflows"``).
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / "image_workflows"
+        if bundled.is_dir():
+            return bundled
+    return BASE_DIR / "images" / "workflows"
+
+
 def _wsl_form(win_path: Path) -> str:
     """Translate ``C:\\foo\\bar`` to ``/mnt/c/foo/bar`` for WSL-side comparisons."""
     s = str(win_path)

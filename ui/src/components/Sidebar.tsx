@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Check, X, Books, Plus, Gear, PushPin, PencilSimple, Trash, MagnifyingGlass, FolderOpen, CaretRight, CloudArrowDown, WarningCircle, ChartBar } from "@phosphor-icons/react";
 import { SideNav, SideNavHeading, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { Button } from "@astryxdesign/core/Button";
@@ -10,7 +10,7 @@ import { ContextMenu, ContextMenuItem } from "@astryxdesign/core/ContextMenu";
 import { Divider } from "@astryxdesign/core/Divider";
 import type { ChatSession } from "../hooks/useChats";
 import type { AppUpdate } from "../hooks/useAppUpdate";
-import { GhostChat } from "./GhostChat";
+import { scopedKey } from "../utils/backendScope";
 import { useTranslation } from "react-i18next";
 
 interface SidebarProps {
@@ -43,9 +43,12 @@ export function Sidebar({
   update,
 }: SidebarProps) {
   const { t } = useTranslation();
+  // Chat ids, so the order is per backend — a VDS and the local backend have
+  // nothing in common to order. See utils/backendScope.ts.
+  const orderKey = scopedKey("aic-chat-order-v1");
   const [orderIds, setOrderIds] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem("aic-chat-order-v1");
+      const raw = localStorage.getItem(orderKey);
       if (raw) return JSON.parse(raw);
     } catch {}
     return [];
@@ -59,33 +62,10 @@ export function Sidebar({
     type: "pin" | "unpin";
   } | null>(null);
 
-  // ── Easter egg ─────────────────────────────────────────────────────────────
-  const [isPatched, setIsPatched] = useState(() => localStorage.getItem("aic-ghost-patched-v1") === "1");
-  const [logoDetached, setLogoDetached] = useState(false);
-  const [ghostOpen, setGhostOpen] = useState(false);
-  const logoClickTimesRef = useRef<number[]>([]);
-
-  const handleLogoClick = useCallback(() => {
-    if (isPatched || logoDetached) return;
-    const now = Date.now();
-    logoClickTimesRef.current = [...logoClickTimesRef.current, now].filter(t => now - t < 2500);
-    if (logoClickTimesRef.current.length >= 7) {
-      logoClickTimesRef.current = [];
-      setLogoDetached(true);
-    }
-  }, [isPatched, logoDetached]);
-
-  const handleGhostClose = useCallback(() => {
-    setGhostOpen(false);
-    setLogoDetached(false);
-    localStorage.setItem("aic-ghost-patched-v1", "1");
-    setIsPatched(true);
-  }, []);
-
   const saveOrder = useCallback((newOrder: string[]) => {
     setOrderIds(newOrder);
-    localStorage.setItem("aic-chat-order-v1", JSON.stringify(newOrder));
-  }, []);
+    localStorage.setItem(orderKey, JSON.stringify(newOrder));
+  }, [orderKey]);
 
   // All chats show in the sidebar; project chats are marked with a folder glyph.
   const standalone = useMemo(() => sessions, [sessions]);
@@ -222,21 +202,9 @@ export function Sidebar({
           <SideNavHeading
             heading={t("sidebar.appName")}
             icon={
-              <span
-                className={`sb-logo-wrap${logoDetached ? " sb-logo--detached" : ""}${isPatched ? " sb-logo--patched" : ""}`}
-                onClick={handleLogoClick}
-                style={{ cursor: isPatched || logoDetached ? "default" : "pointer" }}
-              >
+              <span className="sb-logo-wrap">
                 <img className="sb-logo-mark" src="/dots.svg" alt={t("sidebar.appName")} />
-                {isPatched && <span className="sb-logo-patch" aria-hidden>🩹</span>}
               </span>
-            }
-            headerEndContent={
-              logoDetached && !isPatched ? (
-                <button className="sb-ghost-plus" onClick={() => setGhostOpen(true)} title={t("sidebar.ghostWaiting")}>
-                  +
-                </button>
-              ) : undefined
             }
           />
         }
@@ -336,8 +304,6 @@ export function Sidebar({
           }}
         />
       )}
-
-      {ghostOpen && <GhostChat onClose={handleGhostClose} />}
     </>
   );
 }

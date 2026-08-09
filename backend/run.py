@@ -33,15 +33,27 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     try:
         import uvicorn
+        import server_mode
         from main import app
 
         # Bind to all interfaces only when remote access is enabled, so the
         # backend stays localhost-only by default. AGENTCHAT_HOST overrides.
         host = os.environ.get("AGENTCHAT_HOST")
         if not host:
-            store = getattr(app.state, "settings_store", None)
-            host = "0.0.0.0" if (store and store.remote_access_enabled) else "127.0.0.1"
+            if server_mode.enabled():
+                # Server mode expects a reverse proxy in front (the installer
+                # sets one up), so loopback is right here too. Installs without
+                # a proxy get an explicit AGENTCHAT_HOST=0.0.0.0.
+                host = "127.0.0.1"
+            else:
+                store = getattr(app.state, "settings_store", None)
+                host = "0.0.0.0" if (store and store.remote_access_enabled) else "127.0.0.1"
         port = int(os.environ.get("AGENTCHAT_PORT", "8787"))
+        if server_mode.enabled():
+            # Points at the secret rather than printing it: this banner lands in
+            # the journal, which outlives the terminal that started the service.
+            print(f"AgentChat server mode — listening on {host}:{port}", flush=True)
+            print(f"  access token: {server_mode.token_origin()}", flush=True)
         uvicorn.run(app, host=host, port=port, log_level="warning")
     except BaseException as exc:
         _log_crash(exc)

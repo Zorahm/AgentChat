@@ -1,32 +1,32 @@
-/* Settings — Paths tab (workspace, remote access) */
+/* Settings — Paths tab (workspace, remote access, server mode) */
 
-.st2-paths-url-row {
-  display: flex; align-items: center; gap: 8px;
+/* Server mode — connect form and connected state */
+.st2-server-form {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+  max-width: 520px;
 }
-
-.st2-paths-url-input {
-  flex: 1; display: flex; align-items: center; gap: 8px;
-  padding: 0 12px; height: 38px;
-  background: var(--surface-2, var(--paper-2));
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  transition: border-color .15s;
+.st2-server-current {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--line-2); background: var(--surface-2, var(--paper-2));
 }
-.st2-paths-url-input:focus-within {
-  border-color: var(--ink-2);
-  background: var(--surface, var(--paper));
+.st2-server-current .lab { font-size: 12px; color: var(--muted); }
+.st2-server-current code {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--ink);
+  word-break: break-all;
 }
-.st2-paths-url-input svg { color: var(--muted); flex-shrink: 0; }
-.st2-paths-url-input input {
-  flex: 1; border: none; outline: none; background: transparent;
-  font: inherit; color: var(--ink); font-size: 13px;
-  font-family: var(--font-mono);
+.st2-server-warn {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 12px; color: var(--faint); line-height: 1.5;
+  margin: 10px 0 0; max-width: 520px;
 }
-.st2-paths-url-input input::placeholder { color: var(--faint); }
-.st2-paths-url-btn.applied {
-  background: var(--ok-soft);
-  border-color: var(--ok-line);
-  color: var(--ok);
+.st2-server-warn svg { color: var(--warn, var(--faint)); flex-shrink: 0; margin-top: 2px; }
+.st2-server-error {
+  padding: 8px 12px; margin-bottom: 12px; border-radius: 8px;
+  border: 1px solid var(--danger-line, var(--line-2));
+  background: var(--danger-soft, var(--surface-2));
+  color: var(--danger, var(--ink)); font-size: 12.5px;
+  max-width: 520px;
 }
 
 /* ── Remote access (phone) ────────────────────────────────────────────── */
@@ -159,4 +159,4 @@
 .st2-remote-conn-sub {
   font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 2px; max-width: 520px;
 }
-.st2-remote-conn .st2-paths-url-row { max-width: 520px; }
+.st2-remote-conn-titles { flex: 1; min-width: 0; }

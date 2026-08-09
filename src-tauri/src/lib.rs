@@ -8,6 +8,8 @@
 
 #[cfg(desktop)]
 mod desktop_backend;
+#[cfg(desktop)]
+mod server_mode;
 
 /// The local desktop backend URL. Mobile ignores this (it uses the in-app
 /// configured remote backend), but the command stays registered on both so the
@@ -76,8 +78,15 @@ pub fn run() {
     // one. Mobile has no local backend.
     #[cfg(desktop)]
     let backend_child = {
-        let expected_version = ctx.package_info().version.to_string();
-        desktop_backend::start_managed_backend(&expected_version)
+        if server_mode::is_enabled(&ctx.config().identifier) {
+            // The user pointed this client at a backend elsewhere. Starting ours
+            // anyway would squat on 8787 and serve a workspace nobody is looking
+            // at — the whole point of server mode is that the agent runs there.
+            None
+        } else {
+            let expected_version = ctx.package_info().version.to_string();
+            desktop_backend::start_managed_backend(&expected_version)
+        }
     };
 
     #[allow(unused_mut)]
@@ -97,6 +106,7 @@ pub fn run() {
             .invoke_handler(tauri::generate_handler![
                 get_backend_url,
                 desktop_backend::restart_backend,
+                server_mode::set_server_mode,
                 open_external,
                 save_file_as
             ]);

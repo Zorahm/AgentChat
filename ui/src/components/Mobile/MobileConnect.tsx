@@ -16,9 +16,11 @@
  *  the remote backend and the normal app boots against it. */
 
 import { useEffect, useState } from "react";
-import { QrCode, Keyboard, ArrowLeft, CircleNotch } from "@phosphor-icons/react";
+import { QrCode, Keyboard, ArrowLeft, CircleNotch, HardDrives } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { setBackendUrl, setToken, getBackendOverride } from "../../utils/apiBase";
+import { getBackendOverride } from "../../utils/apiBase";
+import { isAndroidTauri, isTauri } from "../../utils/tauri";
+import { disableServerMode, enableServerMode, probeBackend } from "../../utils/serverMode";
 import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 
@@ -58,24 +60,15 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
   }, [scanning]);
 
   const connect = async (rawUrl: string, rawToken: string) => {
-    const base = rawUrl.trim().replace(/\/+$/, "");
-    if (!base) { setError(t("mobile.errUrlRequired")); return; }
     setBusy(true);
     setError(null);
-    try {
-      // /api/wsl/status is behind the remote-access guard: a 200 proves the
-      // backend is reachable AND the token is valid + remote access is on.
-      const resp = await fetch(`${base}/api/wsl/status`, {
-        headers: rawToken.trim() ? { Authorization: `Bearer ${rawToken.trim()}` } : {},
-      });
-      if (resp.status === 401) { setError(t("mobile.errToken")); setBusy(false); return; }
-      if (!resp.ok) { setError(t("mobile.errGeneric")); setBusy(false); return; }
-      setToken(rawToken.trim());
-      setBackendUrl(base); // persists the override and reloads the page
-    } catch {
-      setError(t("mobile.errUnreachable"));
+    const result = await probeBackend(rawUrl, rawToken);
+    if (!result.ok) {
+      setError(t(result.errorKey));
       setBusy(false);
+      return;
     }
+    await enableServerMode(rawUrl, rawToken); // persists and reloads the page
   };
 
   const handleScanned = (content: string) => {
@@ -129,6 +122,9 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
   }
 
   const isReconnect = variant === "reconnect";
+  // Only the desktop shell carries a backend of its own to fall back to; the
+  // APK and the PWA have nothing local to run.
+  const canGoLocal = isReconnect && isTauri() && !isAndroidTauri();
 
   return (
     <div className="ob-overlay">
@@ -150,6 +146,19 @@ export function MobileConnect({ variant = "setup", onDismiss }: MobileConnectPro
             <>
               <p className="ob-sub">{isReconnect ? t("mobile.reconnectSubtitle") : t("mobile.connectSubtitle")}</p>
               {error && <div className="ob-error">{error}</div>}
+
+              {/* Escape hatch for the desktop app in server mode: with the
+                  remote backend unreachable and the local sidecar suppressed,
+                  Settings itself can't load, so the way back has to live here. */}
+              {canGoLocal && (
+                <Button
+                  variant="ghost"
+                  label={t("mobile.useLocalBackend")}
+                  icon={<HardDrives size={16} />}
+                  onClick={() => { void disableServerMode(); }}
+                  className="mc-local-escape"
+                />
+              )}
 
               {mode === "choose" && (
                 <div className="mc-choices">

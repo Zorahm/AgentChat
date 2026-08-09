@@ -25,6 +25,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
 # Modules that a cycle would break. Each one must import as the very first
 # backend module in a virgin interpreter.
 STANDALONE_MODULES = [
+    "server_mode",
     "schemas.settings",
     "schemas.agents",
     "schemas.redaction",

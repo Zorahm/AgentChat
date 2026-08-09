@@ -16,6 +16,7 @@ import subprocess
 
 from fastapi import APIRouter, HTTPException, Request
 
+import server_mode
 from api.loopback import is_loopback_request
 from schemas.settings import RemoteAccessInfo
 from shell import NO_WINDOW
@@ -134,6 +135,20 @@ def _local_ipv4s() -> list[str]:
     return _sort_ips(candidates, primary=primary)
 
 
+def _require_local_caller(request: Request) -> None:
+    """Allow only a genuine local caller through. Raises otherwise.
+
+    In server mode nothing qualifies: behind a reverse proxy every request
+    presents itself as loopback, so there is no caller we can trust with the
+    token. The installer prints it once and it lives in a 0600 file after that
+    — it is never handed out over HTTP, hence 404 rather than 403.
+    """
+    if server_mode.enabled():
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not is_loopback_request(request):
+        raise HTTPException(status_code=403, detail="Pairing info is available locally only.")
+
+
 async def _pairing_info(request: Request) -> RemoteAccessInfo:
     store = request.app.state.settings_store
     port = _backend_port()
@@ -149,8 +164,7 @@ async def _pairing_info(request: Request) -> RemoteAccessInfo:
 @router.get("/remote-access", response_model=RemoteAccessInfo)
 async def remote_access(request: Request) -> RemoteAccessInfo:
     """Return pairing info (token + URLs). Loopback only."""
-    if not is_loopback_request(request):
-        raise HTTPException(status_code=403, detail="Pairing info is available locally only.")
+    _require_local_caller(request)
     return await _pairing_info(request)
 
 
@@ -162,7 +176,6 @@ async def rotate_remote_token(request: Request) -> RemoteAccessInfo:
     scans the new QR. Loopback-guarded like the GET: a remote caller holding
     the current token must not be able to roll it.
     """
-    if not is_loopback_request(request):
-        raise HTTPException(status_code=403, detail="Pairing info is available locally only.")
+    _require_local_caller(request)
     request.app.state.settings_store.rotate_remote_token()
     return await _pairing_info(request)

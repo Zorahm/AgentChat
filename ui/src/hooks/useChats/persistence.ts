@@ -11,6 +11,7 @@ import type {
   AttachmentInfo,
 } from "../../types/chat";
 import { i18n } from "../../i18n";
+import { scopedKey } from "../../utils/backendScope";
 
 // ── Sticky composer defaults ────────────────────────────────────────────────
 
@@ -69,22 +70,27 @@ export function setEffortDefaultState(v: string | null): void {
 
 // ── Pinned chats ────────────────────────────────────────────────────────────
 
+// Holds backend-owned chat ids, so it is scoped per backend: pins made against
+// a VDS mean nothing to the local one. See utils/backendScope.ts.
 const PINNED_KEY = "aic-pinned-v1";
 
 export function loadPinnedIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(PINNED_KEY);
+    const raw = localStorage.getItem(scopedKey(PINNED_KEY));
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
   return new Set();
 }
 
 export function savePinnedIds(ids: Set<string>): void {
-  localStorage.setItem(PINNED_KEY, JSON.stringify([...ids]));
+  localStorage.setItem(scopedKey(PINNED_KEY), JSON.stringify([...ids]));
 }
 
 export const STORAGE_KEY = "aic-sessions-v2";
 export const OLD_STORAGE_KEY = "aic-sessions-v1";
+// Deliberately NOT scoped: it records that the legacy localStorage blob has
+// been drained into a backend. Scoping it would re-push those old chats into
+// every further backend the user connects to.
 export const MIGRATION_FLAG = "aic-migration-v3-done";
 export const SAVE_DEBOUNCE_MS = 1500;
 
