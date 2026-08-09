@@ -105,7 +105,7 @@ jobs:
             base-devel git curl jq \
             rust nodejs npm \
             webkit2gtk-4.1 gtk3 libayatana-appindicator librsvg gdk-pixbuf2 \
-            patchelf openssl
+            patchelf openssl xdg-utils
 
       - uses: actions/checkout@v4
 
