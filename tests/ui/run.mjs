@@ -8,8 +8,8 @@
  *
  * Sources are compiled from their real locations — the suites import
  * `ui/src/...` directly, so they can never drift from the shipped code. The
- * one exception is `persistence.ts`, replaced by a stub after compilation
- * (see tests/ui/stubs/persistence.js).
+ * exceptions are the modules in STUBS below, replaced after compilation
+ * because they reach for runtime that only resolves inside `ui/`.
  */
 
 import { spawnSync } from "node:child_process";
@@ -22,7 +22,7 @@ const repoRoot = resolve(here, "..", "..");
 const buildDir = join(here, ".build");
 const tsc = join(repoRoot, "ui", "node_modules", "typescript", "bin", "tsc");
 
-const SUITES = ["branch_tree", "sse_stream", "agent_greeting"];
+const SUITES = ["branch_tree", "sse_stream", "agent_greeting", "greetings", "mcp_status", "image_gen"];
 
 if (!existsSync(tsc)) {
   console.error(
@@ -57,10 +57,18 @@ if (compiled.status !== 0) {
   process.exit(compiled.status ?? 1);
 }
 
-// Swap in the persistence stub (see the header comment).
-const stubTarget = join(buildDir, "ui", "src", "hooks", "useChats", "persistence.js");
-if (existsSync(stubTarget)) {
-  copyFileSync(join(here, "stubs", "persistence.js"), stubTarget);
+// Swap in the stubs (see the header comment). Each entry replaces a compiled
+// module only if this run actually pulled it in.
+const STUBS = [
+  ["persistence.js", ["ui", "src", "hooks", "useChats", "persistence.js"]],
+  ["i18n.js", ["ui", "src", "i18n", "index.js"]],
+];
+
+for (const [stub, target] of STUBS) {
+  const compiledPath = join(buildDir, ...target);
+  if (existsSync(compiledPath)) {
+    copyFileSync(join(here, "stubs", stub), compiledPath);
+  }
 }
 
 let failed = 0;
