@@ -1,0 +1,83 @@
+name: Build Android (APK)
+
+# Builds the Android thin-client APK and uploads it as a downloadable workflow
+# artifact — WITHOUT publishing a GitHub Release. Use this to smoke-test the
+# Android leg before cutting a real `v*` release, since release.yml's `android`
+# job is `continue-on-error` and will not shout if the toolchain drifts.
+# Run it manually from the Actions tab (workflow_dispatch).
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Set up Java (Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Rust (with the Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # cargo-tauri IGNORES $NDK_HOME — it scans $ANDROID_HOME/ndk and takes the
+      # HIGHEST version it finds. See release.yml for the full story.
+      - name: Pin the Android NDK
+        env:
+          NDK_VERSION: "26.3.11579264"
+        run: |
+          set -euo pipefail
+          sdkmanager --install "ndk;$NDK_VERSION" > /dev/null
+          find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d \
+            ! -name "$NDK_VERSION" -exec rm -rf {} +
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Node dependencies
+        run: npm ci --prefix ui
+
+      # The APK carries its own copy of the UI — this build IS the phone's
+      # interface, nothing is fetched at runtime.
+      - name: Build UI
+        run: npm run build --prefix ui
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      # src-tauri/gen/ is gitignored, so the Gradle project is scaffolded fresh
+      # every run; `init` also wires the barcode-scanner plugin's ACL/manifest.
+      - name: Generate the Android project
+        run: tauri android init
+
+      # DEBUG on purpose: only the debug buildType enables cleartext traffic,
+      # and pairing hands the phone a plain http://<lan-ip>:8787 URL. See the
+      # `android` job in release.yml.
+      - name: Build the APK
+        run: tauri android build --apk --debug --target aarch64
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentchat-android-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

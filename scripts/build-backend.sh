@@ -39,6 +39,15 @@ if [ ! -d "$SKILLS_BUNDLE" ]; then
     exit 1
 fi
 
+echo "==> Locating bundled ComfyUI workflows..."
+# Data files, so PyInstaller's import scan never sees them; without this
+# --add-data the ComfyUI image backend has no graph to submit.
+WORKFLOWS_BUNDLE="$ROOT/backend/images/workflows"
+if [ ! -f "$WORKFLOWS_BUNDLE/txt2img.json" ]; then
+    echo "backend/images/workflows not found — cannot bundle image workflows." >&2
+    exit 1
+fi
+
 echo "==> Stamping build version (single source: tauri.conf.json)..."
 # main.py imports _buildstamp so PyInstaller bundles it; the Tauri shell compares
 # it against /api/health to detect a stale sidecar on 8787 after an update.
@@ -81,7 +90,8 @@ pyinstaller run.py \
     --hidden-import secretstorage \
     --add-data "${TIKTOKEN_CACHE}:tiktoken_cache" \
     --add-data "${UI_DIST}:ui_dist" \
-    --add-data "${SKILLS_BUNDLE}:bundled_skills"
+    --add-data "${SKILLS_BUNDLE}:bundled_skills" \
+    --add-data "${WORKFLOWS_BUNDLE}:image_workflows"
 
 cd "$ROOT"
 

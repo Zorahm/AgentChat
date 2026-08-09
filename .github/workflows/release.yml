@@ -270,11 +270,128 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "$tmp/$name" --repo "$GITHUB_REPOSITORY" --clobber
 
   # ---------------------------------------------------------------------------
-  # Everything above builds into a DRAFT release. Only once every platform AND
-  # the Arch AppImage have landed do we flip the release public — so users never
-  # see a half-built release or a broken interim AppImage.
+  # The Android app is a THIN CLIENT: no Python sidecar, no backend — just the
+  # bundled UI in a Tauri mobile shell pointed at a remote backend. So it shares
+  # nothing with the desktop matrix except `ui/dist`, and gets its own job.
+  #
+  # It builds the DEBUG apk on purpose. The generated Gradle project sets
+  # `usesCleartextTraffic` only on the debug buildType, and pairing hands the
+  # phone a plain `http://<lan-ip>:8787` URL (api/remote.py) — a release APK
+  # would refuse that connection, i.e. it could not reach the backend at all.
+  # Debug is also auto-signed with Gradle's debug keystore, so it sideloads as
+  # is; a release APK would need a keystore in secrets and a cleartext opt-in.
+  android:
+    # The draft release must already exist for us to upload the APK into it.
+    needs: release
+    runs-on: ubuntu-latest
+    # The APK is a bonus artifact, and the Android toolchain is the most
+    # fragile leg here (SDK/NDK drift). Don't let it strand a finished desktop
+    # release as a permanent draft — `publish` treats this job as satisfied
+    # either way. Drop this once the job has proven itself over a few releases.
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Set up Java (Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Rust (with the Android target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # cargo-tauri IGNORES $NDK_HOME — it scans $ANDROID_HOME/ndk and takes the
+      # HIGHEST version it finds. So install the r26 line (the toolchain this
+      # project is known to build with) and delete every other NDK the runner
+      # image ships, otherwise the newest one silently wins.
+      - name: Pin the Android NDK
+        env:
+          NDK_VERSION: "26.3.11579264"
+        run: |
+          set -euo pipefail
+          sdkmanager --install "ndk;$NDK_VERSION" > /dev/null
+          find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d \
+            ! -name "$NDK_VERSION" -exec rm -rf {} +
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      # Same strip logic as the other jobs: the tag's version minus any
+      # pre-release suffix. It becomes the APK's versionName and its filename.
+      - name: Bump tauri.conf.json version from tag
+        run: |
+          set -euo pipefail
+          full="${GITHUB_REF_NAME#v}"
+          version="${full%%-*}"
+          jq --arg v "$version" '.version = $v' src-tauri/tauri.conf.json > tauri.conf.tmp
+          mv tauri.conf.tmp src-tauri/tauri.conf.json
+          echo "APK_VERSION=$version" >> "$GITHUB_ENV"
+          echo "==> tauri.conf.json version -> $version (from $full)"
+
+      - name: Install Node dependencies
+        run: npm ci --prefix ui
+
+      # The APK carries its own copy of the UI — it does not fetch the design
+      # from anywhere at runtime, so this build IS the phone's interface.
+      - name: Build UI
+        run: npm run build --prefix ui
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      # src-tauri/gen/ is gitignored, so the Android Gradle project is scaffolded
+      # fresh on every run. `init` is also what wires the barcode-scanner
+      # plugin's ACL + manifest permissions into that project.
+      - name: Generate the Android project
+        run: tauri android init
+
+      - name: Build the APK
+        run: tauri android build --apk --debug --target aarch64
+
+      # Match the naming the release job gave every other asset
+      # (assetNamePattern: agentchat-[version]-[platform]-[arch][ext]) and drop
+      # it into the still-DRAFT release; `publish` flips the lot live after.
+      - name: Upload the APK into the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          built=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)
+          if [ -z "$built" ]; then
+            echo "no APK was produced" >&2
+            exit 1
+          fi
+          name="agentchat-${APK_VERSION}-android-aarch64.apk"
+          echo "==> Uploading $(basename "$built") as $name ($(du -h "$built" | cut -f1))"
+          tmp=$(mktemp -d)
+          cp "$built" "$tmp/$name"
+          gh release upload "$GITHUB_REF_NAME" "$tmp/$name" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # ---------------------------------------------------------------------------
+  # Everything above builds into a DRAFT release. Only once every platform, the
+  # Arch AppImage AND the APK have landed do we flip the release public — so
+  # users never see a half-built release or a broken interim AppImage.
   publish:
-    needs: [release, appimage-arch]
+    needs: [release, appimage-arch, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

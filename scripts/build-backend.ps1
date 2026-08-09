@@ -35,6 +35,14 @@ if (-not (Test-Path $skillsBundle)) {
     throw "skills/ not found — cannot bundle skills into backend."
 }
 
+Write-Host "==> Locating bundled ComfyUI workflows..."
+# Data files, so PyInstaller's import scan never sees them; without this
+# --add-data the ComfyUI image backend has no graph to submit.
+$workflowsBundle = Join-Path $root "backend\images\workflows"
+if (-not (Test-Path (Join-Path $workflowsBundle "txt2img.json"))) {
+    throw "backend/images/workflows not found — cannot bundle image workflows into backend."
+}
+
 Write-Host "==> Stamping build version (single source: tauri.conf.json)..."
 # The Tauri shell compares this against /api/health to detect a stale sidecar
 # left running on 8787 after an update. main.py imports _buildstamp, so
@@ -81,7 +89,8 @@ pyinstaller run.py `
     --hidden-import win32ctypes.core `
     --add-data "${tiktokenCache};tiktoken_cache" `
     --add-data "${uiDist};ui_dist" `
-    --add-data "${skillsBundle};bundled_skills"
+    --add-data "${skillsBundle};bundled_skills" `
+    --add-data "${workflowsBundle};image_workflows"
 
 Set-Location $root
 
