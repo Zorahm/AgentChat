@@ -71,7 +71,7 @@
 /* top row */
 .sb-top {
   display: flex; align-items: center; gap: 8px;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 10px 10px; flex-shrink: 0;
+  padding: calc(12px + var(--safe-top)) 10px 10px; flex-shrink: 0;
 }.sb-icon-btn.active{
   background: var(--hover); color: var(--ink);
 }
@@ -379,34 +379,4 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-}
-.sb-logo--detached .sb-logo-mark {
-  animation: logo-swing 1.5s ease-in-out infinite;
-  transform-origin: top center;
-}
-@keyframes logo-swing {
-  0%, 100% { transform: rotate(-14deg); }
-  50%       { transform: rotate(14deg);  }
-}
-.sb-logo-patch {
-  position: absolute;
-  bottom: -5px; right: -7px;
-  font-size: 13px; line-height: 1;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.25));
-}
-.sb-ghost-plus {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: var(--accent); color: #fff;
-  font-size: 15px; font-weight: 700; line-height: 1;
-  border: none; cursor: pointer;
-  animation: ghost-plus-pop .25s cubic-bezier(.34,1.56,.64,1) both;
-  flex-shrink: 0;
-}
-.sb-ghost-plus:hover { opacity: .85; }
-@keyframes ghost-plus-pop {
-  from { opacity: 0; transform: scale(.4); }
-  to   { opacity: 1; transform: scale(1);  }
 }

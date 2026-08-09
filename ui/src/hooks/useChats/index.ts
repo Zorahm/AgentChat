@@ -16,6 +16,7 @@ import type { ChatSession } from "../../types/chat";
 import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import type { LiveFile } from "../../types/artifact";
 import { API_BASE } from "../../utils/apiBase";
+import { applyImageEvent, closeImageGen, emptyImageGen } from "../../utils/imageGen";
 import { applyResearchEvent, emptyResearch } from "../../utils/research";
 import {
   type WebSearchPref,
@@ -59,7 +60,6 @@ import {
   addUserVariant,
   setUserVariantChild,
 } from "./tree";
-import { isGhostChat, buildGhostSystemMessage, createGhostChatSession } from "./easterEgg";
 import { i18n } from "../../i18n";
 
 /** Events after which the backend has stopped talking. Passing them to
@@ -119,7 +119,6 @@ export interface UseChatResult {
   editMessage: (userNodeId: string, content: string, displayHtml?: string) => void;
   switchVariant: (nodeId: string, idx: number) => void;
   abort: () => void;
-  startGhostChat: () => void;
   toggleMcpServer: (serverId: string) => void;
   activeWebSearchEnabled: boolean;
   activeWebSearchMode: string;
@@ -409,6 +408,7 @@ export function useChats(): UseChatResult {
               input: (data.input as Record<string, unknown>) ?? {},
               status: "running",
               ...(toolName === "research" ? { research: emptyResearch(Date.now()) } : {}),
+              ...(toolName === "image_generate" ? { image: emptyImageGen(Date.now()) } : {}),
             };
             setSessions((prev) =>
               prev.map((s) => {
@@ -466,14 +466,16 @@ export function useChats(): UseChatResult {
             break;
           }
           case "tool_progress": {
-            // Structured progress from a streaming tool (research) — fold the
-            // event into that tool call's research timeline.
+            // Structured progress from a streaming tool — fold the event into
+            // whichever timeline that call owns (research run / image render).
             const callId = String(data.id ?? "");
             const event = (data.event as Record<string, unknown>) ?? {};
-            const applyEvent = (tc: ToolCall): ToolCall =>
-              tc.id === callId && tc.research
-                ? { ...tc, research: applyResearchEvent(tc.research, event) }
-                : tc;
+            const applyEvent = (tc: ToolCall): ToolCall => {
+              if (tc.id !== callId) return tc;
+              if (tc.research) return { ...tc, research: applyResearchEvent(tc.research, event) };
+              if (tc.image) return { ...tc, image: applyImageEvent(tc.image, event) };
+              return tc;
+            };
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== sessionId) return s;
@@ -530,6 +532,16 @@ export function useChats(): UseChatResult {
                             status: "complete" as const,
                             durationMs: Number(data.duration_ms ?? 0),
                           },
+                        }
+                      : {}),
+                    ...(tc.image
+                      ? {
+                          image: closeImageGen(
+                            tc.image,
+                            Boolean(data.success),
+                            String(data.output ?? ""),
+                            Number(data.duration_ms ?? 0),
+                          ),
                         }
                       : {}),
                   }
@@ -682,10 +694,6 @@ export function useChats(): UseChatResult {
       );
 
       const history: WireMessage[] = [];
-      if (isGhostChat(currentSession.title)) {
-        history.push(buildGhostSystemMessage());
-      }
-
       if (currentSession.root.length > 0) {
         history.push(...expandToWire(currentBranch(currentSession)));
       }
@@ -921,6 +929,9 @@ export function useChats(): UseChatResult {
                     status: "cancelled" as const,
                     ...(tc.research
                       ? { research: { ...tc.research, status: "cancelled" as const } }
+                      : {}),
+                    ...(tc.image
+                      ? { image: { ...tc.image, status: "cancelled" as const } }
                       : {}),
                   }
                 : tc;
@@ -1178,17 +1189,6 @@ export function useChats(): UseChatResult {
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, pinned: pinnedIds.has(id) } : s)));
   }, []);
 
-  const startGhostChat = useCallback(() => {
-    const session = createGhostChatSession();
-    setSessions((prev) => [session, ...prev]);
-    setActiveId(session.id);
-    setLiveFiles([]);
-    setError(null);
-    void createChatRemote(session).then(() => {
-      lastSavedRef.current.set(session.id, snapshot(session));
-    });
-  }, [sessions]);
-
   return {
     sessions,
     activeId,
@@ -1215,7 +1215,6 @@ export function useChats(): UseChatResult {
     editMessage,
     switchVariant,
     abort,
-    startGhostChat,
     toggleMcpServer,
     setWebSearch,
     setWebSearchDefault,

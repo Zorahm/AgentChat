@@ -52,23 +52,3 @@ body.resizing { cursor: ew-resize !important; user-select: none; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ── Settings easter egg animations (legacy, used by settings panel) ──── */
-@keyframes dropOff {
-  0% { transform: translateY(0) rotate(0); }
-  20% { transform: translateY(-10px) rotate(15deg); }
-  100% { transform: translateY(800px) rotate(360deg); }
-}
-.st2-ghost-fall {
-  animation: dropOff 1.5s cubic-bezier(0.5, 0, 1, 1) forwards;
-  pointer-events: none;
-}
-.st2-ghost-btn {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--surface-3); border: 1px solid var(--line);
-  color: var(--ink); border-radius: 7px; cursor: pointer;
-  font-size: 18px; font-weight: bold;
-  opacity: 0; transition: opacity 0.3s;
-}
-.st2-ghost-btn.revealed {
-  opacity: 1; z-index: 1;
-}

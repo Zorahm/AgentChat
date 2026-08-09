@@ -19,9 +19,8 @@ import pkg from "../../../../package.json";
 import avatarZorahm from "../../../assets/avatar-zorahm.png";
 import avatarHerman from "../../../assets/avatar-hermandebush.png";
 
-export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }) {
+export function AboutTab() {
   const { t } = useTranslation();
-  const [ghostClicks, setGhostClicks] = useState(0);
   const stack = [
     { name: "React", icon: <Atom />, desc: t("settings.about.stackReact") },
     { name: "TypeScript", icon: <Code />, desc: t("settings.about.stackTypescript") },
@@ -183,26 +182,11 @@ export function AboutTab({ onStartGhostChat }: { onStartGhostChat?: () => void }
 
         <HStack gap={3} align="center" justify="between">
           <HStack gap={3} align="center">
-            <div style={{ position: "relative", width: 36, height: 36 }}>
-              {ghostClicks >= 5 && onStartGhostChat && (
-                <Button
-                  label="????"
-                  onClick={onStartGhostChat}
-                  variant="secondary"
-                  size="sm"
-                  className="st2-ghost-btn revealed"
-                >
-                  +
-                </Button>
-              )}
-              <img
-                src="/dots.svg"
-                alt=""
-                onClick={() => setGhostClicks(c => c + 1)}
-                className={ghostClicks >= 5 ? "st2-ghost-fall" : ""}
-                style={{ position: "absolute", inset: 0, width: 36, height: 36, borderRadius: 7, zIndex: 2 }}
-              />
-            </div>
+            <img
+              src="/dots.svg"
+              alt=""
+              style={{ width: 36, height: 36, borderRadius: 7 }}
+            />
             <VStack gap={0}>
               <Text weight="semibold">{t("settings.about.appName")}</Text>
               <Text type="supporting">{t("settings.about.version")} {pkg.version}</Text>

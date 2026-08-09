@@ -76,6 +76,14 @@ export interface SettingsData {
   web_search_mode?: string;
   searxng_url?: string | null;
   tavily_api_key_set?: boolean;
+  /** Which renderer image_generate uses: auto|api|a1111|comfy. */
+  image_backend?: string;
+  /** "<provider>/<model>" for the hosted image backend; "" disables it. */
+  image_api_model?: string;
+  a1111_url?: string | null;
+  comfy_url?: string | null;
+  comfy_checkpoint?: string;
+  comfy_workflow_path?: string | null;
   research_enabled?: boolean;
   /** "" → the chat's default model. */
   research_lead_model?: string;
@@ -97,10 +105,9 @@ interface SettingsPanelProps {
   initialTab?: NavTab;
   onSignOut: (deleteChats: boolean) => void;
   onOpenOnboarding: () => void;
-  onStartGhostChat?: () => void;
 }
 
-export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding, onStartGhostChat }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding }: SettingsPanelProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [settings, setSettings] = useState<SettingsData | null>(null);
@@ -329,7 +336,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
           {tab === "mcp" && <MCPTab />}
           {tab === "agents" && <AgentsTab settings={settings} />}
           {tab === "shortcuts" && <ShortcutsTab />}
-          {tab === "about" && <AboutTab onStartGhostChat={onStartGhostChat} />}
+          {tab === "about" && <AboutTab />}
         </div>
       )}
     </div>
