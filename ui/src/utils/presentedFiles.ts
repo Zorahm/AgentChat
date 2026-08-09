@@ -31,3 +31,24 @@ export function presentedArtifacts(toolCalls: ToolCall[] | undefined): Artifact[
   }
   return out;
 }
+
+/** Files an `image_generate` call wrote, from its progress events.
+ *
+ *  Deliberately NOT folded into presentedArtifacts: these already have their
+ *  own card in the chat (ImageGenCard), so adding them there would render every
+ *  generated image twice. This is for the file panels, which would otherwise
+ *  miss an image the model never bothered to present. */
+export function generatedImages(toolCalls: ToolCall[] | undefined): Artifact[] {
+  if (!toolCalls) return [];
+  const out: Artifact[] = [];
+  const seen = new Set<string>();
+  for (const call of toolCalls) {
+    if (call.name !== "image_generate") continue;
+    for (const image of call.image?.images ?? []) {
+      if (!image.path || seen.has(image.path)) continue;
+      seen.add(image.path);
+      out.push({ type: "file", path: image.path, label: basename(image.path) });
+    }
+  }
+  return out;
+}

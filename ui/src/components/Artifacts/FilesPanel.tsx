@@ -4,7 +4,7 @@ import { X } from "@phosphor-icons/react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import type { ChatMessage } from "../../types/chat";
 import type { Artifact } from "../../types/artifact";
-import { presentedArtifacts } from "../../utils/presentedFiles";
+import { generatedImages, presentedArtifacts } from "../../utils/presentedFiles";
 import { fileExtIcon } from "../../utils/toolIcons";
 import { basename } from "../../utils/basename";
 import { useTranslation } from "react-i18next";
@@ -42,7 +42,7 @@ function collectFiles(messages: ChatMessage[]): FileEntry[] {
     }
 
     if (msg.role === "assistant") {
-      for (const a of presentedArtifacts(msg.toolCalls)) {
+      for (const a of [...presentedArtifacts(msg.toolCalls), ...generatedImages(msg.toolCalls)]) {
         if (!a.path) continue;
         if (seen.has(a.path)) continue;
         seen.add(a.path);

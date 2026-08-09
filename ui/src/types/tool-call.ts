@@ -56,6 +56,36 @@ export interface ResearchData {
   durationMs?: number;
 }
 
+/** One finished image, as reported by an `image` tool_progress event. */
+export interface GeneratedImageRef {
+  path: string;
+  width: number;
+  height: number;
+  seed?: number;
+}
+
+/** Live state of an `image_generate` tool call — drives the image card.
+ *  Rebuilt from `tool_progress` events; see ui/src/utils/imageGen.ts.
+ *  The paths live here rather than in `input` because they only exist after
+ *  the tool has run — unlike show_widget's HTML, they cannot ride the call's
+ *  arguments. */
+export interface ImageGenData {
+  status: "running" | "complete" | "failed" | "cancelled";
+  /** Backend that rendered it: "a1111" | "comfy" | "api". */
+  backend: string;
+  prompt: string;
+  /** How many images were requested — sizes the placeholder grid. */
+  count: number;
+  /** 0..100 while a backend reports it; undefined = indeterminate. */
+  percent?: number;
+  /** Short backend status, e.g. "12/25" or "queued (1 ahead)". */
+  statusText?: string;
+  images: GeneratedImageRef[];
+  error?: string;
+  startedAt: number;
+  durationMs?: number;
+}
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -66,6 +96,8 @@ export interface ToolCall {
   filePath?: string;
   /** Present only on `research` tool calls — the timeline of the research run. */
   research?: ResearchData;
+  /** Present only on `image_generate` tool calls — progress + finished images. */
+  image?: ImageGenData;
   /** Present only on `ask_user` tool calls — the questions shown to the user. */
   userQuestion?: UserQuestionData;
 }
@@ -97,4 +129,5 @@ export const TOOL_ICONS: Record<string, string> = {
   present_files: "📎",
   read_skill: "📚",
   ask_user: "❓",
+  image_generate: "🎨",
 };

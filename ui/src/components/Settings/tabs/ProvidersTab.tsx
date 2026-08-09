@@ -1,4 +1,4 @@
-/** Providers tab — provider list, add form, web-search backend picker. */
+/** Providers tab — provider list, add form, web-search and image backends. */
 
 import { useTranslation } from "react-i18next";
 import { Button } from "@astryxdesign/core/Button";
@@ -6,6 +6,7 @@ import type { ProviderConfig, SettingsData } from "../SettingsPanel";
 import { AddProviderForm, type NewProvider } from "./providers/AddProviderForm";
 import { ProviderCard } from "./providers/ProviderCard";
 import { WebSearchSettings } from "./providers/WebSearchSettings";
+import { ImageGenSettings } from "./providers/ImageGenSettings";
 import { RU_PROVIDERS, type ProviderStatus } from "./providers/helpers";
 
 interface ProvidersTabProps {
@@ -87,5 +88,7 @@ export function ProvidersTab({
     />
 
     <WebSearchSettings settings={settings} onUpdate={onUpdateGlobal} />
+
+    <ImageGenSettings settings={settings} onUpdate={onUpdateGlobal} />
   </>;
 }

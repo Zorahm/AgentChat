@@ -13,7 +13,10 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+import server_mode
+from images.config import ImageGenConfig
 from llm.api_base import requires_api_key
+from llm.model_tag import retag_model_for_litellm
 from llm.models_fetcher import ModelsFetcher, looks_thinking
 from paths import SEARXNG_URL_ENV, TAVILY_API_KEY
 from schemas.agents import DEFAULT_AGENT_ID, AgentConfig, AgentCreate, AgentUpdate
@@ -41,6 +44,10 @@ from store.settings_io import (
     write_settings_file,
 )
 from web_search.config import WebSearchConfig
+
+# Accepted values of the image_backend setting. Kept as a plain tuple rather
+# than imported from images.config so validation here needs no typing.get_args.
+IMAGE_BACKENDS = ("auto", "api", "a1111", "comfy")
 
 # ---------------------------------------------------------------------------
 # default providers
@@ -170,6 +177,14 @@ class SettingsStore:
         self._searxng_url: str | None = None
         # None → fall back to the TAVILY_API_KEY env var at request time.
         self._tavily_api_key: str | None = None
+        # Image generation. The hosted model reuses an existing provider's key,
+        # so unlike Tavily there is no secret of its own to store here.
+        self._image_backend = "auto"
+        self._image_api_model = ""
+        self._a1111_url: str | None = None
+        self._comfy_url: str | None = None
+        self._comfy_checkpoint = ""
+        self._comfy_workflow_path: str | None = None
         # Sticky research toggle + the two models a research run uses: the lead
         # plans and synthesizes, the workers do the parallel digging. Splitting
         # them matters because the workers are where the tokens actually go.
@@ -271,6 +286,24 @@ class SettingsStore:
             tav = global_block.get("tavily_api_key")
             if isinstance(tav, str):
                 self._tavily_api_key = tav or None
+            ib = global_block.get("image_backend")
+            if isinstance(ib, str) and ib in IMAGE_BACKENDS:
+                self._image_backend = ib
+            iam = global_block.get("image_api_model")
+            if isinstance(iam, str):
+                self._image_api_model = iam
+            a1111 = global_block.get("a1111_url")
+            if isinstance(a1111, str):
+                self._a1111_url = a1111 or None
+            comfy = global_block.get("comfy_url")
+            if isinstance(comfy, str):
+                self._comfy_url = comfy or None
+            ckpt = global_block.get("comfy_checkpoint")
+            if isinstance(ckpt, str):
+                self._comfy_checkpoint = ckpt
+            wf = global_block.get("comfy_workflow_path")
+            if isinstance(wf, str):
+                self._comfy_workflow_path = wf or None
             re_ = global_block.get("research_enabled")
             if isinstance(re_, bool):
                 self._research_enabled = re_
@@ -383,6 +416,12 @@ class SettingsStore:
                 "web_search_enabled": self._web_search_enabled,
                 "searxng_url": self._searxng_url,
                 "tavily_api_key": self._tavily_api_key,
+                "image_backend": self._image_backend,
+                "image_api_model": self._image_api_model,
+                "a1111_url": self._a1111_url,
+                "comfy_url": self._comfy_url,
+                "comfy_checkpoint": self._comfy_checkpoint,
+                "comfy_workflow_path": self._comfy_workflow_path,
                 "research_enabled": self._research_enabled,
                 "research_lead_model": self._research_lead_model,
                 "research_worker_model": self._research_worker_model,
@@ -427,11 +466,17 @@ class SettingsStore:
             onboarding_completed=self._onboarding_completed,
             unrestricted_mode=self._unrestricted_mode,
             shell_preference=self._shell_preference,
-            remote_access_enabled=self._remote_access_enabled,
+            remote_access_enabled=self.remote_access_enabled,
             web_search_mode=self._web_search_mode,
             web_search_enabled=self._web_search_enabled,
             searxng_url=self._searxng_url,
             tavily_api_key_set=bool(self._tavily_api_key or TAVILY_API_KEY),
+            image_backend=self._image_backend,
+            image_api_model=self._image_api_model,
+            a1111_url=self._a1111_url,
+            comfy_url=self._comfy_url,
+            comfy_checkpoint=self._comfy_checkpoint,
+            comfy_workflow_path=self._comfy_workflow_path,
             research_enabled=self._research_enabled,
             research_lead_model=self._research_lead_model,
             research_worker_model=self._research_worker_model,
@@ -493,6 +538,23 @@ class SettingsStore:
             self._searxng_url = patch.searxng_url.strip() or None
         if patch.tavily_api_key is not None:
             self._tavily_api_key = patch.tavily_api_key.strip() or None
+        if patch.image_backend is not None:
+            if patch.image_backend not in IMAGE_BACKENDS:
+                raise ValueError(
+                    "image_backend must be one of "
+                    f"{'|'.join(IMAGE_BACKENDS)}, got {patch.image_backend!r}"
+                )
+            self._image_backend = patch.image_backend
+        if patch.image_api_model is not None:
+            self._image_api_model = patch.image_api_model.strip()
+        if patch.a1111_url is not None:
+            self._a1111_url = patch.a1111_url.strip() or None
+        if patch.comfy_url is not None:
+            self._comfy_url = patch.comfy_url.strip() or None
+        if patch.comfy_checkpoint is not None:
+            self._comfy_checkpoint = patch.comfy_checkpoint.strip()
+        if patch.comfy_workflow_path is not None:
+            self._comfy_workflow_path = patch.comfy_workflow_path.strip() or None
         if patch.research_enabled is not None:
             self._research_enabled = patch.research_enabled
         if patch.research_lead_model is not None:
@@ -769,16 +831,45 @@ class SettingsStore:
         return self._tavily_api_key
 
     @property
+    def image_backend(self) -> str:
+        return self._image_backend
+
+    @property
+    def image_api_model(self) -> str:
+        return self._image_api_model
+
+    @property
+    def a1111_url(self) -> str | None:
+        return self._a1111_url
+
+    @property
+    def comfy_url(self) -> str | None:
+        return self._comfy_url
+
+    @property
+    def comfy_checkpoint(self) -> str:
+        return self._comfy_checkpoint
+
+    @property
+    def comfy_workflow_path(self) -> str | None:
+        return self._comfy_workflow_path
+
+    @property
     def shell_preference(self) -> str:
         return self._shell_preference
 
     @property
     def remote_access_enabled(self) -> bool:
-        return self._remote_access_enabled
+        # A server-mode backend is remote by definition — there is no desktop
+        # app alongside it to flip the stored toggle.
+        return True if server_mode.enabled() else self._remote_access_enabled
 
     @property
     def remote_token(self) -> str:
-        return self._remote_token
+        # In server mode the secret lives in the environment or a 0600 file,
+        # never in settings.json: the server has no keychain to protect it and
+        # no UI to rotate it from.
+        return server_mode.server_token() if server_mode.enabled() else self._remote_token
 
     @property
     def secret_backend(self) -> str:
@@ -801,4 +892,34 @@ def build_web_search_config(store: SettingsStore) -> WebSearchConfig:
         tavily_api_key=store.tavily_api_key or TAVILY_API_KEY,
         searxng_url=store.searxng_url or SEARXNG_URL_ENV,
         default_mode=store.web_search_mode,  # type: ignore[arg-type]
+    )
+
+
+def build_image_config(store: SettingsStore) -> ImageGenConfig:
+    """Assemble the per-request image config from settings.
+
+    The hosted backend deliberately has no key of its own: ``image_api_model``
+    is a normal ``<provider>/<model>`` id, so the credentials come from the
+    provider the user already configured for chat — and the id goes through the
+    same LiteLLM re-tagging as a chat model, or an OpenAI-compatible endpoint
+    would fail with "LLM Provider NOT provided".
+    """
+    model = store.image_api_model.strip()
+    api_key: str | None = None
+    api_base: str | None = None
+    if model:
+        provider = store.get_provider(model)
+        if provider is not None:
+            api_key, api_base = provider.api_key, provider.api_base
+        model, api_key = retag_model_for_litellm(provider, model, api_key)
+
+    return ImageGenConfig(
+        backend=store.image_backend,  # type: ignore[arg-type]
+        api_model=model,
+        api_key=api_key,
+        api_base=api_base,
+        a1111_url=store.a1111_url,
+        comfy_url=store.comfy_url,
+        comfy_checkpoint=store.comfy_checkpoint,
+        comfy_workflow_path=store.comfy_workflow_path,
     )

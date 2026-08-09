@@ -127,6 +127,21 @@ class SettingsData(BaseModel):
     # True when a Tavily key is configured (settings or TAVILY_API_KEY env). The
     # raw key is never returned — set it via SettingsUpdate.tavily_api_key.
     tavily_api_key_set: bool = False
+    # Which renderer image_generate uses: auto|api|a1111|comfy. "auto" prefers a
+    # configured local GPU over a paid API — see images/config.AUTO_ORDER.
+    image_backend: str = "auto"
+    # "<provider>/<model>" for the hosted image backend, e.g. "openai/gpt-image-1".
+    # Empty means the hosted backend is unavailable.
+    image_api_model: str = ""
+    # Base URL of a local AUTOMATIC1111-compatible server (A1111 / Forge / SD.Next).
+    a1111_url: str | None = None
+    # Base URL of a local ComfyUI server.
+    comfy_url: str | None = None
+    # Checkpoint filename as ComfyUI knows it. Empty → whatever the workflow
+    # names, else ComfyUI's first installed checkpoint.
+    comfy_checkpoint: str = ""
+    # Path to a user-exported ComfyUI workflow (API format) replacing the bundled one.
+    comfy_workflow_path: str | None = None
     # Sticky on/off state of the per-chat research toggle. Persisted (like
     # web_search_enabled) so it survives restarts and is shared across devices.
     research_enabled: bool = False
@@ -171,6 +186,13 @@ class SettingsUpdate(BaseModel):
     searxng_url: str | None = None
     # Empty string clears the stored key (falls back to TAVILY_API_KEY env).
     tavily_api_key: str | None = None
+    image_backend: str | None = None
+    # Empty string disables the hosted image backend.
+    image_api_model: str | None = None
+    a1111_url: str | None = None
+    comfy_url: str | None = None
+    comfy_checkpoint: str | None = None
+    comfy_workflow_path: str | None = None
     research_enabled: bool | None = None
     # Empty string → fall back to default_model for the research lead.
     research_lead_model: str | None = None

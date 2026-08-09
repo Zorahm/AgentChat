@@ -1,0 +1,83 @@
+/* image_generate — the result card in the chat flow.
+   Sibling of the research card: our own surface, Astryx owns the progress bar. */
+
+.imggen-card {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.imggen-head { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+/* The copy button sits beside the prompt and must not shrink it. */
+.imggen-prompt-row { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+
+/* Deliberately NOT clamped — the model authors this prompt, so hiding half of
+   it hides what the user's GPU was told to draw. Selectable, and it wraps. */
+.imggen-title {
+  margin: 0; flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 500; color: var(--ink); line-height: 1.4;
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}
+
+.imggen-negative {
+  margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.4;
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}
+.imggen-negative-label { color: var(--muted); }
+
+.imggen-meta { font-size: 11.5px; color: var(--muted); user-select: text; }
+
+/* One image fills the card; several share a row and wrap on narrow screens. */
+.imggen-grid { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.imggen-grid:not([data-count="1"]) {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.imggen-tile {
+  padding: 0; border: none; border-radius: 10px; overflow: hidden;
+  background: var(--surface); cursor: pointer; display: block; width: 100%;
+}
+/* The whole image, never a crop — a generated picture is the deliverable, and
+   cover would silently cut off what the model actually drew. max-height keeps a
+   tall portrait from swallowing the chat column. */
+.imggen-tile img {
+  width: 100%; height: auto; max-height: 420px;
+  object-fit: contain; display: block;
+}
+.imggen-tile:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.imggen-tile--pending {
+  cursor: default;
+  /* A placeholder has no intrinsic size; the ratio stops the grid collapsing
+     to zero height before the first image arrives. */
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--line-2) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 300% 100%;
+  animation: imggen-shimmer 1.4s ease-in-out infinite;
+}
+.imggen-tile--pending:hover { outline: none; }
+
+@keyframes imggen-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .imggen-tile--pending { animation: none; }
+}
+
+.imggen-error {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 12.5px; color: var(--err); line-height: 1.45;
+}

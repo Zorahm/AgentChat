@@ -29,6 +29,7 @@ from shell import resolve_active_shell
 from tools.base import BaseTool
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
+from tools.image_generate import ImageGenerateTool
 from tools.read_file import ReadFileTool
 from tools.present_files import PresentFilesTool
 from tools.read_photo import ReadPhotoTool
@@ -506,7 +507,7 @@ async def chat(
     # Resolve the fallback chain (native → litellm/Tavily → searxng → none).
     # Native = a provider-side tool appended to the LiteLLM tools array; the
     # local backends = a `web_search` function-tool overlaid on the registry.
-    from store.settings_store import build_web_search_config
+    from store.settings_store import build_image_config, build_web_search_config
 
     overlay_tools: list[BaseTool] = list(mcp_proxies)
     native_web_tools: list[dict[str, Any]] = []
@@ -553,6 +554,15 @@ async def chat(
                 usage_metadata=usage_metadata,
             )
         )
+
+    # ── image generation wiring ─────────────────────────────────────────
+    # Unlike web search and research this has no toggle: the tool simply exists
+    # whenever something can actually render (a local URL or a hosted model is
+    # configured). Advertising a tool that can only ever return "not configured"
+    # would cost the model a call to find that out.
+    image_config = build_image_config(store)
+    if runtime.allows_overlays and image_config.any_available:
+        overlay_tools.append(ImageGenerateTool(app_state.image_service, image_config))
 
     registry: ToolRegistry = (
         MCPAwareRegistry(base_registry, overlay_tools) if overlay_tools else base_registry
@@ -654,6 +664,9 @@ async def chat(
     research = registry.get(ResearchTool.name)
     if isinstance(research, ResearchTool):
         research.set_policy(policy)
+    image_gen = registry.get(ImageGenerateTool.name)
+    if isinstance(image_gen, ImageGenerateTool):
+        image_gen.set_policy(policy)
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key, extra_headers=config.extra_headers)
     agent = AgentLoop(

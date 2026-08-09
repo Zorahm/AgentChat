@@ -14,6 +14,8 @@ import { API_BASE, withToken } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo, MessageUsage } from "../../types/chat";
 import type { ToolCall, ToolCallStatus, ProcessStep } from "../../types/tool-call";
 import { ResearchCard } from "./Research/ResearchCard";
+import { ImageGenCard } from "./ImageGenCard";
+import { copyText } from "../../utils/copyText";
 import { SourcesBox } from "./SourcesBox";
 import { aggregateUrls, extractUrls } from "../../utils/research";
 import { ArtifactCard } from "../Artifacts/ArtifactCard";
@@ -125,11 +127,24 @@ export function MessageBubble({
           .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
           .map((s) => s.call)
           .filter((c) => c.name === "research");
+        // Generated images render as their own card too — an image the user
+        // can't see is worth nothing, so image_generate never depends on the
+        // model remembering to call present_files afterwards.
+        const groupImages = procSteps
+          .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
+          .map((s) => s.call)
+          .filter((c) => c.name === "image_generate");
         // present_files surfaces its results as ArtifactCards below the message
         // (see `presented`), so its raw tool call is lifted out of the process
         // block — otherwise it shows up twice and looks like a stray tool.
         const visibleProc = procSteps.filter(
-          (s) => !(s.type === "tool" && (s.call.name === "research" || s.call.name === "present_files")),
+          (s) =>
+            !(
+              s.type === "tool" &&
+              (s.call.name === "research" ||
+                s.call.name === "present_files" ||
+                s.call.name === "image_generate")
+            ),
         );
 
         // Spinner while: any tool in this group is still running,
@@ -155,6 +170,9 @@ export function MessageBubble({
             )}
             {groupResearch.map((c) => (
               <ResearchCard key={`research-${c.id}`} call={c} />
+            ))}
+            {groupImages.map((c) => (
+              <ImageGenCard key={`imggen-${c.id}`} call={c} />
             ))}
             {groupWidgets.map((c) => {
               const wTitle = typeof c.input?.title === "string" ? c.input.title : undefined;
@@ -542,21 +560,9 @@ function MsgActions({ content, onRetry, onEdit, canEdit, compact }: {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = content;
-      ta.style.position = "fixed"; ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
+    await copyText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   }, [content]);
 
   return (
