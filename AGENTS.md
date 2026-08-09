@@ -73,6 +73,7 @@ AgentChat/
 │   ├── run.py                  # Uvicorn entry point
 │   ├── paths.py                # Path resolution (data dir, chat dirs); AGENTCHAT_DATA_DIR override
 │   ├── shell.py                # Shell abstraction (WSL/PowerShell/posix)
+│   ├── server_mode.py          # AGENTCHAT_SERVER_MODE — drops the loopback exemption, owns the token
 │   ├── extraction.py           # Content/text extraction utilities
 │   ├── _buildstamp.py          # Version stamped in by build-backend.ps1/.sh
 │   ├── api/                    # FastAPI route handlers
@@ -140,6 +141,16 @@ AgentChat/
 │   │   ├── sources.py          # URL extraction/dedup + citation audit
 │   │   ├── report.py           # research-<slug>.md path resolution + write
 │   │   └── types.py            # ModelEndpoint, SubagentTask, Finding, ResearchOutcome
+│   ├── images/                 # Image generation: local samplers + hosted APIs
+│   │   ├── config.py           # ImageRequest/ImageGenConfig/GeneratedImage — a LEAF
+│   │   ├── service.py          # ImageGenService — backend resolution (no silent fallback)
+│   │   ├── progress.py         # ImageProgressEmitter — the tool_progress vocabulary
+│   │   ├── probe.py            # Pixel size + mime straight from the header (no Pillow)
+│   │   ├── backends/a1111.py   # AUTOMATIC1111 / Forge / SD.Next — /sdapi/v1/txt2img
+│   │   ├── backends/comfy.py   # ComfyUI — queue a graph, poll /history, fetch /view
+│   │   ├── backends/comfy_workflow.py # Graph surgery: find the sampler, patch its links
+│   │   ├── backends/api.py     # Hosted models via litellm.aimage_generation/aimage_edit
+│   │   └── workflows/          # Bundled ComfyUI graphs (txt2img/img2img, API format)
 │   ├── tools/                  # Tool implementations (agent-callable)
 │   │   ├── base.py             # BaseTool ABC
 │   │   ├── registry.py         # ToolRegistry — register/execute tools
@@ -153,6 +164,7 @@ AgentChat/
 │   │   ├── read_photo.py       # ReadPhotoTool — image content extraction
 │   │   ├── ask_user.py         # AskUserTool — pauses the turn for user input
 │   │   ├── research_tool.py    # ResearchTool — model-written brief → research/lead
+│   │   ├── image_generate.py   # ImageGenerateTool — prompt → PNG in <chat>/images/
 │   │   ├── show_widget.py      # ShowWidgetTool — inline HTML/SVG visualizations
 │   │   ├── memory_tools.py     # remember/recall/forget — bound to one agent per request
 │   │   ├── web_search_tool.py  # WebSearchTool
@@ -189,14 +201,13 @@ AgentChat/
 │   └── src/
 │       ├── main.tsx            # React entry point; also routes ?debug-* query params to the harnesses below
 │       ├── App.tsx             # Root component, settings context, layout (Astryx AppShell/Theme)
-│       ├── Debug{Composer,Update,Usage,Research}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage/-research) — render one component tree in isolation against fabricated props for visual verification without a live backend
+│       ├── Debug{Composer,Update,Usage,Research,Image}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage/-research/-images) — render one component tree in isolation against fabricated props for visual verification without a live backend
 │       ├── hooks/
 │       │   ├── useChats/           # Multi-session chat manager (THE main hook)
 │       │   │   ├── index.ts        # useChats() — composes the pieces below
 │       │   │   ├── api.ts          # backend chat CRUD + localStorage→backend migration
 │       │   │   ├── tree.ts         # pure chat-tree helpers (branches, variants)
-│       │   │   ├── persistence.ts  # localStorage load/save + legacy-tree migration + pinned-chat ids
-│       │   │   └── easterEgg.ts    # Ghost Chat easter-egg lore injection
+│       │   │   └── persistence.ts  # localStorage load/save + legacy-tree migration + pinned-chat ids
 │       │   ├── useSSE.ts           # SSE connection helper (sseConnect)
 │       │   ├── useAvatar.ts        # Avatar URL management
 │       │   ├── useProjects.ts      # Projects data hook
@@ -221,6 +232,7 @@ AgentChat/
 │       │   │   ├── MCPChip.tsx          # MCP indicator chip + composer "Connectors" row
 │       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
 │       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
+│       │   │   ├── ImageGenCard.tsx     # image_generate card — progress + result tiles
 │       │   │   ├── Research/            # ResearchCard, ResearchPanel (agent tree),
 │       │   │   │                        # AgentNode, PlanList
 │       │   │   ├── SourcesBox.tsx       # Web-search/research source list
@@ -239,9 +251,11 @@ AgentChat/
 │       │   │       ├── SandboxTab.tsx
 │       │   │       ├── ProvidersTab.tsx    # shell — provider list, add form, web search
 │       │   │       ├── providers/          # ProviderCard, AddProviderForm, HeadersEditor,
-│       │   │       │                       # WebSearchSettings, SearxngInstaller, YandexSetup
+│       │   │       │                       # WebSearchSettings, ImageGenSettings,
+│       │   │       │                       # SearxngInstaller, YandexSetup
 │       │   │       ├── ModelsTab.tsx
 │       │   │       ├── PathsTab.tsx
+│       │   │       ├── paths/            # ServerModeCard — point this client at a remote backend
 │       │   │       ├── MCPTab.tsx
 │       │   │       ├── AgentsTab.tsx
 │       │   │       ├── ShortcutsTab.tsx
@@ -269,7 +283,6 @@ AgentChat/
 │       │   ├── LibraryPage.tsx      # Chats | Files tab switcher over a shared search box
 │       │   ├── AllChatsPage.tsx     # All chats grid with search/sort (rendered inside LibraryPage)
 │       │   ├── FilesGalleryPage.tsx # Gallery of all uploaded files (rendered inside LibraryPage)
-│       │   ├── GhostChat.tsx        # Empty/placeholder chat state
 │       │   ├── GlobalDropZone.tsx   # App-wide file drop handler
 │       │   └── ErrorBoundary.tsx
 │       ├── types/
@@ -285,6 +298,8 @@ AgentChat/
 │       ├── styles/              # astryx-setup.css (theme import) + global.css (legacy-name → --color-* token bridge) + per-screen CSS
 │       └── utils/
 │           ├── apiBase.ts          # API_BASE/token, installApiAuth(), withToken(), disconnect events
+│           ├── serverMode.ts       # Server-mode toggle — the one writer of BOTH the localStorage override and the shell's flag file
+│           ├── backendScope.ts     # scopedKey() — namespaces localStorage lists that hold backend-owned chat ids
 │           ├── tauri.ts            # isTauri()/isAndroidTauri() detection
 │           ├── downloadAndOpen.ts  # Blob-download fallback (browser/Android): fs write + OS "open with" on desktop
 │           ├── saveFileAs.ts       # Desktop-only OS "Save As" dialog (Tauri save_file_as command)
@@ -299,10 +314,12 @@ AgentChat/
 │           ├── openExternal.ts     # Open URLs in OS browser
 │           ├── mentions.ts         # @mention parsing (Astryx ChatComposerInput trigger source)
 │           ├── mcpName.ts          # MCP server display-name helpers
+│           ├── mcpStatus.ts        # MCP state → StatusDot variant/label (settings + composer share it)
 │           ├── research.ts         # Research report/event helpers
+│           ├── imageGen.ts         # image_generate tool_progress → card state (mirrors images/progress.py)
 │           ├── widgetTheme.ts      # Resolves app design tokens into a show_widget iframe's <style> block
 │           ├── zoom.ts             # UI zoom level handling
-│           ├── greetings.ts        # Welcome-screen greeting copy
+│           ├── greetings.ts        # Welcome-screen greeting (revealed by clicking the ghost); applyName() is the pure half
 │           ├── frontmatter.ts      # Markdown frontmatter parsing
 │           ├── getLang.ts          # Syntax-highlighter language detection
 │           ├── basename.ts         # Path basename helper
@@ -313,15 +330,17 @@ AgentChat/
 │   ├── src/
 │   │   ├── main.rs             # Desktop entry point — calls lib::run()
 │   │   ├── lib.rs              # Shared run() — plugin registration, shared by desktop+mobile
-│   │   └── desktop_backend.rs  # Sidecar spawn/supervise/restart (desktop only)
+│   │   ├── desktop_backend.rs  # Sidecar spawn/supervise/restart (desktop only)
+│   │   └── server_mode.rs      # Reads server-mode.json before the webview exists — suppresses the sidecar
 │   └── capabilities/
 │       ├── default.json            # Core permissions, all platforms
 │       ├── desktop-downloads.json  # fs:allow-download-write — desktop only
 │       └── mobile.json             # Barcode-scanner permissions — android/iOS only
 ├── skills/                     # Bundled skills shipped in the repo (office four + agentchat)
+├── scripts/                    # build-backend.ps1/.sh + install-server.sh (VDS deployment)
 ├── tests/                      # All tests
 │   ├── backend/                # pytest — agent loop, tools, sandbox, streaming, research, ...
-│   └── ui/                     # `node tests/ui/run.mjs` — chat-tree branching cost + SSE teardown
+│   └── ui/                     # `node tests/ui/run.mjs` — tsc-compiled suites run by Node; stubs/ replaces modules needing ui/ runtime
 └── docs/                       # Analysis reports
 ```
 
@@ -371,6 +390,56 @@ App.handleModelChange → updateSettings({ default_model }) → context syncs al
 - [ ] Single responsibility per module
 - [ ] No commented-out code
 - [ ] No hardcoded secrets or keys
+
+---
+
+## Server mode (backend on a VDS/VPS)
+
+The backend runs on a server; the PC, laptop and phone are clients pointed at it
+(Settings → Remote → Server mode). Because every tool call executes in the
+backend process, the agent's shell, files and sandbox are then the **server's** —
+which is the entire point, and also why the token is as sensitive as an SSH key.
+
+```sh
+curl -fsSL <raw>/scripts/install-server.sh | sudo bash -s -- --domain chat.example.com
+```
+
+The installer clones to `/opt/agentchat`, builds a venv and `ui/dist`, creates
+the `agentchat` user with `/var/lib/agentchat` as its home (so per-chat working
+folders land under the install's own state), writes `/etc/agentchat/agentchat.env`
+0600, installs a systemd unit, and — given `--domain` — puts Caddy in front for
+automatic TLS. `--update` re-pulls and restarts.
+
+### The one invariant
+
+**`AGENTCHAT_SERVER_MODE=1` turns OFF the loopback exemption in the `/api/*`
+guard.** A desktop backend exempts loopback because that *is* the local app
+talking to its own sidecar. Behind a reverse proxy every request arrives from
+127.0.0.1, so keeping the exemption would serve the whole internet an
+unauthenticated shell on the box. `tests/backend/test_server_mode.py` pins this;
+it is not a test to "fix" by relaxing.
+
+Consequences worth knowing:
+
+- The token comes from `AGENTCHAT_REMOTE_TOKEN`, or a 0600 `server-token` file in
+  the data dir if unset — never from settings.json, which has no keychain to
+  protect it on a headless host.
+- `/api/remote-access` (the pairing QR + token) **404s** in server mode: there is
+  no caller the backend can still identify as local.
+- `AGENTCHAT_HOST` defaults to `127.0.0.1` here, on the assumption of a proxy.
+  The installer sets `0.0.0.0` explicitly when run without `--domain`.
+- `AGENTCHAT_DATA_DIR` (which the installer always sets) also disables the OS
+  keychain, so provider keys land in a 0600 file — correct for headless.
+
+### Client side
+
+`utils/serverMode.ts` is the only writer of both stores that have to agree: the
+localStorage override (read synchronously by `apiBase` as the module graph
+loads) and `server-mode.json` in the Tauri config dir (read by `lib.rs` *before*
+the webview exists, to skip spawning the sidecar). Neither is derivable from the
+other at the moment it is needed. If the remote host goes dark, the reconnect
+overlay carries a "use the backend on this computer" escape — without it a
+desktop in server mode has no reachable Settings to undo it from.
 
 ---
 
@@ -474,7 +543,12 @@ Output: `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-univers
 A release is cut by **pushing a git tag `vX.Y.Z`**. The tag push triggers
 `.github/workflows/release.yml`, which builds the UI, the PyInstaller backend
 sidecar, and the Tauri app, then publishes a GitHub Release (installers +
-auto-updater manifest) plus a portable ZIP.
+auto-updater manifest) plus a portable ZIP — and, from separate jobs, the Arch
+AppImage and the Android APK.
+
+Every job builds into a **draft** release; the `publish` job flips it live only
+once Windows, Linux, the Arch AppImage and the APK have all landed, so users
+never see a half-built release.
 
 **Before tagging, bump `"version"` to the new number (e.g. `1.3.0` → `1.3.2`)
 in BOTH files.** They are not kept in sync automatically in the committed tree,
@@ -522,3 +596,31 @@ for why) and **overwrites** every `*.AppImage` release asset with it via
 - Consequence of not touching `latest.json`: the AppImage's in-app auto-update
   signature stays the ubuntu leg's, so it won't match the Arch AppImage. The
   *download* works; wiring the updater to the Arch signature is a separate step.
+
+### Android artifact (APK)
+
+The **`android`** job builds the thin client and uploads
+`agentchat-<version>-android-aarch64.apk` into the draft release. It shares
+nothing with the desktop matrix but `ui/dist` — no Python sidecar is built,
+because the APK connects to a *remote* backend.
+
+- **It builds the DEBUG apk deliberately.** The generated Gradle project turns
+  `usesCleartextTraffic` on only for the debug buildType, and pairing hands the
+  phone a plain `http://<lan-ip>:8787` URL (`api/remote.py`) — a release APK
+  would refuse that connection and simply never reach the backend. Debug is also
+  auto-signed with Gradle's debug keystore, so it sideloads as is. Shipping a
+  release APK instead means adding a keystore to repo secrets *and* a cleartext
+  opt-in for the release buildType.
+- `src-tauri/gen/` is gitignored, so the job runs `tauri android init` to
+  scaffold the Gradle project every time — that step is also what wires the
+  barcode-scanner plugin's ACL and manifest permissions in.
+- The NDK is **pinned to the r26 line and every other NDK on the runner is
+  deleted**, because cargo-tauri ignores `NDK_HOME` and takes the highest
+  version under `$ANDROID_HOME/ndk` (same gotcha as the local Windows build).
+- The job is `continue-on-error: true` — the Android toolchain is the most drift
+  prone leg, and a broken APK build must not strand a finished desktop release
+  as a permanent draft. **So check the release actually has an `.apk` asset.**
+  Remove the flag once the job has proven itself over a few releases.
+- `build-android.yml` (manual `workflow_dispatch`) is the smoke test: same
+  steps, uploads the APK as the `agentchat-android-apk` workflow artifact
+  instead of touching a release.
