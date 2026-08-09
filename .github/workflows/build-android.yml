@@ -61,19 +61,25 @@ jobs:
       - name: Build UI
         run: npm run build --prefix ui
 
+      # cargo-tauri, NOT the npm CLI. `android init` bakes whichever executable
+      # invoked it into gen/android/buildSrc/.../BuildTask.kt, and Gradle re-runs
+      # exactly that string for the Rust step. The npm CLI bakes in a bare node
+      # script name, which Gradle then resolves against src-tauri and cannot find
+      # ("Cannot find module .../src-tauri/tauri"). A native binary has no such
+      # indirection.
       - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
+        run: cargo install tauri-cli --version "^2" --locked
 
       # src-tauri/gen/ is gitignored, so the Gradle project is scaffolded fresh
       # every run; `init` also wires the barcode-scanner plugin's ACL/manifest.
       - name: Generate the Android project
-        run: tauri android init
+        run: cargo tauri android init
 
       # DEBUG on purpose: only the debug buildType enables cleartext traffic,
       # and pairing hands the phone a plain http://<lan-ip>:8787 URL. See the
       # `android` job in release.yml.
       - name: Build the APK
-        run: tauri android build --apk --debug --target aarch64
+        run: cargo tauri android build --apk --debug --target aarch64
 
       - name: Upload the APK
         uses: actions/upload-artifact@v4

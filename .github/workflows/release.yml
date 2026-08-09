@@ -355,17 +355,21 @@ jobs:
       - name: Build UI
         run: npm run build --prefix ui
 
+      # cargo-tauri, NOT the npm CLI — `android init` bakes the invoking
+      # executable into the generated Gradle project and Gradle re-runs that
+      # string for the Rust step; the npm CLI bakes in a bare node script name
+      # Gradle cannot resolve. See build-android.yml for the full story.
       - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
+        run: cargo install tauri-cli --version "^2" --locked
 
       # src-tauri/gen/ is gitignored, so the Android Gradle project is scaffolded
       # fresh on every run. `init` is also what wires the barcode-scanner
       # plugin's ACL + manifest permissions into that project.
       - name: Generate the Android project
-        run: tauri android init
+        run: cargo tauri android init
 
       - name: Build the APK
-        run: tauri android build --apk --debug --target aarch64
+        run: cargo tauri android build --apk --debug --target aarch64
 
       # Match the naming the release job gave every other asset
       # (assetNamePattern: agentchat-[version]-[platform]-[arch][ext]) and drop
