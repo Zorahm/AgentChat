@@ -550,7 +550,10 @@ export function App() {
         contentPadding={0}
         variant="section"
         style={{ height: "100%", minHeight: 0 }}
-        mobileNav={{ isOpen: isMobile && mobileNavOpen, onOpenChange: setMobileNavOpen, breakpoint: "md" }}
+        // hasToggle:false — AppShell's auto hamburger arrives wrapped in a mobile
+        // top bar of its own, which stacks above .chat-head and leaves the phone
+        // with two drawer buttons. Each screen renders its own instead.
+        mobileNav={{ isOpen: isMobile && mobileNavOpen, onOpenChange: setMobileNavOpen, breakpoint: "md", hasToggle: false }}
         sideNav={
           <Sidebar
           sessions={chats.sessions}
@@ -580,7 +583,7 @@ export function App() {
           style={{ minWidth: 0, minHeight: 0, display: "grid", gridTemplateRows: "minmax(0, 1fr)", overflow: "hidden" }}
         >
         {view === "usage" ? (
-          <UsageDashboardPage onGotoChat={gotoChatFromGallery} />
+          <UsageDashboardPage onGotoChat={gotoChatFromGallery} onOpenSidebar={() => setMobileNavOpen(true)} />
         ) : view === "projects" ? (
           <ProjectsView
             sessions={chats.sessions}
@@ -686,10 +689,6 @@ export function App() {
             initialTab={settingsTab}
             onSignOut={handleSignOut}
             onOpenOnboarding={() => { setView("chat"); setOnboardingDone(false); }}
-            onStartGhostChat={() => {
-              handleNavigate("chat");
-              chats.startGhostChat();
-            }}
           />
         </div>
       )}

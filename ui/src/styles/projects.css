@@ -3,7 +3,7 @@
 .proj-page {
   max-width: 860px;
   margin: 0 auto;
-  padding: 28px 32px 64px;
+  padding: calc(28px + var(--safe-top)) 32px 64px;
   height: 100%;
   overflow-y: auto;
   color: var(--ink);

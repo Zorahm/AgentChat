@@ -24,9 +24,9 @@
 
 /* ── Panel header ──────────────────────────────────────────────────────── */
 .ap-head {
-  height: calc(46px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line);
+  height: calc(46px + var(--safe-top)); border-bottom: 1px solid var(--line);
   display: flex; align-items: center; justify-content: space-between;
-  padding: env(safe-area-inset-top, 0px) 10px 0 6px; gap: 8px; flex-shrink: 0;
+  padding: var(--safe-top) 10px 0 6px; gap: 8px; flex-shrink: 0;
   background: var(--surface);
 }
 
@@ -397,7 +397,7 @@
 }
 .fp-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: env(safe-area-inset-top, 0px) 14px 0; height: calc(52px + env(safe-area-inset-top, 0px)); flex-shrink: 0;
+  padding: var(--safe-top) 14px 0; height: calc(52px + var(--safe-top)); flex-shrink: 0;
   border-bottom: 1px solid var(--line);
   background: var(--surface-2);
 }

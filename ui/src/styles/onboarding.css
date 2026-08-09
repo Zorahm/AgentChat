@@ -9,6 +9,9 @@
   justify-content: center;
   z-index: 10000;
   backdrop-filter: blur(10px) saturate(120%);
+  /* Full-bleed on the phone shell, so keep the card clear of the system bars. */
+  box-sizing: border-box;
+  padding: var(--safe-top) 0 var(--safe-bottom);
 }
 
 .ob-card {
@@ -25,7 +28,14 @@
   padding: 32px 36px;
 }
 
-.ob-header { margin-bottom: 22px; }
+/* One or two children (MobileConnect adds a close button beside the heading). */
+.ob-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
 
 .ob-header h2 {
   font-family: var(--font-hand);
@@ -53,41 +63,13 @@
   padding-right: 16px;
 }
 
+/* Layout only — the Astryx Button owns its height, padding, type and variant
+   colours. (It used to restate padding/border/background/font-size; the sm
+   Button keeps its own 28px box, so that padding squeezed the label inside it
+   and the steps read as cramped.) The rail is a column, so the steps stretch. */
 .ob-rail-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--muted);
-  font-size: 13.5px;
-  font-family: var(--font-body);
-  transition: background 0.15s, color 0.15s;
-}
-
-.ob-rail-step:disabled { cursor: default; }
-.ob-rail-step.done { color: var(--ink-soft); }
-.ob-rail-step.done:hover:not(:disabled) { background: var(--surface-2); }
-.ob-rail-step.active {
-  color: var(--ink);
-  background: var(--surface-2);
-  font-weight: 600;
-}
-
-.ob-rail-step.active .ob-rail-badge {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--on-ink);
-}
-
-.ob-rail-step.done .ob-rail-badge {
-  background: var(--ok-soft);
-  border-color: var(--ok-line);
-  color: var(--ok);
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .ob-content { min-width: 0; }
@@ -409,34 +391,37 @@
     padding-right: 0;
     padding-bottom: 12px;
   }
+  /* A wrapped row, not a column — the steps size to their labels. */
+  .ob-rail-step { width: auto; }
   .ob-dep-list { grid-template-columns: 1fr; }
   .ob-shell-choice { grid-template-columns: 1fr; }
   .ob-wsl-creds-row { grid-template-columns: 1fr; }
 }
 
 /* ── Mobile connect screen (APK) ───────────────────────────────────── */
+/* Desktop-only "drop back to the bundled backend" escape, shown when a
+   server-mode client can't reach its remote host. */
+.mc-local-escape { margin-bottom: 4px; }
+
 .mc-choices {
   display: grid;
   gap: 12px;
   margin-top: 16px;
 }
+/* Layout only — the Astryx secondary Button owns its surface, border and text
+   colour. (It used to restate them with --border/--bg-2/--fg, names the Astryx
+   token bridge never defined, so the tiles rendered borderless on a background
+   the same colour as the card and read as blank space.) */
 .mc-choice {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-2, var(--bg));
-  color: var(--fg);
   text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
 }
-.mc-choice:hover,
-.mc-choice:active { border-color: var(--accent); }
-.mc-choice > svg { color: var(--accent); }
+/* Descendant, not child: Button nests the icon two spans deep. */
+.mc-choice svg { color: var(--accent); }
 
 /* Scanning: page background is stripped to transparent (set inline in JS) so
    the native camera shows through; only this overlay is painted. */
@@ -463,6 +448,9 @@
   font-size: 14px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
+/* The backdrop here is the camera feed, not a theme surface — in light mode the
+   ghost button's own dark ink disappears into it. */
+.mc-scan button { color: #fff; }
 
 /* Connecting: shown inside the normal card while we verify the backend. */
 .mc-connecting {

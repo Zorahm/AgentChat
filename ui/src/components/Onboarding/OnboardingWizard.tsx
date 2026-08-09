@@ -199,7 +199,6 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         <div className="ob-shell-layout">
           <nav className="ob-rail">
             {rail.map(({ n, label }) => {
-              const state = step === n ? "active" : maxStep >= n ? "done" : "todo";
               const reachable = maxStep >= n && !envBusy;
               return (
                 <Button

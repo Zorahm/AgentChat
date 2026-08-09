@@ -84,7 +84,7 @@
    * in the top-left corner over the centered content. */
   .chat--welcome .chat-mobile-menu-btn {
     position: absolute;
-    top: max(10px, env(safe-area-inset-top));
+    top: max(10px, var(--safe-top));
     left: 10px;
     z-index: 5;
   }
@@ -92,7 +92,7 @@
 
   /* In an active chat the button sits inline at the start of the header.
    * Pin hamburger + title to the left; the files button drifts right. */
-  .chat-head { padding: env(safe-area-inset-top, 0px) 12px 0; gap: 8px; justify-content: flex-start; }
+  .chat-head { padding: var(--safe-top) 12px 0; gap: 8px; justify-content: flex-start; }
   .chat-head > div { min-width: 0; }
   .chat-head-btn { margin-left: auto; }
   .chat-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -102,7 +102,7 @@
   .chat-scroll-inner { gap: 18px; }
   .msg-user { max-width: 88%; }
   .msg-assistant { max-width: 100%; }
-  .composer { padding: 10px 10px calc(14px + env(safe-area-inset-bottom)); }
+  .composer { padding: 10px 10px calc(14px + var(--safe-bottom)); }
   .chat:not(.chat--welcome) .composer-shell { max-width: 100%; }
 
   /* ── Shrink buttons across the interface ─────────────────────────────── */
@@ -117,10 +117,10 @@
    * chain can overshoot the visible viewport in some webviews and push the
    * composer below .chat's overflow:hidden edge, hiding it. */
   .chat-welcome { flex: 1; min-height: 0; max-width: 100%; padding: 0 16px 0; gap: 0; }
-  .chat-welcome-hgroup { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding-bottom: 24px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+  .chat-welcome-hgroup { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding-bottom: 24px; padding-top: calc(12px + var(--safe-top)); }
   .chat-welcome-logo { width: 96px; height: 96px; margin-top: 0; }
   .chat-welcome-title { font-size: 24px; white-space: pre-line; }
-  .chat--welcome .composer { padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+  .chat--welcome .composer { padding-bottom: max(10px, var(--safe-bottom)); }
 
   /* Composer: start single-line, grow to ~10 lines then scroll. */
   .composer-editor { max-height: 250px; }
@@ -151,7 +151,7 @@
   .art-resize-handle { display: none; }
 
   /* ── Modals / page overlays: edge-to-edge ────────────────────────────── */
-  .ac-modal-overlay { padding: env(safe-area-inset-top, 0px) 0 0; }
+  .ac-modal-overlay { padding: var(--safe-top) 0 0; }
   .ac-page {
     max-height: 100vh;
     height: 100vh;

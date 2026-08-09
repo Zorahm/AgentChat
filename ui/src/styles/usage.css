@@ -4,7 +4,7 @@
 .usage-page {
   max-width: 860px;
   margin: 0 auto;
-  padding: 28px 32px 64px;
+  padding: calc(28px + var(--safe-top)) 32px 64px;
   height: 100%;
   overflow-y: auto;
   color: var(--ink);
@@ -22,7 +22,9 @@
 .usage-title {
   font-size: 24px;
   font-weight: 700;
-  margin: 0;
+  /* Keeps the title next to the mobile hamburger instead of letting
+     space-between centre it between the two. */
+  margin: 0 auto 0 0;
   display: flex;
   align-items: center;
   gap: 8px;

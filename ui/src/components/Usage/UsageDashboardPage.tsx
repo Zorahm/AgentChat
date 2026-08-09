@@ -3,8 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChartBar, ChatCircle } from "@phosphor-icons/react";
+import { ChartBar, ChatCircle, List } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { Card } from "@astryxdesign/core/Card";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { API_BASE } from "../../utils/apiBase";
@@ -92,6 +93,10 @@ const BREAKDOWN_COLORS: Record<keyof Breakdown, string> = {
 
 interface UsageDashboardPageProps {
   onGotoChat: (chatId: string) => void;
+  /** Mobile only: opens the nav drawer. This page has no other way back — the
+   *  shell's own hamburger is off (see App.tsx), and unlike Projects there is
+   *  no close button here. */
+  onOpenSidebar?: () => void;
 }
 
 const PROVIDER_COLORS: readonly string[] = [
@@ -128,7 +133,7 @@ async function fetchJson<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
+export function UsageDashboardPage({ onGotoChat, onOpenSidebar }: UsageDashboardPageProps) {
   const { t } = useTranslation();
   const [period, setPeriod] = useState<Period>("month");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -184,6 +189,16 @@ export function UsageDashboardPage({ onGotoChat }: UsageDashboardPageProps) {
   return (
     <div className="usage-page">
       <header className="usage-head">
+        {onOpenSidebar && (
+          <IconButton
+            className="chat-mobile-menu-btn"
+            icon={<List />}
+            label={t("sidebar.expand")}
+            onClick={onOpenSidebar}
+            variant="ghost"
+            size="sm"
+          />
+        )}
         <h1 className="usage-title"><ChartBar size={22} weight="duotone" /> {t("usage.title")}</h1>
         <div className="usage-period">
           {(["day", "week", "month", "all"] as Period[]).map((p) => (
