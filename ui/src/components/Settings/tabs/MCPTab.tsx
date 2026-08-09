@@ -10,7 +10,9 @@ import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Switch } from "@astryxdesign/core/Switch";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { API_BASE } from "../../../utils/apiBase";
+import { mcpDot } from "../../../utils/mcpStatus";
 import type { MCPTransportConfig, MCPStdioConfig, MCPHttpConfig } from "../SettingsPanel";
 
 interface ServerView {
@@ -76,6 +78,7 @@ export function MCPTab() {
   const { t } = useTranslation();
   const [servers, setServers] = useState<ServerView[]>([]);
   const [loading, setLoading] = useState(true);
+  const [probing, setProbing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -97,7 +100,27 @@ export function MCPTab() {
     }
   }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  /** Connect to every enabled server so the dots mean something.
+   *
+   *  The manager only spawns on demand, so without this a freshly configured
+   *  server sits at "stopped" until the user presses Test — which reads as
+   *  broken. Runs after `reload` rather than instead of it: the list should
+   *  appear immediately and the dots settle behind it. */
+  const probe = useCallback(async () => {
+    setProbing(true);
+    try {
+      const r = await fetch(`${API_BASE}/mcp/probe`, { method: "POST" });
+      if (r.ok) setServers(await r.json());
+    } catch { /* ignore — the un-probed states stay on screen */ }
+    finally { setProbing(false); }
+  }, []);
+
+  const reloadAndProbe = useCallback(async () => {
+    await reload();
+    await probe();
+  }, [reload, probe]);
+
+  useEffect(() => { void reloadAndProbe(); }, [reloadAndProbe]);
 
   const onDelete = async (id: string) => {
     if (!confirm(t("settings.mcp.deleteConfirm", { id }))) return;
@@ -114,7 +137,8 @@ export function MCPTab() {
       body: JSON.stringify({ enabled }),
     });
     if (!r.ok) { setError(`HTTP ${r.status}`); return; }
-    await reload();
+    // Enabling a server should light its dot without a second click.
+    await reloadAndProbe();
   };
 
   return (
@@ -151,11 +175,11 @@ export function MCPTab() {
             size="sm"
           />
           <Button
-            label={loading ? "…" : t("settings.mcp.refresh")}
+            label={loading || probing ? "…" : t("settings.mcp.refresh")}
             icon={<ArrowsClockwise size={14} />}
-            onClick={reload}
-            isDisabled={loading}
-            isLoading={loading}
+            onClick={reloadAndProbe}
+            isDisabled={loading || probing}
+            isLoading={loading || probing}
             variant="secondary"
             size="sm"
           />
@@ -180,6 +204,7 @@ export function MCPTab() {
             onDelete={() => onDelete(s.id)}
             onToggleEnabled={(en) => onToggleEnabled(s.id, en)}
             onChanged={reload}
+            probing={probing}
           />
         ))}
       </div>
@@ -258,13 +283,15 @@ function KVEditor({ pairs, onChange, keyPh = "KEY", valPh = "value" }: {
 
 /* ── ServerCard ───────────────────────────────────────────────────────── */
 
-function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChanged }: {
+function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChanged, probing }: {
   server: ServerView;
   open: boolean;
   onToggle: () => void;
   onDelete: () => void;
   onToggleEnabled: (v: boolean) => void;
   onChanged: () => void;
+  /** A probe of all servers is in flight — this card's state is not settled yet. */
+  probing: boolean;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ConfigForm>(() => configToForm(server.config));
@@ -319,9 +346,8 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
     }
   };
 
-  const dotColor =
-    server.state === "running" ? "var(--accent, #4ade80)" :
-    server.state === "error"   ? "var(--danger, #f87171)" : "var(--muted)";
+  // Testing this one card, or a probe of everything, both mean "not settled".
+  const dot = mcpDot(server.state, (testing || probing) && server.state !== "running");
 
   const summary = server.config.transport === "stdio"
     ? [(server.config as MCPStdioConfig).command, ...(server.config as MCPStdioConfig).args.slice(0, 2)].join(" ")
@@ -330,7 +356,14 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
   return (
     <div className={`mcp-card${open ? " mcp-card--open" : ""}`}>
       <div className="mcp-head" onClick={onToggle}>
-        <span className="mcp-dot" style={{ background: dotColor }} />
+        <span className="mcp-dot">
+          <StatusDot
+            variant={dot.variant}
+            label={t(dot.labelKey)}
+            tooltip={server.last_error ?? t(dot.labelKey)}
+            isPulsing={dot.isPulsing}
+          />
+        </span>
         <span className="mcp-name">{server.name}</span>
         <span className="mcp-tag">{server.config.transport}</span>
         <span className="mcp-summary">{summary}</span>

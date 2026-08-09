@@ -26,7 +26,8 @@
 }
 .mcp-head:hover { background: var(--surface-2, var(--paper-2)); }
 
-.mcp-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+/* Wrapper only — the dot itself is Astryx's StatusDot (fixed 8px, themed). */
+.mcp-dot { display: inline-flex; align-items: center; flex-shrink: 0; }
 .mcp-name { font-size: 13.5px; font-weight: 500; color: var(--ink); flex-shrink: 0; }
 .mcp-tag {
   font-size: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;

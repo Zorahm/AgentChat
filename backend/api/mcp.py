@@ -126,6 +126,34 @@ async def list_servers(request: Request) -> list[MCPServerView]:
     return [_view(cfg, request) for cfg in store.list_mcp_servers()]
 
 
+@router.post("/probe", response_model=list[MCPServerView])
+async def probe_servers(request: Request) -> list[MCPServerView]:
+    """Connect to every enabled server and report the resulting states.
+
+    ``GET /servers`` can only describe what the manager already knows, and the
+    manager is a *lazy* supervisor — before anything has used a server its state
+    is "stopped", which reads as "broken" to a user who has just configured it.
+    This is the automatic equivalent of pressing Test on each card.
+
+    Uses ``ensure_started``, not ``list_tools_fresh``: a server that is already
+    running should be reported, not restarted out from under a chat that is
+    mid-call. Failures are swallowed on purpose — the manager records them, so
+    they come back as ``state="error"`` with ``last_error`` set, which is
+    exactly what the caller wants to render.
+    """
+    store = request.app.state.settings_store
+    manager = request.app.state.mcp_manager
+    configs = store.list_mcp_servers()
+
+    # Concurrent, so one slow server doesn't serialize the rest. Each spawn is
+    # already bounded by the manager's own operation timeout.
+    await asyncio.gather(
+        *(manager.ensure_started(cfg) for cfg in configs if cfg.enabled),
+        return_exceptions=True,
+    )
+    return [_view(cfg, request) for cfg in configs]
+
+
 @router.post("/servers", response_model=MCPServerView)
 async def add_server(request: Request, body: MCPServerCreate) -> MCPServerView:
     store = request.app.state.settings_store
