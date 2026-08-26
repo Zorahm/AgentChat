@@ -60,6 +60,12 @@ Set-Location (Join-Path $root "backend")
 # imports the backend lazily inside a function, so PyInstaller's static scan
 # never sees it. Drop them and the frozen sidecar silently loses the keychain
 # and writes API keys to the plaintext fallback instead.
+#
+# `mathkit.worker` is the same kind of trap from the other direction: run.py
+# reaches it only inside the `--math-worker` branch, and every verifier module
+# is imported lazily inside the worker process. Without the hidden-import the
+# frozen sidecar spawns a worker that cannot import itself, and math_verify
+# fails with a startup error in every chat.
 pyinstaller run.py `
     --onefile `
     --name agentchat-backend `
@@ -83,6 +89,10 @@ pyinstaller run.py `
     --hidden-import uvicorn.lifespan.off `
     --hidden-import anyio._backends._asyncio `
     --hidden-import python_multipart `
+    --hidden-import mathkit.worker `
+    --hidden-import sympy `
+    --hidden-import mpmath `
+    --hidden-import numpy `
     --hidden-import keyring.backends.Windows `
     --hidden-import keyring.backends.chainer `
     --hidden-import keyring.backends.fail `
