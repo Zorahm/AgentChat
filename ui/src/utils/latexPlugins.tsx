@@ -1,14 +1,21 @@
-/** LaTeX support for Astryx's <Markdown/> — it has no built-in math rendering,
- *  so `$...$` / `$$...$$` render as raw text unless we plug KaTeX in via its
- *  `inlinePlugins` extension point (a Lexical-style TextMatchTransformer).
+/** LaTeX support for Astryx's <Markdown/>, which has no math rendering of its own.
  *
- *  Block math is checked first so `$$x$$` isn't half-consumed by the inline
- *  pattern first (overlapping matches resolve by array order, see Astryx's
- *  Markdown `applyInlinePlugins`).
+ * The delimiters are NOT matched here. They can't be: `inlinePlugins` runs on
+ * the text nodes the inline parser has already produced, and by then markdown
+ * has eaten every backslash as an escape and split the formula across several
+ * nodes, so a `$$…$$` pattern never matches. See `latexExtract.ts` for the
+ * evidence and the way around it.
+ *
+ * What this file does instead is render the sentinels that pass left behind.
+ * The latex has never touched the markdown parser, so it reaches KaTeX exactly
+ * as the model wrote it. The two steps have to be used together — call
+ * `extractMath` on the source, hand the text to <Markdown/> and the formulas to
+ * `makeLatexPlugins`.
  */
 
 import katex from "katex";
 import type { MarkdownInlinePlugin } from "@astryxdesign/core/Markdown";
+import { MATH_SENTINEL_RE, type ExtractedMath } from "./latexExtract";
 
 function renderKatex(latex: string, displayMode: boolean): string {
   return katex.renderToString(latex, {
@@ -19,32 +26,32 @@ function renderKatex(latex: string, displayMode: boolean): string {
   });
 }
 
-const blockMathPlugin: MarkdownInlinePlugin = {
-  pattern: /\$\$([\s\S]+?)\$\$/g,
-  render: (match, key) => (
-    <span
-      key={key}
-      className="math-block"
-      dangerouslySetInnerHTML={{ __html: renderKatex(match[1] ?? "", true) }}
-    />
-  ),
-};
-
-const inlineMathPlugin: MarkdownInlinePlugin = {
-  // Currency guard mirrors the old parseMath.ts heuristics: opening `$` not
-  // followed by whitespace, body can't start/end with whitespace or contain
-  // a newline, closing `$` not immediately followed by a digit — so
-  // "$5 and $10" stays plain text instead of being read as inline math.
-  pattern: /\$(?!\s)([^\s$](?:[^$\n]*[^\s$])?)\$(?!\d)/g,
-  render: (match, key) => (
-    <span
-      key={key}
-      className="math-inline"
-      dangerouslySetInnerHTML={{ __html: renderKatex(match[1] ?? "", false) }}
-    />
-  ),
-};
-
-/** Pass as `inlinePlugins` to every Astryx <Markdown/> instance that should
- *  render LaTeX. */
-export const latexMarkdownPlugins: MarkdownInlinePlugin[] = [blockMathPlugin, inlineMathPlugin];
+/** Build the plugin list for one rendered message.
+ *
+ * Per message rather than shared, because the plugin closes over that message's
+ * own formulas — the sentinel carries an index into this list and nothing else.
+ */
+export function makeLatexPlugins(math: ExtractedMath[]): MarkdownInlinePlugin[] {
+  if (math.length === 0) return [];
+  return [
+    {
+      pattern: MATH_SENTINEL_RE,
+      render: (match, key) => {
+        const found = math[Number(match[1])];
+        // A sentinel with no formula behind it cannot happen from `extractMath`,
+        // but rendering nothing is the safe answer if it ever does: the
+        // alternative is throwing inside a render and blanking the message.
+        if (!found) return <span key={key} />;
+        return (
+          <span
+            key={key}
+            className={found.displayMode ? "math-block" : "math-inline"}
+            dangerouslySetInnerHTML={{
+              __html: renderKatex(found.latex, found.displayMode),
+            }}
+          />
+        );
+      },
+    },
+  ];
+}

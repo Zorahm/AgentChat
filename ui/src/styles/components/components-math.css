@@ -1,0 +1,234 @@
+/* math_verify's badge and math_plot's card.
+
+   The badge's five states are separated on THREE axes at once — icon, colour,
+   and border treatment — and that redundancy is deliberate. Colour alone fails
+   for a colour-blind reader and fails again for anyone skimming; a badge whose
+   states blur together is one people stop reading, and an unread badge is worse
+   than none because it still looks like a guarantee. Solid borders mean the
+   check ran and concluded; dashed means it could not conclude; dotted means the
+   checker itself broke. */
+
+.verify-badge {
+  margin: 6px 0 2px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.verify-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font: inherit;
+}
+.verify-head:hover { background: var(--surface); }
+
+.verify-label { font-weight: 600; }
+.verify-kind { color: var(--muted); font-size: 11.5px; }
+.verify-attempts {
+  color: var(--muted);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.verify-chev { margin-left: auto; color: var(--muted); display: inline-flex; }
+
+/* ── the five states ─────────────────────────────────────────────────── */
+
+.verify-badge--verified { border-color: var(--ok-line); background: var(--ok-soft); }
+.verify-badge--verified .verify-head { color: var(--ok); }
+
+.verify-badge--refuted { border-color: var(--err-line); background: var(--err-soft); }
+.verify-badge--refuted .verify-head { color: var(--err); }
+
+.verify-badge--partial { border-color: var(--running-line); background: var(--running-soft); }
+.verify-badge--partial .verify-head { color: var(--running); }
+
+/* Dashed, muted, and emphatically not green: "nothing was established" must not
+   be able to pass for "checked and correct" at a glance. */
+.verify-badge--inconclusive {
+  border-style: dashed;
+  border-color: var(--line-2);
+  background: transparent;
+}
+.verify-badge--inconclusive .verify-head { color: var(--muted); }
+
+/* Dotted, and equally not red: the tool failed, which says nothing at all about
+   the answer. Drawing it like a refutation is how a correct solution gets
+   rewritten because SymPy timed out. */
+.verify-badge--error {
+  border-style: dotted;
+  border-color: var(--line-2);
+  background: transparent;
+  color: var(--muted);
+}
+/* Muted, like `inconclusive` and unlike the three verdicts — a failed checker
+   is not a finding, and rendering it at full contrast reads as an alarm about
+   an answer the tool never actually examined. */
+.verify-badge--error .verify-head { color: var(--muted); }
+
+/* No expandable head — the tool broke before producing anything to expand. */
+.verify-badge--bare {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+}
+
+.verify-badge--running {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  color: var(--muted);
+  border-style: dashed;
+  background: transparent;
+}
+
+.verify-spinner {
+  width: 12px; height: 12px; flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--accent);
+  animation: verify-spin 0.8s linear infinite;
+}
+@keyframes verify-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .verify-spinner { animation-duration: 2.4s; }
+}
+
+/* ── expanded panel ──────────────────────────────────────────────────── */
+
+.verify-body {
+  padding: 2px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.verify-section-label {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.verify-problem { display: flex; flex-direction: column; gap: 4px; }
+
+.verify-code {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* The problem string is the one thing a human can check that no code can: if it
+   has drifted from the question actually asked, the green badge is meaningless. */
+.verify-code--problem { border-left: 3px solid var(--accent); }
+
+.verify-detail { margin: 0; color: var(--ink); line-height: 1.55; user-select: text; }
+.verify-method { margin: 0; color: var(--ink-soft); line-height: 1.5; }
+.verify-hint { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.45; }
+
+.verify-halves { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+.verify-half {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 11.5px;
+}
+.verify-half--ok { border-color: var(--ok-line); }
+.verify-half--bad { border-color: var(--err-line); }
+.verify-half-title { font-weight: 600; color: var(--ink); }
+.verify-half-detail { color: var(--muted); line-height: 1.45; }
+
+.verify-counter { display: flex; flex-direction: column; gap: 4px; }
+
+.verify-earlier { display: flex; flex-direction: column; gap: 6px; }
+.verify-earlier-item {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.verify-earlier-status { font-weight: 600; font-size: 11.5px; }
+.verify-earlier-detail { flex: 1; min-width: 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.verify-earlier-item .verify-code { flex-basis: 100%; }
+
+.verify-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+.verify-dot--verified { background: var(--ok); }
+.verify-dot--refuted { background: var(--err); }
+.verify-dot--partial { background: var(--running); }
+.verify-dot--inconclusive { background: var(--faint); }
+.verify-dot--error { background: var(--faint); }
+
+.verify-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.verify-meta { margin: 0; font-size: 11px; color: var(--muted); }
+.verify-error { margin: 0; font-size: 11.5px; color: var(--err); }
+
+/* ── math_plot card ──────────────────────────────────────────────────── */
+
+.mathplot-card {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mathplot-head { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.mathplot-title {
+  margin: 0; flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 500; color: var(--ink); line-height: 1.4;
+  overflow-wrap: anywhere; user-select: text;
+}
+.mathplot-actions { display: flex; gap: 2px; flex: none; }
+
+/* The SVG carries its own viewBox and width="100%", so it scales with the chat
+   column; the height follows from the aspect ratio rather than being pinned. */
+.mathplot-figure { width: 100%; }
+.mathplot-figure svg { display: block; width: 100%; height: auto; }
+
+.mathplot-warnings {
+  margin: 0; padding-left: 16px;
+  font-size: 11.5px; color: var(--muted); line-height: 1.45;
+}
+
+.mathplot-card--pending,
+.mathplot-card--failed {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.mathplot-card--pending { border-style: dashed; }
+.mathplot-card--failed { border-color: var(--err-line); color: var(--err); }
