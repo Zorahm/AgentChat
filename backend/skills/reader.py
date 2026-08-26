@@ -69,6 +69,23 @@ class SkillEntry:
     version: str
     author: str
     path: Path  # directory containing SKILL.md
+    # Name of the Agent Plugin this skill came packaged in, empty for one
+    # installed on its own. Carried into the prompt so the model can tell the
+    # two apart — a skill that arrived inside a plugin has the rest of that
+    # plugin sitting beside it.
+    plugin: str = ""
+
+
+def _describe(entry: SkillEntry) -> str:
+    """One prompt line for a skill, naming the plugin it arrived in.
+
+    The origin is not decoration: it tells the model that this skill's
+    directory sits inside a larger package it can also read, and it is the
+    only place the skill list and the plugin list are tied together.
+    """
+    origin = f" _(from plugin `{entry.plugin}`)_" if entry.plugin else ""
+    tail = f": {entry.description}" if entry.description else ""
+    return f"- **{entry.name}**{origin}{tail}"
 
 
 class AgentSkillsReader:
@@ -85,6 +102,11 @@ class AgentSkillsReader:
         # like the installer); kept as a separate attr for backwards compatibility.
         self.skills_dir: Path = self.skills_dirs[0]
         self._skills: dict[str, SkillEntry] = {}
+        # Skills contributed by installed Agent Plugins. They are not scanned
+        # from a directory here: a plugin's skills/ has its own discovery rules
+        # (immediate children only), so the plugins layer resolves them and
+        # hands over the finished entries.
+        self._plugin_skills: tuple[SkillEntry, ...] = ()
         self._last_scan_ts: float = 0.0
 
     _SKIP_DIRS = frozenset({".git", "node_modules", "dist", "build", "__pycache__", ".venv", "venv"})
@@ -129,6 +151,13 @@ class AgentSkillsReader:
                     author=meta.get("author", ""),
                     path=entry_path,
                 )
+
+        # Merged last, so an installed skill of the same name shadows a
+        # plugin's: the user put theirs there deliberately, and a plugin
+        # should not be able to take a name over by installing.
+        for entry in self._plugin_skills:
+            self._skills.setdefault(entry.name, entry)
+
         self._last_scan_ts = time.time()
 
     def _iter_skill_files(self, root: Path) -> list[Path]:
@@ -151,6 +180,19 @@ class AgentSkillsReader:
         walk(root)
         return results
 
+    def set_plugin_skills(self, entries: Iterable[SkillEntry]) -> None:
+        """Replace the set of skills contributed by installed plugins.
+
+        Forces the next :meth:`rebuild` to redo its merge: enabling a plugin
+        changes nothing about the scanned directories' mtimes, so the cache
+        would otherwise hide it until an unrelated edit.
+        """
+        incoming = tuple(entries)
+        if incoming == self._plugin_skills:
+            return
+        self._plugin_skills = incoming
+        self._last_scan_ts = 0.0
+
     def list_skills(self) -> list[SkillEntry]:
         return sorted(self._skills.values(), key=lambda s: s.name)
 
@@ -170,8 +212,6 @@ class AgentSkillsReader:
     def render_prompt(self) -> str:
         if not self._skills:
             return ""
-        lines = [
-            f"- **{e.name}**: {e.description}" if e.description else f"- **{e.name}**"
-            for e in self.list_skills()
-        ]
-        return self._PROMPT_TEMPLATE.format(descriptions="\n".join(lines))
+        return self._PROMPT_TEMPLATE.format(
+            descriptions="\n".join(_describe(e) for e in self.list_skills())
+        )

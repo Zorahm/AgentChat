@@ -1,0 +1,106 @@
+/* Settings — Plugins tab (Agent Plugins) */
+
+.plg-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.plg-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+
+.plg-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); overflow: hidden; }
+.plg-card--open { border-color: var(--ink-soft); }
+
+.plg-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; cursor: pointer; user-select: none;
+}
+.plg-head:hover { background: var(--surface-2, var(--paper-2)); }
+
+/* Wrapper only — the dot itself is Astryx's StatusDot. */
+.plg-dot { display: inline-flex; align-items: center; flex-shrink: 0; }
+.plg-spacer { flex: 1; min-width: 8px; }
+
+.plg-name { font-size: 13.5px; font-weight: 500; color: var(--ink); flex-shrink: 0; }
+.plg-version {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted); flex-shrink: 0;
+}
+.plg-summary {
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 1 auto; min-width: 0;
+}
+.plg-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 100px;
+  background: var(--surface-2, var(--paper-2)); color: var(--muted);
+  border: 1px solid var(--line); flex-shrink: 0;
+}
+.plg-tag--err { color: var(--err); background: var(--err-soft); border-color: var(--err-line); }
+.plg-chevron { color: var(--muted); flex-shrink: 0; }
+
+.plg-body {
+  padding: 14px 16px 16px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.plg-meta { font-size: 12px; color: var(--muted); margin: 0; }
+.plg-path { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin: 0; word-break: break-all; }
+
+.plg-section { display: flex; flex-direction: column; gap: 5px; }
+.plg-section-h {
+  font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--ink-soft); margin: 4px 0 0;
+}
+.plg-list-desc { color: var(--muted); }
+.plg-list-err { color: var(--err); }
+
+.plg-body ul.plg-list {
+  margin: 0 0 0 18px; padding: 0; display: block;
+  font-size: 12px; color: var(--ink-soft); list-style: disc;
+}
+.plg-body ul.plg-list code { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); }
+
+.plg-issues { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.plg-issue {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 12px; color: var(--ink-soft); line-height: 1.45;
+}
+.plg-issue strong { font-family: var(--font-mono); font-weight: 500; color: var(--ink); }
+.plg-issue--err { color: var(--err); }
+
+.plg-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.plg-location {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  margin: 4px 0 0; word-break: break-all;
+}
+
+/* ── install panel ────────────────────────────────────────────────────── */
+
+.plg-add-form {
+  background: var(--surface, var(--paper-2));
+  border: 1.5px solid var(--ink); border-radius: 10px; padding: 16px; margin: 8px 0 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.plg-add-form-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 600;
+}
+
+.plg-tabs { display: flex; gap: 4px; }
+.plg-tab {
+  font: inherit; font-size: 12px; cursor: pointer;
+  padding: 5px 12px; border-radius: 100px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+}
+.plg-tab--active { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+
+.plg-field {
+  display: flex; flex-direction: column; gap: 5px; align-items: flex-start;
+  font-size: 12px; font-weight: 500; color: var(--ink-soft);
+}
+.plg-field input {
+  width: 100%; box-sizing: border-box;
+  font-family: var(--font-mono); font-size: 12px;
+  border: 1px solid var(--line); background: var(--paper);
+  padding: 7px 10px; border-radius: 7px; color: var(--ink); outline: none;
+}
+.plg-field input:focus { border-color: var(--ink-soft); }
+.plg-hint { font-weight: 400; color: var(--muted); font-size: 11.5px; }
