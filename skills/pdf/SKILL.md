@@ -1,7 +1,7 @@
 ---
 name: pdf
 description: "Use for anything involving PDF files: extracting text or tables, merging/splitting/rotating pages, adding watermarks, creating PDFs from scratch or from text/HTML, filling simple form fields, encrypting/decrypting, extracting images, and OCR on scanned PDFs. Trigger when the user mentions a .pdf file or wants a PDF deliverable."
-version: "1.0.0"
+version: "1.1.0"
 author: AgentChat
 ---
 
@@ -10,6 +10,42 @@ author: AgentChat
 Read, manipulate, and create PDFs with open-source Python libraries
 (**pypdf**, **pdfplumber**, **reportlab**) and **poppler** CLI tools. Original
 guide for AgentChat.
+
+## Hard rule: generate with code, never write the file as text
+
+A `.pdf` is a binary document, not text. **Never** pass a `.pdf` path to
+`write_file` or `edit_file` — both tools refuse it, and a text write would leave
+the user with a file no reader can open. Every PDF below is produced by *running
+code* through `bash_tool`: reportlab for direct generation, or LibreOffice to
+convert something you generated first.
+
+The generator script is ordinary text, so write it the normal way — `write_file`
+a `.py` (the user watches it stream), then run it:
+
+```python
+# build_pdf.py  — written with write_file
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
+
+c = canvas.Canvas("output.pdf", pagesize=LETTER)
+c.setFont("Helvetica-Bold", 18)
+c.drawString(72, 720, "Quarterly Report")
+c.showPage()
+c.save()
+```
+
+```bash
+python build_pdf.py
+```
+
+A short one-off can go straight through a `python - <<'PY' … PY` heredoc instead.
+
+For anything with real layout (headings, tables, styles), generating a `.docx`
+with python-docx and converting is usually less work than hand-placing text:
+
+```bash
+soffice --headless --convert-to pdf report.docx --outdir .
+```
 
 ## Running in AgentChat
 

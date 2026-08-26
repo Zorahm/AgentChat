@@ -1,7 +1,7 @@
 ---
 name: agentchat
 description: "Read this whenever the user asks about AgentChat itself — the app they are using right now. Triggers: questions about what AgentChat is or can do, its features (chats, projects, skills, MCP, web search, research, widgets, file tools, attachments, remote/phone access, themes, languages), how to do something in the app, where a setting lives, why the agent can or can't access a file, which providers/models are supported, how the sandbox/shell works, or troubleshooting the app. Use this to answer 'how do I…', 'can AgentChat…', 'where is…', 'why did it…' questions about the application. Do NOT use it for general coding tasks unrelated to the app."
-version: "1.0.0"
+version: "1.1.0"
 author: AgentChat
 ---
 
@@ -42,8 +42,12 @@ The model doesn't just chat — it acts, with each step streamed live. Built-in
 tools:
 
 - **bash_tool** — run shell commands.
-- **read_file / write_file / edit_file** — file I/O (write/edit stream a live
-  preview in the chat).
+- **read_file / write_file / edit_file** — file I/O for **text** formats
+  (write/edit stream a live preview in the chat). Office and binary formats
+  (.docx .xlsx .pptx .pdf .odt …) are refused by both tools — those are generated
+  by running python-docx / openpyxl / python-pptx / reportlab through bash_tool;
+  see the docx/xlsx/pptx/pdf skills.
+- **list_dir** — list a folder's contents (optionally a few levels deep).
 - **present_files** — surface finished files as viewable/downloadable cards.
 - **read_photo** — extract image content.
 - **read_skill** — load a skill's full instructions on demand.

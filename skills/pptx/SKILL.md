@@ -1,7 +1,7 @@
 ---
 name: pptx
 description: "Use whenever a .pptx is involved — input, output, or both: creating slide decks / pitch decks / presentations, reading or extracting text from a .pptx, editing or restyling an existing deck, adding slides, images, tables, charts, or speaker notes, and exporting slides to PDF or images. Trigger when the user mentions 'deck', 'slides', 'presentation', or a .pptx filename. Do NOT use for Word docs, spreadsheets, or PDFs as the primary deliverable."
-version: "1.0.0"
+version: "1.1.0"
 author: AgentChat
 ---
 
@@ -9,6 +9,35 @@ author: AgentChat
 
 Create, read, and edit PowerPoint decks with the open-source **python-pptx**
 library, plus LibreOffice for PDF/image export. Original guide for AgentChat.
+
+## Hard rule: generate with code, never write the file as text
+
+A `.pptx` is a ZIP container, not text. **Never** pass a `.pptx` path to
+`write_file` or `edit_file` — both tools refuse it, and a text write would leave
+the user with a file PowerPoint cannot open. Every deck below is produced by
+*running Python* through `bash_tool`.
+
+The generator script is ordinary text, so write it the normal way — `write_file`
+a `.py` (the user watches it stream), then run it:
+
+```python
+# build_deck.py  — written with write_file
+from pptx import Presentation
+
+prs = Presentation()
+slide = prs.slides.add_slide(prs.slide_layouts[0])
+slide.shapes.title.text = "Quarterly Review"
+slide.placeholders[1].text = "Revenue grew 15%"
+prs.save("deck.pptx")
+```
+
+```bash
+python build_deck.py
+```
+
+A short one-off can go straight through a `python - <<'PY' … PY` heredoc instead.
+Prefer the script for a real deck — slide loops get long, and a file is easy to
+re-run after a fix.
 
 ## Running in AgentChat
 

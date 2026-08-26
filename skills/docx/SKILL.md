@@ -1,7 +1,7 @@
 ---
 name: docx
 description: "Use when the user wants to create, read, edit, or convert Word documents (.docx). Triggers: 'Word doc', '.docx', a report/memo/letter/template deliverable, extracting or reorganizing content from a Word file, adding headings/tables/images/page numbers/table of contents, find-and-replace in a Word file, or converting Markdown/text to .docx (or .doc to .docx). Do NOT use for PDFs, spreadsheets, or presentations."
-version: "1.0.0"
+version: "1.1.0"
 author: AgentChat
 ---
 
@@ -9,6 +9,43 @@ author: AgentChat
 
 Create, read, and edit `.docx` files with the open-source **python-docx**
 library, plus `pandoc`/LibreOffice for conversions. Original guide for AgentChat.
+
+## Hard rule: generate with code, never write the file as text
+
+A `.docx` is a ZIP container, not text. **Never** pass a `.docx` path to
+`write_file` or `edit_file` — both tools refuse it, and a text write would leave
+the user with a file Word cannot open. Every document below is produced by
+*running Python* through `bash_tool`.
+
+The generator script is ordinary text, so write it the normal way — `write_file`
+a `.py` (the user watches it stream), then run it:
+
+```python
+# build_report.py  — written with write_file
+from docx import Document
+
+doc = Document()
+doc.add_heading("Quarterly Report", level=0)
+doc.add_paragraph("Revenue grew 15% year over year.")
+doc.save("report.docx")
+```
+
+```bash
+python build_report.py
+```
+
+A short one-off can go straight through a heredoc instead:
+
+```bash
+python - <<'PY'
+from docx import Document
+doc = Document(); doc.add_paragraph("hello"); doc.save("note.docx")
+PY
+```
+
+Prefer the script for anything non-trivial: it is visible, re-runnable, and easy
+to fix. The same rule holds for editing — read the file with python-docx, change
+it in memory, save it again; never do string surgery on the bytes.
 
 ## Running in AgentChat
 

@@ -1,7 +1,7 @@
 ---
 name: xlsx
 description: "Use when a spreadsheet is the input or output: open/read/edit/fix an existing .xlsx, .xlsm, .csv, or .tsv (add columns, compute formulas, format, chart, clean messy data), create a spreadsheet from scratch or from data, or convert between tabular formats. Trigger when the user references a spreadsheet by name or wants a spreadsheet deliverable. Do NOT use when the deliverable is a Word doc, presentation, or plain script."
-version: "1.0.0"
+version: "1.1.0"
 author: AgentChat
 ---
 
@@ -9,6 +9,37 @@ author: AgentChat
 
 Create, read, and edit spreadsheets with the open-source **openpyxl** (formatting
 and formulas) and **pandas** (bulk data). Original guide for AgentChat.
+
+## Hard rule: generate with code, never write the file as text
+
+An `.xlsx` is a ZIP container, not text. **Never** pass an `.xlsx` path to
+`write_file` or `edit_file` — both tools refuse it, and a text write would leave
+the user with a file Excel cannot open. Every workbook below is produced by
+*running Python* through `bash_tool`.
+
+The generator script is ordinary text, so write it the normal way — `write_file`
+a `.py` (the user watches it stream), then run it:
+
+```python
+# build_report.py  — written with write_file
+from openpyxl import Workbook
+
+wb = Workbook()
+ws = wb.active
+ws.title = "Q1"
+ws.append(["Item", "Qty", "Price"])
+ws.append(["Widget", 12, 9.99])
+wb.save("report.xlsx")
+```
+
+```bash
+python build_report.py
+```
+
+A short one-off can go straight through a `python - <<'PY' … PY` heredoc instead.
+
+`.csv` is the exception in this skill — it *is* text, so `write_file` is fine for
+it (though pandas `.to_csv()` is less error-prone once there's real data).
 
 ## Running in AgentChat
 

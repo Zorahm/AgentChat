@@ -38,6 +38,7 @@ ANTHROPIC_DISPLAY_NAME = "Anthropic"
 # GitHub repo/subdir below is a never-used fallback placeholder.
 CURATED_SKILLS: tuple[CuratedSkill, ...] = (
     CuratedSkill("agentchat", ANTHROPIC_SOURCE, "skills/agentchat", local_subdir="agentchat"),
+    CuratedSkill("math", ANTHROPIC_SOURCE, "skills/math", local_subdir="math"),
     CuratedSkill("docx", ANTHROPIC_SOURCE, "skills/docx", local_subdir="docx"),
     CuratedSkill("xlsx", ANTHROPIC_SOURCE, "skills/xlsx", local_subdir="xlsx"),
     CuratedSkill("pptx", ANTHROPIC_SOURCE, "skills/pptx", local_subdir="pptx"),
