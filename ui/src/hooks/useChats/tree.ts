@@ -4,13 +4,60 @@ import type {
   ChatMessage,
   ChatNode,
   ChatSession,
+  PassMark,
   UserNode,
   UserVariant,
   AssistantNode,
   AssistantVariant,
 } from "../../types/chat";
-import type { ToolCall } from "../../types/tool-call";
+import type { ProcessStep, ToolCall } from "../../types/tool-call";
 import { newId } from "./persistence";
+
+// ── Rewinding one model call ───────────────────────────────────────────────
+
+/** How much of this variant exists before the pass about to start.
+ *
+ * `tailChars` is the part that a plain length would miss: the token handler
+ * appends to the trailing text step rather than pushing a new one, so a pass
+ * that begins mid-paragraph has to remember how long that paragraph was. */
+export function markPass(variant: AssistantVariant): PassMark {
+  const steps = variant.steps ?? [];
+  const tail = steps[steps.length - 1];
+  return {
+    steps: steps.length,
+    tailChars: tail && (tail.type === "text" || tail.type === "thought") ? tail.content.length : 0,
+    content: variant.content.length,
+    reasoning: (variant.reasoningContent ?? "").length,
+    toolCalls: (variant.toolCalls ?? []).length,
+  };
+}
+
+/** Un-say everything the abandoned attempt streamed.
+ *
+ * Without this, a connection that dies mid-sentence leaves half an answer in
+ * the transcript and the retry writes the whole answer underneath it — the
+ * user reads the model stuttering. Tool calls whose arguments were still
+ * arriving go too: a half-typed `write_file` row that will never run is worse
+ * than no row at all.
+ */
+export function rewindPass(variant: AssistantVariant, mark: PassMark): AssistantVariant {
+  const steps = (variant.steps ?? []).slice(0, mark.steps);
+  const tail = steps[mark.steps - 1];
+  if (tail && (tail.type === "text" || tail.type === "thought") && tail.content.length > mark.tailChars) {
+    const trimmed: ProcessStep =
+      tail.type === "text"
+        ? { type: "text", content: tail.content.slice(0, mark.tailChars) }
+        : { type: "thought", content: tail.content.slice(0, mark.tailChars) };
+    steps[mark.steps - 1] = trimmed;
+  }
+  return {
+    ...variant,
+    steps,
+    content: variant.content.slice(0, mark.content),
+    reasoningContent: (variant.reasoningContent ?? "").slice(0, mark.reasoning),
+    toolCalls: (variant.toolCalls ?? []).slice(0, mark.toolCalls),
+  };
+}
 
 /** Walk the active branch and return flat ChatMessage[] for UI. */
 export function currentBranch(session: ChatSession): ChatMessage[] {
@@ -47,6 +94,7 @@ export function currentBranch(session: ChatSession): ChatMessage[] {
         reasoningContent: av.reasoningContent,
         webSearchMode: av.webSearchMode,
         usage: av.usage,
+        retry: av.retry,
       });
       next = av.children[0];
     }

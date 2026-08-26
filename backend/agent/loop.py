@@ -13,12 +13,29 @@ from agent.reasoning_split import REASONING, ThinkTagSplitter
 from agent.sandbox import SandboxPolicy
 from agent.types import ToolCall, ToolResult
 from agent.untrusted import untrusted_source, wrap_untrusted
-from agent.write_file_stream import emit_tool_call_progress
+from agent.tool_outcome import looks_failed
+from agent.tool_stream import emit_tool_call_progress
+from llm.api_base import is_local_base
 from llm.client import LLMClient
 from llm.token_breakdown import estimate_prompt_breakdown
+from retry import (
+    LLM_POLICY,
+    RetryPolicy,
+    is_retryable,
+    looks_like_lost_connection,
+    next_delay,
+)
 from tools.registry import ToolRegistry
 from tools.write_file import _resolve_write_path
 
+
+# Tools whose single `path` argument names a file in the chat's namespace, and
+# so gets resolved from chat-relative to absolute before the call is emitted.
+# read_photo belongs here for the same reason read_file does — a model that has
+# just been told the working directory writes `chart.png`, not the full path.
+_PATH_ARG_TOOLS: frozenset[str] = frozenset(
+    {"write_file", "edit_file", "read_file", "read_photo", "list_dir"}
+)
 
 # Provider error fragments that mean "this model can't accept image input".
 # We require an image/vision *subject* together with a *negation* so unrelated
@@ -109,6 +126,43 @@ def _is_bad_request(exc: Exception) -> bool:
     return "badrequest" in type(exc).__name__.lower()
 
 
+# How often a frozen turn says something while it waits. A backoff can reach
+# half a minute, and an SSE response that goes quiet for that long is one a
+# reverse proxy (server mode runs behind Caddy) is entitled to cut.
+_HEARTBEAT_SECONDS = 5.0
+
+
+async def _sleep_with_heartbeat(seconds: float) -> AsyncGenerator[dict[str, Any], None]:
+    """Wait `seconds`, keeping the response alive and interruptible.
+
+    Sleeping in short steps is also what keeps Stop responsive: a single long
+    await would swallow the cancellation until it expired."""
+    remaining = seconds
+    while remaining > 0:
+        step = min(_HEARTBEAT_SECONDS, remaining)
+        await asyncio.sleep(step)
+        remaining -= step
+        if remaining > 0:
+            yield {"type": "ping"}
+
+
+def _failure_kind(exc: Exception) -> str:
+    """Which of three sentences the client should show. The wording lives in the
+    UI's catalogues; only the category travels.
+
+    The exception's class name is read before its status: litellm gives a
+    refused connection a status of 500, so going by the number alone tells the
+    user their provider is broken when the truth is that nothing was reached."""
+    if looks_like_lost_connection(exc):
+        return "network"
+    code = getattr(exc, "status_code", None)
+    if code == 429 or "ratelimit" in type(exc).__name__.lower():
+        return "rate_limit"
+    if isinstance(code, int) and code >= 500:
+        return "provider"
+    return "network"
+
+
 def _strip_image_blocks(messages: list[dict[str, Any]], error: str) -> bool:
     """Replace image content with a text note explaining the model can't see it.
 
@@ -157,7 +211,7 @@ READ_SKILL_TOOL = "read_skill"
 # Tools whose contract is written in terms of the chat working directory —
 # bash cd's into it, the file tools resolve relative paths against it.
 WORKSPACE_TOOLS: frozenset[str] = frozenset(
-    {"bash_tool", "read_file", "write_file", "edit_file"}
+    {"bash_tool", "read_file", "write_file", "edit_file", "list_dir"}
 )
 
 
@@ -193,6 +247,7 @@ class AgentLoop:
         self.messages: list[dict[str, Any]] = []
         self.steps: list[dict[str, Any]] = []
         self._manifest_text: str = ""
+        self._plugins_text: str = ""
         self._project_context_text: str = ""
         self._agent_memory_text: str = ""
         self._chat_id: str = chat_id
@@ -234,7 +289,7 @@ class AgentLoop:
             if resolved:
                 rest = {k: v for k, v in args.items() if k != "path"}
                 return {**rest, "paths": resolved}
-        elif name in ("write_file", "edit_file", "read_file") and isinstance(args.get("path"), str):
+        elif name in _PATH_ARG_TOOLS and isinstance(args.get("path"), str):
             return {**args, "path": fix(args["path"])}
         return args
 
@@ -251,6 +306,13 @@ class AgentLoop:
             tool_defs = tool_defs + self._extra_tools
         tool_defs_or_none = tool_defs if tool_defs else None
 
+        # The wait schedule is shared; only the attempt budget is per-agent, so
+        # a research subagent freezing for three minutes can't outlive the round
+        # its lead is waiting on.
+        retry_policy = RetryPolicy(
+            attempts=self.config.max_retries, base=LLM_POLICY.base, cap=LLM_POLICY.cap
+        )
+
         # Set when we transparently retried a pass after stripping image blocks
         # the model couldn't read.
         retrying_vision = False
@@ -266,7 +328,7 @@ class AgentLoop:
             tool_call_state: dict[int, dict[str, Any]] = {}
             progress_state: dict[str, dict[str, Any]] = {}
 
-            built_messages = self._build_messages()
+            built_messages = self._build_messages()  # reused by every attempt
             call_metadata = self._usage_metadata
             if call_metadata is not None:
                 cwd_line = (
@@ -281,64 +343,125 @@ class AgentLoop:
                     ),
                     project_context=self._project_context_text,
                     agent_memory=self._agent_memory_text,
-                    skills_manifest=self._manifest_text,
+                    # The plugin roster shares the "skills" bucket rather than
+                    # earning its own: it is the same kind of thing (the
+                    # installed-capability list), and a few hundred bytes does
+                    # not justify a new column, a new colour and two new
+                    # translations in the usage dashboard.
+                    skills_manifest="\n\n".join(
+                        t for t in (self._manifest_text, self._plugins_text) if t
+                    ),
                     tools=tool_defs_or_none,
                     history=self.messages,
                     new_user_message=(iteration_idx == 0),
                 )
                 call_metadata = {**call_metadata, "breakdown": breakdown}
 
-            stream = self.llm.completion_stream(
-                model=self.config.model,
-                messages=built_messages,
-                tools=tool_defs_or_none,
-                extra_body=self.config.extra_body,
-                metadata=call_metadata,
-            )
-            try:
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta  # type: ignore[union-attr]
+            # The client marks its place here. Everything the pass emits after
+            # this belongs to one attempt, so an attempt that has to be thrown
+            # away can be un-said with a single rewind — see `pass_rewind`.
+            yield {"type": "pass_start", "index": iteration_idx}
 
-                    if getattr(delta, "reasoning_content", None):
-                        chunk_text: str = delta.reasoning_content
-                        accumulated_reasoning += chunk_text
-                        yield {"type": "reasoning", "content": chunk_text}
+            attempt = 1
+            while True:
+                # A retried attempt starts from a clean slate: whatever the dead
+                # connection managed to say has already been rewound on the
+                # client, and keeping it here would splice half an answer onto
+                # the front of the next one.
+                accumulated_content = ""
+                accumulated_reasoning = ""
+                splitter = ThinkTagSplitter()
+                tool_call_state = {}
+                progress_state = {}
+                retry_event: dict[str, Any] | None = None
 
-                    if delta.content:
-                        for kind, seg in splitter.feed(delta.content):
-                            if kind == REASONING:
-                                accumulated_reasoning += seg
-                                yield {"type": "reasoning", "content": seg}
-                            else:
-                                accumulated_content += seg
-                                yield {"type": "token", "content": seg}
-
-                    if delta.tool_calls:
-                        self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
-                        for event in emit_tool_call_progress(tool_call_state, progress_state):
-                            yield event
-            except Exception as exc:
-                # Model without vision rejected an image block. Either the error
-                # text reads like a vision rejection, or — for providers whose
-                # wording we can't predict (Anthropic-compatible gateways, other
-                # labs) — it's a 4xx while the request still carries image blocks.
-                # Swap the pixels for the provider's error and retry the pass in
-                # text so the model can keep going instead of failing the request.
-                # _strip_image_blocks only fires when images are present, so this
-                # is one-shot: a second failure has no images left to strip and
-                # propagates normally (no masking of unrelated 4xx errors).
-                err = str(exc)
-                looks_like_vision = _is_vision_rejection(err) or (
-                    _is_bad_request(exc) and not _is_unrelated_4xx(err)
+                stream = self.llm.completion_stream(
+                    model=self.config.model,
+                    messages=built_messages,
+                    tools=tool_defs_or_none,
+                    extra_body=self.config.extra_body,
+                    metadata=call_metadata,
                 )
-                if looks_like_vision and _strip_image_blocks(self.messages, err):
-                    retrying_vision = True
-                    continue
-                raise
-            finally:
-                # Always close the upstream HTTP stream, including the vision
-                # retry path where we abandon it mid-flight.
-                await stream.aclose()
+                try:
+                    async for chunk in stream:
+                        delta = chunk.choices[0].delta  # type: ignore[union-attr]
+
+                        if getattr(delta, "reasoning_content", None):
+                            chunk_text: str = delta.reasoning_content
+                            accumulated_reasoning += chunk_text
+                            yield {"type": "reasoning", "content": chunk_text}
+
+                        if delta.content:
+                            for kind, seg in splitter.feed(delta.content):
+                                if kind == REASONING:
+                                    accumulated_reasoning += seg
+                                    yield {"type": "reasoning", "content": seg}
+                                else:
+                                    accumulated_content += seg
+                                    yield {"type": "token", "content": seg}
+
+                        if delta.tool_calls:
+                            self._accumulate_tool_call_chunks(delta.tool_calls, tool_call_state)
+                            for event in emit_tool_call_progress(tool_call_state, progress_state):
+                                yield event
+                except Exception as exc:
+                    # Model without vision rejected an image block. Either the error
+                    # text reads like a vision rejection, or — for providers whose
+                    # wording we can't predict (Anthropic-compatible gateways, other
+                    # labs) — it's a 4xx while the request still carries image blocks.
+                    # Swap the pixels for the provider's error and retry the pass in
+                    # text so the model can keep going instead of failing the request.
+                    # _strip_image_blocks only fires when images are present, so this
+                    # is one-shot: a second failure has no images left to strip and
+                    # propagates normally (no masking of unrelated 4xx errors).
+                    err = str(exc)
+                    looks_like_vision = _is_vision_rejection(err) or (
+                        _is_bad_request(exc) and not _is_unrelated_4xx(err)
+                    )
+                    if looks_like_vision and _strip_image_blocks(self.messages, err):
+                        retrying_vision = True
+                    elif attempt < retry_policy.attempts and is_retryable(exc):
+                        # The turn freezes here rather than failing: the history,
+                        # the results of every tool that already ran and the
+                        # user's message all stay put, and only this one call to
+                        # the provider is made again.
+                        delay = next_delay(retry_policy, attempt, exc)
+                        retry_event = {
+                            "type": "stream_retry",
+                            "attempt": attempt,
+                            "max_attempts": retry_policy.attempts,
+                            "delay_ms": int(delay * 1000),
+                            "kind": _failure_kind(exc),
+                            "local": is_local_base(self.config.api_base),
+                            "detail": err[:300],
+                        }
+                    else:
+                        raise
+                finally:
+                    # Always close the upstream HTTP stream, including the retry
+                    # paths where we abandon it mid-flight.
+                    await stream.aclose()
+
+                if retrying_vision:
+                    yield {"type": "pass_rewind"}
+                    break
+                if retry_event is None:
+                    break  # the pass streamed all the way to its end
+
+                yield {"type": "pass_rewind"}
+                yield retry_event
+                async for beat in _sleep_with_heartbeat(int(retry_event["delay_ms"]) / 1000):
+                    yield beat
+                # Said explicitly rather than inferred from the next token: an
+                # attempt that produces nothing for a while would otherwise
+                # leave the countdown on screen at zero, reading as a hang.
+                yield {"type": "stream_resume"}
+                attempt += 1
+
+            if retrying_vision:
+                # The images are gone from the history now, so the pass is built
+                # again from the top rather than continued from a dead stream.
+                continue
 
             # Flush any <think> text the splitter was still buffering at EOF
             # (e.g. an unterminated thought, or a held-back partial tag).
@@ -486,6 +609,15 @@ class AgentLoop:
                     except Exception as exc:
                         output = str(exc)
                         success = False
+
+                # Tools report their own failures as text rather than raising, so
+                # "no exception" is not "worked" — a failed write_file used to
+                # reach the UI as a green check next to a file that never
+                # existed. Only the flag changes: the model still reads the same
+                # text and the turn carries on.
+                if success and isinstance(output, str) and looks_failed(name, output):
+                    success = False
+
                 duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
                 # Tools may return a plain string or an OpenAI content list (e.g. image blocks).
@@ -539,6 +671,16 @@ class AgentLoop:
         """
         self._manifest_text = text
 
+    def set_plugins(self, text: str) -> None:
+        """Update the installed-plugin roster. Call before ``run()``.
+
+        Separate from the skills manifest even though the two are appended
+        together: a plugin also carries MCP servers and a package directory, so
+        it stays meaningful for an agent that has no ``read_skill`` and gets no
+        manifest.
+        """
+        self._plugins_text = text
+
     def set_project_context(self, text: str) -> None:
         """Update the project instructions + extracted-file block.
 
@@ -590,6 +732,11 @@ class AgentLoop:
             prompt = f"{prompt}\n\n{self._project_context_text}"
         if self._manifest_text and self._has_tool(READ_SKILL_TOOL):
             prompt = f"{prompt}\n\n{self._manifest_text}"
+        # After the manifest so the roster can refer back to skills already
+        # listed, and ungated: a plugin's servers and package directory matter
+        # even to an agent that cannot read skills.
+        if self._plugins_text:
+            prompt = f"{prompt}\n\n{self._plugins_text}"
         if self._policy.chat_dir and any(self._has_tool(n) for n in WORKSPACE_TOOLS):
             prompt = f"{prompt}\n\nCurrent working directory: {self._policy.chat_dir}"
         if self._agent_memory_text:
