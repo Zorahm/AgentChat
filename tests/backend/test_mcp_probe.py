@@ -19,6 +19,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from api.mcp import router as mcp_router  # noqa: E402
 from mcp_integration.manager import MCPManager  # noqa: E402
+from plugins.registry import PluginRegistry  # noqa: E402
 from schemas.mcp import MCPServerConfig, MCPStdioConfig  # noqa: E402
 from store.settings_store import SettingsStore  # noqa: E402
 
@@ -76,6 +77,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     app.include_router(mcp_router)
     app.state.settings_store = store
     app.state.mcp_manager = MCPManager()
+    # The MCP routes also read plugin-contributed servers; an empty plugins
+    # root gives them a registry with nothing in it.
+    app.state.plugin_registry = PluginRegistry(tmp_path / "plugins", tmp_path / "plugin-data")
 
     test_client = TestClient(app)
     test_client.spawned = spawned  # type: ignore[attr-defined]

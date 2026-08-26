@@ -27,6 +27,10 @@ class AgentRuntime:
     model: str
     temperature: float
     tool_policy: ToolPolicy
+    # The agent's tool whitelist; empty means unrestricted. Carried here rather
+    # than read off ``agent`` at each use site so the "no agent attached" case
+    # has exactly one answer.
+    allowed_tools: tuple[str, ...]
     # None whenever memory must not be wired — either the agent has it off or
     # there is no agent. The tool factory reads exactly this to decide whether
     # the memory tools exist at all.
@@ -46,6 +50,15 @@ class AgentRuntime:
         what the policy means for them.
         """
         return self.tool_policy == "full"
+
+    def permits(self, tool_name: str) -> bool:
+        """Whether the agent's whitelist allows *tool_name*.
+
+        The overlays are built in ``api.chat``, so without this they would slip
+        past a whitelist that the factory applied only to the built-ins — and
+        "maths tools only" would still ship web search.
+        """
+        return not self.allowed_tools or tool_name in self.allowed_tools
 
 
 def resolve_agent_runtime(
@@ -96,6 +109,7 @@ def resolve_agent_runtime(
         model=resolved_model,
         temperature=temperature,
         tool_policy=policy,
+        allowed_tools=tuple(agent.allowed_tools) if agent else (),
         memory_store=store,
         memory_block=block,
         appended_memory="" if placed_by_persona else block,

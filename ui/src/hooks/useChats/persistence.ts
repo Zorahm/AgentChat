@@ -331,6 +331,10 @@ export interface SessionSeed {
   webSearchMode?: string;
   researchEnabled?: boolean;
   mcpEnabledServers?: string[];
+  /** Composer mode picked before the chat existed. Not sticky, unlike the
+   *  toggles above: a mode is a decision about one conversation, and silently
+   *  carrying "maths" into the next chat would be a surprise. */
+  mode?: string;
 }
 
 export function makeSession(projectId?: string, dirSlug?: string, seed?: SessionSeed): ChatSession {
@@ -354,6 +358,7 @@ export function makeSession(projectId?: string, dirSlug?: string, seed?: Session
     webSearchEnabled: seed?.webSearchEnabled ?? webSearchDefault.enabled,
     webSearchMode: seed?.webSearchMode ?? webSearchDefault.mode,
     researchEnabled: seed?.researchEnabled ?? researchDefault,
+    ...(seed?.mode ? { mode: seed.mode } : {}),
     ...(seed?.mcpEnabledServers && seed.mcpEnabledServers.length
       ? { mcpEnabledServers: seed.mcpEnabledServers }
       : {}),

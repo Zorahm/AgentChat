@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
+import { asArray } from "../utils/asArray";
 import type { ProjectFileInfo, ProjectFileText, ProjectFull, ProjectSummary } from "../types/project";
 
 export interface UseProjectsResult {
@@ -25,7 +26,7 @@ export function useProjects(): UseProjectsResult {
     setLoading(true);
     try {
       const r = await fetch(`${API_BASE}/projects`);
-      if (r.ok) setProjects((await r.json()) as ProjectSummary[]);
+      if (r.ok) setProjects(asArray<ProjectSummary>(await r.json()));
     } catch {
       /* offline — keep last known list */
     } finally {
@@ -107,7 +108,7 @@ export function useProjects(): UseProjectsResult {
           body: form,
         });
         if (!r.ok) return [];
-        const result = (await r.json()) as ProjectFileInfo[];
+        const result = asArray<ProjectFileInfo>(await r.json());
         await refresh();
         return result;
       } catch {

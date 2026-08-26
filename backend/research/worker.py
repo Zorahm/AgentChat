@@ -67,6 +67,9 @@ class SubagentRunner:
                 temperature=self._temperature,
                 max_iterations=self._budget.worker_iterations,
                 extra_headers=self._endpoint.extra_headers,
+                # Subagents run under the round's timeout in fanout.py — a long
+                # freeze here is cancelled anyway, so it only wastes the slot.
+                max_retries=3,
             ),
             tools=registry,
             llm=LLMClient(

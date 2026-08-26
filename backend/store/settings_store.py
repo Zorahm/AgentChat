@@ -27,6 +27,7 @@ from schemas.mcp import (
     redact_mcp_server,
 )
 from schemas.redaction import redact_map, unredact_map
+from store.agent_presets import builtin_presets, retired_preset, retired_preset_ids
 from schemas.settings import (
     ModelConfig,
     ProviderConfig,
@@ -88,6 +89,17 @@ def to_public(p: ProviderConfig) -> ProviderPublic:
         key_required=requires_api_key(p.id, p.api_base),
         default_api_base=DEFAULT_API_BASES.get(p.id),
     )
+
+
+def _is_configured(p: ProviderConfig) -> bool:
+    """True when the provider has what it needs to answer a request.
+
+    Enablement follows this instead of shipping on: a built-in without a key can
+    only ever return 401, and lighting all seven up on first run told the user
+    they had accounts with vendors they had never heard of. Local endpoints
+    answer keyless, so there a key is not the gate.
+    """
+    return bool(p.api_key) or not requires_api_key(p.id, p.api_base)
 
 
 def _resolve_env_api_key(provider_id: str) -> str | None:
@@ -156,6 +168,10 @@ class SettingsStore:
         self._agents: dict[str, AgentConfig] = {
             DEFAULT_AGENT_ID: AgentConfig(id=DEFAULT_AGENT_ID, name="AgentChat"),
         }
+        # Preset ids this install has already been offered. Recorded so a preset
+        # the user deleted stays deleted — re-seeding on every boot would make
+        # "delete" mean "hide until restart".
+        self._seeded_agents: set[str] = set()
         self._fetcher = fetcher
         self._settings_path = settings_path
         self._default_model = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
@@ -201,22 +217,82 @@ class SettingsStore:
         # Off by default: model writes its own one-line action descriptions
         # instead of the system-computed status line.
         self._describe_actions = False
+        # Agent Plugins the user has switched off. Stored as the *disabled*
+        # set rather than the enabled one so a freshly installed plugin is
+        # live without an extra write, and so a name that later disappears
+        # costs nothing.
+        self._disabled_plugins: set[str] = set()
 
-        # 1. Seed every built-in provider with env-resolved API keys.
+        # 1. Seed every built-in provider with env-resolved API keys. Only the
+        #    ones that came out of that with credentials are enabled — see
+        #    _is_configured.
         for p in DEFAULT_PROVIDERS:
             provider = p.model_copy()
             env_key = _resolve_env_api_key(provider.id)
             if env_key and not provider.api_key:
                 provider.api_key = env_key
                 provider.api_key_set = True
+            provider.enabled = _is_configured(provider)
             self._providers[provider.id] = provider
 
         # 2. Overlay anything previously saved to disk.
         self._load()
 
+        # 3. Introduce any shipped preset this install has not been offered yet.
+        #    Outside _load because that returns early when there is no settings
+        #    file at all — which is exactly a fresh install, the one case where a
+        #    preset most needs to appear.
+        self._seed_presets()
+
     # ------------------------------------------------------------------
     # persistence
     # ------------------------------------------------------------------
+
+    def _seed_presets(self) -> None:
+        """Add shipped presets this install hasn't seen, then remember them.
+
+        Two things it deliberately does not do: it does not overwrite a preset
+        the user has edited (the id is already in ``_seeded_agents``, so it is
+        skipped), and it does not bring back one they deleted (same reason).
+        A future preset added to ``builtin_presets`` appears for everyone
+        without disturbing either.
+        """
+        added = False
+        for agent_id, preset in builtin_presets().items():
+            if agent_id in self._seeded_agents:
+                continue
+            self._seeded_agents.add(agent_id)
+            added = True
+            if agent_id not in self._agents:
+                self._agents[agent_id] = preset
+        if self._retire_presets():
+            added = True
+        if added:
+            self._save()
+
+    def _retire_presets(self) -> bool:
+        """Drop stored copies of presets this build no longer ships. True if any went.
+
+        Maths became a mode (``agent.modes``), and leaving the old preset agent
+        behind would mean two ways into the same thing, one of them a dead end
+        the tab strip no longer mentions.
+
+        Only an *untouched* copy is removed: the stored agent has to still equal
+        what it shipped as, field for field. Once the user has renamed it,
+        repointed its model or widened its tools it is theirs, and tidying our
+        catalogue is not a reason to delete their work. Their chats keep
+        answering either way — a chat holds the agent id, and an id that no
+        longer resolves falls back to the default agent.
+        """
+        removed = False
+        for agent_id in retired_preset_ids():
+            stored = self._agents.get(agent_id)
+            shipped = retired_preset(agent_id)
+            if stored is None or shipped is None or stored != shipped:
+                continue
+            del self._agents[agent_id]
+            removed = True
+        return removed
 
     def _load(self) -> None:
         """Read settings.json and overlay onto the in-memory defaults.
@@ -351,7 +427,10 @@ class SettingsStore:
                         existing.api_key_set = True
                     if saved.api_base:
                         existing.api_base = saved.api_base
-                    existing.enabled = saved.enabled
+                    # An install made before enablement followed credentials has
+                    # every built-in on; drop the ones that were never given a
+                    # key, and keep honouring an explicit off.
+                    existing.enabled = saved.enabled and _is_configured(existing)
                     if saved.extra_headers:
                         existing.extra_headers = saved.extra_headers
 
@@ -373,6 +452,14 @@ class SettingsStore:
                         continue
                     self._mcp_servers[server.id] = server
 
+        plugins_block = data.get("plugins", {})
+        if isinstance(plugins_block, dict):
+            raw_disabled = plugins_block.get("disabled", [])
+            if isinstance(raw_disabled, list):
+                self._disabled_plugins = {
+                    str(n) for n in raw_disabled if isinstance(n, str) and n
+                }
+
         agents_block = data.get("agents", [])
         if isinstance(agents_block, list):
             for raw_a in agents_block:
@@ -384,6 +471,10 @@ class SettingsStore:
                     print(f"[settings] skipping malformed agent {raw_a.get('id')!r}: {exc}")
                     continue
                 self._agents[agent.id] = agent
+
+        seeded_block = data.get("seeded_agents", [])
+        if isinstance(seeded_block, list):
+            self._seeded_agents |= {str(s) for s in seeded_block if isinstance(s, str)}
 
         if needs_migration:
             # The file still held secrets inline (pre-upgrade layout). Saving
@@ -437,9 +528,11 @@ class SettingsStore:
                     for s in sorted(self._mcp_servers.values(), key=lambda x: x.id)
                 ],
             },
+            "plugins": {"disabled": sorted(self._disabled_plugins)},
             "agents": [
                 a.model_dump() for a in sorted(self._agents.values(), key=lambda x: x.id)
             ],
+            "seeded_agents": sorted(self._seeded_agents),
         }
         write_settings_file(self._settings_path, split_secrets(payload, self._secrets))
 
@@ -586,12 +679,19 @@ class SettingsStore:
         if provider_id not in self._providers:
             raise ValueError(f"Unknown provider: {provider_id}")
         p = self._providers[provider_id]
+        key_changed = False
         if patch.api_key is not None:
+            key_changed = bool(patch.api_key) != bool(p.api_key)
             p.api_key = patch.api_key if patch.api_key else None
             p.api_key_set = bool(patch.api_key)
         if patch.api_base is not None:
             base = patch.api_base.strip()
             p.api_base = base or None
+        # Gaining a first key is how a provider gets switched on and losing it is
+        # how it goes off. Rotating an existing key changes nothing, so a
+        # provider the user deliberately disabled stays disabled.
+        if key_changed:
+            p.enabled = _is_configured(p)
         if patch.enabled is not None:
             p.enabled = patch.enabled
         if patch.extra_headers is not None:
@@ -634,6 +734,25 @@ class SettingsStore:
 
     def list_providers(self) -> list[ProviderConfig]:
         return [p.model_copy() for p in self._providers.values()]
+
+    # ------------------------------------------------------------------
+    # agent plugins
+    # ------------------------------------------------------------------
+
+    def list_disabled_plugins(self) -> set[str]:
+        return set(self._disabled_plugins)
+
+    def set_plugin_enabled(self, name: str, enabled: bool) -> None:
+        """Switch one plugin on or off. Unknown names are recorded regardless.
+
+        A plugin can be disabled while it is not installed — that is what
+        keeps a re-install from silently coming back switched on.
+        """
+        if enabled:
+            self._disabled_plugins.discard(name)
+        else:
+            self._disabled_plugins.add(name)
+        self._save()
 
     # ------------------------------------------------------------------
     # mcp servers

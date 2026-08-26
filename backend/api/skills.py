@@ -46,6 +46,9 @@ def _to_skill_info(skill: SkillEntry) -> SkillInfo:
 @router.get("", response_model=list[SkillInfo])
 async def list_skills(request: Request) -> list[SkillInfo]:
     reader = request.app.state.skill_reader
+    # Skills an installed plugin contributes are part of the set the model
+    # sees, so they belong in the list the user is shown too.
+    request.app.state.plugin_registry.apply_to_reader(reader)
     reader.rebuild()
     return [_to_skill_info(s) for s in reader.list_skills()]
 

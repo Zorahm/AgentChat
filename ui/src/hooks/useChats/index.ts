@@ -17,7 +17,9 @@ import type { ToolCall, ProcessStep } from "../../types/tool-call";
 import type { LiveFile } from "../../types/artifact";
 import { API_BASE } from "../../utils/apiBase";
 import { applyImageEvent, closeImageGen, emptyImageGen } from "../../utils/imageGen";
+import { applyMathPlotEvent, closeMathPlot, emptyMathPlot } from "../../utils/mathPlot";
 import { applyResearchEvent, emptyResearch } from "../../utils/research";
+import { applyVerifyEvent, closeVerification, emptyVerification } from "../../utils/verification";
 import {
   type WebSearchPref,
   type SessionSeed,
@@ -54,6 +56,8 @@ import {
   expandToWire,
   findLastAssistantInBranch,
   mapVariant,
+  markPass,
+  rewindPass,
   setActiveVariant,
   appendPair,
   addVariant,
@@ -137,6 +141,9 @@ export interface UseChatResult {
   /** Agent profile attached to the active chat ("default" when unset). */
   activeAgentId: string;
   setAgent: (agentId: string) => void;
+  /** Composer mode for the active chat; "" = normal. */
+  activeMode: string;
+  setMode: (mode: string) => void;
   /** Write an agent's opening line into the active chat, if it is still empty. */
   seedGreeting: (text: string) => void;
 }
@@ -184,6 +191,8 @@ export function useChats(): UseChatResult {
   /** Mirror of activeId, readable inside event-handler closures (which capture a
    *  fixed sessionId) so they can tell whether their chat is the one on screen. */
   const activeIdRef = useRef<string>("");
+  /** Ids of write_file calls seen this session — see openLiveFile. */
+  const writeFileCallsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   /** Per-session JSON snapshot of the last value pushed to the backend. The
    * effect that debounces saves compares against this to skip no-op writes. */
@@ -341,6 +350,39 @@ export function useChats(): UseChatResult {
     [],
   );
 
+  /** Open — or re-point — the live file preview for a write_file call.
+   *  The path arrives with tool_start when the provider streams arguments, and
+   *  as its own tool_input when it does not: a backend that buffers tool calls
+   *  (LM Studio and other local OpenAI-compatible servers) sends id and name in
+   *  one delta and the whole argument string in the next. The agent loop also
+   *  re-sends the path once resolved to an absolute one. Keyed by call id, so a
+   *  later delivery moves the existing entry instead of adding a duplicate —
+   *  which is what kept the artifact panel from finding a relative-path write. */
+  const openLiveFile = useCallback((callId: string, path: string, append: boolean) => {
+    setLiveFiles((prev) => {
+      const existing = prev.find((f) => f.id === callId);
+      if (existing) {
+        return existing.path === path
+          ? prev
+          : prev.map((f) => (f.id === callId ? { ...f, path } : f));
+      }
+      const prior = [...prev].reverse().find((f) => f.path === path);
+      return [...prev, { id: callId, path, content: append ? (prior?.content ?? "") : "", done: false }];
+    });
+  }, []);
+
+  /** Take the waiting state off a turn that has stopped waiting. */
+  const clearRetry = useCallback((sessionId: string, nodeId: string, variantId: string) => {
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== sessionId) return s;
+        return mapVariant(s, nodeId, variantId, (v) =>
+          v.retry ? { ...v, retry: undefined } : v,
+        );
+      }),
+    );
+  }, []);
+
   const makeEventHandler = useCallback(
     (sessionId: string, nodeId: string, variantId: string) => (event: SSEEvent) => {
       try {
@@ -388,6 +430,64 @@ export function useChats(): UseChatResult {
             );
             break;
           }
+          // ── Graceful degradation: the backend froze this turn ──────────
+          // pass_start marks the rewind point, pass_rewind takes the failed
+          // attempt's output back out, stream_retry says how long the wait is.
+          case "pass_start": {
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({ ...v, passMark: markPass(v) }));
+              }),
+            );
+            break;
+          }
+          case "pass_rewind": {
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) =>
+                  v.passMark ? rewindPass(v, v.passMark) : v,
+                );
+              }),
+            );
+            // Any file still being written belonged to the attempt that just
+            // died; a finished one was written by an earlier pass and stays.
+            setLiveFiles((prev) => prev.filter((f) => f.done));
+            break;
+          }
+          case "stream_retry": {
+            const delayMs = Number(data.delay_ms ?? 0);
+            const kindRaw = String(data.kind ?? "network");
+            const kind =
+              kindRaw === "provider" || kindRaw === "rate_limit" ? kindRaw : "network";
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  retry: {
+                    attempt: Number(data.attempt ?? 1),
+                    maxAttempts: Number(data.max_attempts ?? 1),
+                    resumeAt: Date.now() + delayMs,
+                    kind,
+                    local: Boolean(data.local),
+                    detail: typeof data.detail === "string" ? data.detail : undefined,
+                  },
+                }));
+              }),
+            );
+            break;
+          }
+          case "stream_resume": {
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({ ...v, retry: undefined }));
+              }),
+            );
+            break;
+          }
           case "web_search_status": {
             const mode = String(data.mode ?? "");
             if (mode && mode !== "none") {
@@ -409,6 +509,8 @@ export function useChats(): UseChatResult {
               status: "running",
               ...(toolName === "research" ? { research: emptyResearch(Date.now()) } : {}),
               ...(toolName === "image_generate" ? { image: emptyImageGen(Date.now()) } : {}),
+              ...(toolName === "math_verify" ? { verify: emptyVerification(Date.now()) } : {}),
+              ...(toolName === "math_plot" ? { plot: emptyMathPlot(Date.now()) } : {}),
             };
             setSessions((prev) =>
               prev.map((s) => {
@@ -424,13 +526,13 @@ export function useChats(): UseChatResult {
                 });
               }),
             );
-            if (sessionId === activeIdRef.current && tc.name === "write_file" && typeof tc.input.path === "string") {
-              const filePath = tc.input.path as string;
-              setLiveFiles((prev) => {
-                const prior = [...prev].reverse().find((f) => f.path === filePath);
-                const base = tc.input["append"] === true ? (prior?.content ?? "") : "";
-                return [...prev, { id: tc.id, path: filePath, content: base, done: false }];
-              });
+            if (tc.name === "write_file") {
+              // Remembered so a later tool_input carrying the path can be
+              // recognised as this call's — the event itself has only an id.
+              writeFileCallsRef.current.add(tc.id);
+              if (sessionId === activeIdRef.current && typeof tc.input.path === "string" && tc.input.path) {
+                openLiveFile(tc.id, tc.input.path, tc.input["append"] === true);
+              }
             }
             break;
           }
@@ -455,6 +557,43 @@ export function useChats(): UseChatResult {
                 }));
               }),
             );
+            if (
+              sessionId === activeIdRef.current &&
+              writeFileCallsRef.current.has(callId) &&
+              typeof input.path === "string" &&
+              input.path
+            ) {
+              openLiveFile(callId, input.path, input["append"] === true);
+            }
+            break;
+          }
+          case "tool_input_delta": {
+            // One argument growing character by character. The backend sends the
+            // delta rather than the whole value — re-sending a 50 KB argument on
+            // every chunk is quadratic on the wire — so this appends.
+            const callId = String(data.id ?? "");
+            const key = String(data.key ?? "");
+            const chunk = String(data.chunk ?? "");
+            if (!key || !chunk) break;
+            const applyDelta = (tc: ToolCall): ToolCall => {
+              if (tc.id !== callId) return tc;
+              const prior = tc.input[key];
+              return { ...tc, input: { ...tc.input, [key]: (typeof prior === "string" ? prior : "") + chunk } };
+            };
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== sessionId) return s;
+                return mapVariant(s, nodeId, variantId, (v) => ({
+                  ...v,
+                  steps: (v.steps ?? []).map((st) =>
+                    st.type === "tool" && st.call.id === callId
+                      ? { type: "tool" as const, call: applyDelta(st.call) }
+                      : st,
+                  ),
+                  toolCalls: (v.toolCalls ?? []).map(applyDelta),
+                }));
+              }),
+            );
             break;
           }
           case "tool_chunk": {
@@ -467,13 +606,16 @@ export function useChats(): UseChatResult {
           }
           case "tool_progress": {
             // Structured progress from a streaming tool — fold the event into
-            // whichever timeline that call owns (research run / image render).
+            // whichever timeline that call owns (research run / image render /
+            // verification verdict / rendered plot).
             const callId = String(data.id ?? "");
             const event = (data.event as Record<string, unknown>) ?? {};
             const applyEvent = (tc: ToolCall): ToolCall => {
               if (tc.id !== callId) return tc;
               if (tc.research) return { ...tc, research: applyResearchEvent(tc.research, event) };
               if (tc.image) return { ...tc, image: applyImageEvent(tc.image, event) };
+              if (tc.verify) return { ...tc, verify: applyVerifyEvent(tc.verify, event) };
+              if (tc.plot) return { ...tc, plot: applyMathPlotEvent(tc.plot, event) };
               return tc;
             };
             setSessions((prev) =>
@@ -544,6 +686,24 @@ export function useChats(): UseChatResult {
                           ),
                         }
                       : {}),
+                    ...(tc.verify
+                      ? {
+                          verify: closeVerification(
+                            tc.verify,
+                            Boolean(data.success),
+                            Number(data.duration_ms ?? 0),
+                          ),
+                        }
+                      : {}),
+                    ...(tc.plot
+                      ? {
+                          plot: closeMathPlot(
+                            tc.plot,
+                            Boolean(data.success),
+                            Number(data.duration_ms ?? 0),
+                          ),
+                        }
+                      : {}),
                   }
                 : tc;
             setSessions((prev) =>
@@ -563,6 +723,7 @@ export function useChats(): UseChatResult {
             if (sessionId === activeIdRef.current) {
               updateLiveFile(callId, (lf) => ({ ...lf, done: true }));
             }
+            writeFileCallsRef.current.delete(callId);
             break;
           }
           case "iterations_exhausted": {
@@ -613,9 +774,14 @@ export function useChats(): UseChatResult {
             break;
           }
           case "done":
+            clearRetry(sessionId, nodeId, variantId);
             dropStream(sessionId, false);
             break;
           case "error":
+            // The countdown is over — whatever happens now, the turn is not
+            // waiting any more, and a frozen "retrying in 8s" under an error
+            // message is the worst of both.
+            clearRetry(sessionId, nodeId, variantId);
             // Only surface the banner if this is the chat on screen; a
             // background failure still tears its own stream down quietly.
             if (sessionId === activeIdRef.current) {
@@ -628,7 +794,7 @@ export function useChats(): UseChatResult {
         /* ignore malformed */
       }
     },
-    [updateLiveFile, dropStream],
+    [updateLiveFile, openLiveFile, dropStream, clearRetry],
   );
 
   // ── Public API ──────────────────────────────────────────────────────────
@@ -719,6 +885,7 @@ export function useChats(): UseChatResult {
           web_search_enabled: currentSession.webSearchEnabled ?? getWebSearchDefault().enabled,
           web_search_mode: currentSession.webSearchMode ?? getWebSearchDefault().mode,
           research_enabled: currentSession.researchEnabled ?? getResearchDefault(),
+          mode: currentSession.mode ?? "",
         },
         handler,
         (err: Error) => {
@@ -801,6 +968,7 @@ export function useChats(): UseChatResult {
         web_search_enabled: activeSession.webSearchEnabled ?? getWebSearchDefault().enabled,
         web_search_mode: activeSession.webSearchMode ?? getWebSearchDefault().mode,
         research_enabled: activeSession.researchEnabled ?? getResearchDefault(),
+        mode: activeSession.mode ?? "",
       },
       handler,
       (err: Error) => {
@@ -884,6 +1052,7 @@ export function useChats(): UseChatResult {
           web_search_enabled: activeSession.webSearchEnabled ?? getWebSearchDefault().enabled,
           web_search_mode: activeSession.webSearchMode ?? getWebSearchDefault().mode,
           research_enabled: activeSession.researchEnabled ?? getResearchDefault(),
+          mode: activeSession.mode ?? "",
         },
         handler,
         (err: Error) => {
@@ -933,6 +1102,10 @@ export function useChats(): UseChatResult {
                     ...(tc.image
                       ? { image: { ...tc.image, status: "cancelled" as const } }
                       : {}),
+                    ...(tc.verify
+                      ? { verify: { ...tc.verify, status: "cancelled" as const } }
+                      : {}),
+                    ...(tc.plot ? { plot: { ...tc.plot, status: "cancelled" as const } } : {}),
                   }
                 : tc;
             return {
@@ -1131,10 +1304,22 @@ export function useChats(): UseChatResult {
     [activeId],
   );
 
+  // Mode and agent are one slot, not two: both answer "who is replying", and a
+  // chat holding both would ask a roleplay character to lay its replies out as
+  // Дано / Найти / Ответ. Each setter therefore clears the other.
   const setAgent = useCallback(
     (agentId: string) => {
       setSessions((prev) =>
-        prev.map((s) => (s.id === activeId ? { ...s, agentId } : s)),
+        prev.map((s) => (s.id === activeId ? { ...s, agentId, mode: "" } : s)),
+      );
+    },
+    [activeId],
+  );
+
+  const setMode = useCallback(
+    (mode: string) => {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeId ? { ...s, mode, agentId: undefined } : s)),
       );
     },
     [activeId],
@@ -1198,6 +1383,7 @@ export function useChats(): UseChatResult {
     activeWebSearchMode: activeSession?.webSearchMode ?? wsDefault.mode,
     activeResearchEnabled: activeSession?.researchEnabled ?? rDefault,
     activeAgentId: activeSession?.agentId ?? "default",
+    activeMode: activeSession?.mode ?? "",
     messages,
     branchNodes,
     liveFiles,
@@ -1221,6 +1407,7 @@ export function useChats(): UseChatResult {
     setResearch,
     setResearchDefault,
     setAgent,
+    setMode,
     seedGreeting,
     setThinkingDefault,
     setEffortDefault,

@@ -12,7 +12,9 @@ export type ShortcutId =
   | "toggle_sidebar"
   | "open_settings"
   | "goto_projects"
-  | "goto_skills";
+  | "goto_skills"
+  | "prev_message"
+  | "next_message";
 
 export interface ShortcutAction {
   id: ShortcutId;
@@ -30,6 +32,10 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   { id: "open_settings", labelKey: "open_settings", defaultCombo: "Mod+," },
   { id: "goto_projects", labelKey: "goto_projects", defaultCombo: "Mod+Shift+P" },
   { id: "goto_skills", labelKey: "goto_skills", defaultCombo: "Mod+Shift+K" },
+  // Alt rather than Mod: ⌘+↑/↓ inside a text field is "jump to start/end of
+  // the text", which the composer needs more than the message ring does.
+  { id: "prev_message", labelKey: "prev_message", defaultCombo: "Alt+ArrowUp" },
+  { id: "next_message", labelKey: "next_message", defaultCombo: "Alt+ArrowDown" },
 ] as const;
 
 export type ShortcutBindings = Record<ShortcutId, string>;
@@ -77,6 +83,12 @@ export function comboFromEvent(e: KeyboardEvent): string | null {
 /** Whether a combo uses the platform command modifier (Ctrl/⌘). */
 export function comboHasMod(combo: string): boolean {
   return combo.split("+").includes("Mod");
+}
+
+/** Whether a combo uses Alt/⌥. Like Mod, it is enough to tell a shortcut
+ * apart from ordinary typing, so such combos stay live inside input fields. */
+export function comboHasAlt(combo: string): boolean {
+  return combo.split("+").includes("Alt");
 }
 
 /** Does this event match the given combo? */

@@ -174,6 +174,10 @@ class LeadResearcher:
                 temperature=self._temperature,
                 max_iterations=self._budget.lead_iterations,
                 extra_headers=self._lead.extra_headers,
+                # A research run is already on a clock; a lead that freezes for
+                # three minutes waiting out a provider spends the whole budget
+                # on waiting instead of reading.
+                max_retries=3,
             ),
             tools=registry,
             llm=LLMClient(

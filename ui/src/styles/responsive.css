@@ -102,6 +102,9 @@
   .chat-scroll-inner { gap: 18px; }
   .msg-user { max-width: 88%; }
   .msg-assistant { max-width: 100%; }
+  /* A 10px mat plus the outline would reach past the 14px gutter here. */
+  .msg { outline-offset: 6px; }
+  .msg--focused { box-shadow: 0 0 0 6px var(--accent-soft); }
   .composer { padding: 10px 10px calc(14px + var(--safe-bottom)); }
   .chat:not(.chat--welcome) .composer-shell { max-width: 100%; }
 

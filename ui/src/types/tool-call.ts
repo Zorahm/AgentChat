@@ -86,6 +86,79 @@ export interface ImageGenData {
   durationMs?: number;
 }
 
+/** The five verdicts a check can return. They are NOT interchangeable, and the
+ *  badge must render each one differently: `inconclusive` drawn like `verified`
+ *  is how the badge stops meaning anything, and `error` drawn like `refuted`
+ *  tells the user a correct answer is wrong. Mirrors backend/schemas/math.py. */
+export type VerifyStatus = "verified" | "refuted" | "partial" | "inconclusive" | "error";
+
+/** Where the verdict came from: the deterministic tool, or the Re-check agent. */
+export type VerifierKind = "deterministic" | "subagent";
+
+export interface VerifySymbolic {
+  ok: boolean;
+  detail: string;
+}
+
+export interface VerifyNumeric {
+  ok: boolean;
+  maxAbsErr: number;
+  maxRelErr: number;
+  samples: number;
+  detail: string;
+}
+
+/** One completed check. A message can hold several — one per claim, and up to
+ *  two per claim when a refuted answer was rewritten. Both are kept: showing
+ *  only the successful retry is exactly what turns the badge into theatre. */
+export interface VerifyAttempt {
+  status: VerifyStatus;
+  kind: string;
+  /** The problem the claim was checked AGAINST. Shown to the user verbatim,
+   *  because a claim proven against a quietly reworded problem is still green —
+   *  and a human spots that mismatch in a second. */
+  problem: string;
+  claim: Record<string, unknown>;
+  symbolic?: VerifySymbolic;
+  numeric?: VerifyNumeric;
+  counterexample?: Record<string, unknown>;
+  detail: string;
+  method: string;
+  verifier: VerifierKind;
+  attempt: number;
+  seed: number;
+  durationMs: number;
+}
+
+/** Live state of a `math_verify` tool call — drives the verification badge.
+ *  Rebuilt from `tool_progress` events; see ui/src/utils/verification.ts. */
+export interface VerificationData {
+  status: "running" | "complete" | "failed" | "cancelled";
+  kind: string;
+  problem: string;
+  attempts: VerifyAttempt[];
+  /** The backend's per-turn id, so a Re-check files under the same turn. */
+  messageId?: string;
+  error?: string;
+  startedAt: number;
+  durationMs?: number;
+}
+
+/** Live state of a `math_plot` tool call — drives the plot card.
+ *  The SVG is rendered by the backend, so like image_generate's paths it only
+ *  exists after the call and cannot ride the tool call's arguments. */
+export interface MathPlotData {
+  status: "running" | "complete" | "failed" | "cancelled";
+  plotKind: string;
+  exprs: string[];
+  title: string;
+  svg?: string;
+  warnings: string[];
+  error?: string;
+  startedAt: number;
+  durationMs?: number;
+}
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -98,6 +171,10 @@ export interface ToolCall {
   research?: ResearchData;
   /** Present only on `image_generate` tool calls — progress + finished images. */
   image?: ImageGenData;
+  /** Present only on `math_verify` tool calls — the verdict behind the badge. */
+  verify?: VerificationData;
+  /** Present only on `math_plot` tool calls — the rendered plot. */
+  plot?: MathPlotData;
   /** Present only on `ask_user` tool calls — the questions shown to the user. */
   userQuestion?: UserQuestionData;
 }
@@ -123,6 +200,7 @@ export const TOOL_ICONS: Record<string, string> = {
   web_search: "🔍",
   web_fetch: "🌐",
   read_file: "📄",
+  list_dir: "📂",
   read_photo: "🖼",
   write_file: "📄",
   edit_file: "📄",
@@ -130,4 +208,7 @@ export const TOOL_ICONS: Record<string, string> = {
   read_skill: "📚",
   ask_user: "❓",
   image_generate: "🎨",
+  math_eval: "🧮",
+  math_verify: "✓",
+  math_plot: "📈",
 };

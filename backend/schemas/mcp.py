@@ -42,6 +42,11 @@ class MCPStdioConfig(BaseModel):
     # or Linux). ``wsl`` wraps it in ``wsl.exe -- bash -lc`` so Linux-only
     # tooling (npx/uvx in WSL) works from a Windows host.
     runtime: Literal["host", "wsl"] = "host"
+    # Working directory for the subprocess. ``None`` inherits the backend's,
+    # which is what a hand-configured server has always done. Agent Plugins
+    # requires a plugin's server to default to its plugin root instead, so the
+    # plugins layer fills this in with an already-resolved absolute path.
+    cwd: str | None = None
 
 
 class MCPHttpConfig(BaseModel):
@@ -119,6 +124,11 @@ class MCPServerView(BaseModel):
     last_error: str | None = None
     tool_count: int = 0
     last_used: float | None = None
+    # Name of the Agent Plugin contributing this server, when it is not a
+    # user-configured one. Such a server is read-only here: its definition
+    # lives in the plugin's mcp.json, and the plugin's own toggle is what
+    # turns it off.
+    plugin: str | None = None
 
 
 class MCPToolView(BaseModel):

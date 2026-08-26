@@ -21,6 +21,8 @@ interface ServerView {
   enabled: boolean;
   config: MCPTransportConfig;
   state: "stopped" | "running" | "error";
+  /** Name of the Agent Plugin providing this server; absent for a configured one. */
+  plugin?: string | null;
   last_error: string | null;
   tool_count: number;
   last_used: number | null;
@@ -353,6 +355,11 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
     ? [(server.config as MCPStdioConfig).command, ...(server.config as MCPStdioConfig).args.slice(0, 2)].join(" ")
     : (server.config as MCPHttpConfig).url;
 
+  // A server an Agent Plugin contributes is derived from its mcp.json on every
+  // load, so editing it here would be overwritten by the next rebuild — and the
+  // backend refuses the write anyway. The plugin's own toggle is the switch.
+  const fromPlugin = Boolean(server.plugin);
+
   return (
     <div className={`mcp-card${open ? " mcp-card--open" : ""}`}>
       <div className="mcp-head" onClick={onToggle}>
@@ -366,6 +373,7 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
         </span>
         <span className="mcp-name">{server.name}</span>
         <span className="mcp-tag">{server.config.transport}</span>
+        {fromPlugin && <span className="mcp-tag">{t("settings.mcp.fromPlugin")}</span>}
         <span className="mcp-summary">{summary}</span>
         <div onClick={(e) => e.stopPropagation()}>
           <Switch
@@ -375,6 +383,12 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
             isLabelHidden={false}
             labelPosition="end"
             labelSpacing="hug"
+            isDisabled={fromPlugin}
+            disabledMessage={
+              fromPlugin
+                ? t("settings.mcp.pluginOwnedHint", { plugin: server.plugin })
+                : undefined
+            }
           />
         </div>
         {open ? <CaretDown size={13} className="mcp-chevron" /> : <CaretRight size={13} className="mcp-chevron" />}
@@ -386,28 +400,38 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
             <div className="st2-error" style={{ margin: "0 0 4px", position: "static" }}>{server.last_error}</div>
           )}
 
-          <label className="mcp-field">
-            <span>{t("settings.mcp.name")}</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+          {fromPlugin ? (
+            <p className="mcp-summary" style={{ whiteSpace: "normal" }}>
+              {t("settings.mcp.pluginOwnedHint", { plugin: server.plugin })}
+            </p>
+          ) : (
+            <>
+              <label className="mcp-field">
+                <span>{t("settings.mcp.name")}</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
 
-          {form.transport === "stdio"
-            ? <StdioFields form={form} onChange={setForm} />
-            : <HttpFields form={form} onChange={setForm} />}
+              {form.transport === "stdio"
+                ? <StdioFields form={form} onChange={setForm} />
+                : <HttpFields form={form} onChange={setForm} />}
+            </>
+          )}
 
           {saveErr && (
             <div className="st2-error" style={{ margin: "4px 0 0", position: "static" }}>{saveErr}</div>
           )}
 
           <div className="mcp-actions">
-            <Button
-              label={saving ? t("settings.mcp.saving") : t("settings.mcp.save")}
-              onClick={save}
-              isDisabled={saving}
-              isLoading={saving}
-              variant="primary"
-              size="sm"
-            />
+            {!fromPlugin && (
+              <Button
+                label={saving ? t("settings.mcp.saving") : t("settings.mcp.save")}
+                onClick={save}
+                isDisabled={saving}
+                isLoading={saving}
+                variant="primary"
+                size="sm"
+              />
+            )}
             <Button
               label={testing ? t("settings.mcp.testing") : t("settings.mcp.test")}
               onClick={test}
@@ -416,14 +440,16 @@ function ServerCard({ server, open, onToggle, onDelete, onToggleEnabled, onChang
               variant="secondary"
               size="sm"
             />
-            <Button
-              label={t("settings.mcp.delete")}
-              icon={<Trash size={13} />}
-              onClick={onDelete}
-              variant="destructive"
-              size="sm"
-              style={{ marginLeft: "auto" }}
-            />
+            {!fromPlugin && (
+              <Button
+                label={t("settings.mcp.delete")}
+                icon={<Trash size={13} />}
+                onClick={onDelete}
+                variant="destructive"
+                size="sm"
+                style={{ marginLeft: "auto" }}
+              />
+            )}
           </div>
 
           {testError && (

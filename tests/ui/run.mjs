@@ -22,7 +22,11 @@ const repoRoot = resolve(here, "..", "..");
 const buildDir = join(here, ".build");
 const tsc = join(repoRoot, "ui", "node_modules", "typescript", "bin", "tsc");
 
-const SUITES = ["branch_tree", "sse_stream", "agent_greeting", "greetings", "mcp_status", "image_gen"];
+const SUITES = [
+  "branch_tree", "sse_stream", "agent_greeting", "greetings", "mcp_status",
+  "image_gen", "list_payload", "verification", "math_plot", "latex",
+  "stream_rewind",
+];
 
 if (!existsSync(tsc)) {
   console.error(

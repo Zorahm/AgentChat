@@ -77,6 +77,17 @@ class AgentFields(BaseModel):
 
     # ── roleplay / memory ────────────────────────────────────────────────
     tool_policy: ToolPolicy = "full"
+    # A whitelist applied *on top of* ``tool_policy``. Empty means "no
+    # restriction" — which is what every agent written before this field existed
+    # deserializes to, so adding it changed nobody's agent.
+    #
+    # Separate from ``tool_policy`` because the two answer different questions.
+    # The policy is a coarse posture (a character with no shell); this names the
+    # exact roster, which is what a narrow specialist needs — a maths agent must
+    # not be able to reach for web search and come back with someone else's
+    # answer instead of working the problem. Applied in ``tools.factory`` for the
+    # built-ins and again in ``api.chat`` for the overlays it doesn't build.
+    allowed_tools: list[str] = Field(default_factory=list)
     memory_enabled: bool = False
     # Who the *user* is playing. Kept out of system_prompt so one character can
     # be reused across stories by swapping this alone; reaches the prompt as
@@ -137,6 +148,7 @@ class AgentUpdate(BaseModel):
     prompt_mode: PromptMode | None = None
     disabled_modules: list[str] | None = None
     tool_policy: ToolPolicy | None = None
+    allowed_tools: list[str] | None = None
     memory_enabled: bool | None = None
     user_persona: str | None = None
     greeting: str | None = None
@@ -162,6 +174,10 @@ class AgentEditorMeta(BaseModel):
 
     variables: list[PromptVariable]
     toggleable_modules: list[str]
+    # Every tool name an agent may whitelist, including the overlays that
+    # ``api.chat`` wires rather than the factory. Served rather than hardcoded in
+    # the UI so a whitelist can never offer a tool this build doesn't ship.
+    available_tools: list[str]
 
 
 class AgentPreviewRequest(BaseModel):

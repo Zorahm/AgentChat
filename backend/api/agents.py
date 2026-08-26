@@ -31,6 +31,13 @@ from store.settings_store import SettingsStore
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
+# Tools ``api.chat`` overlays per request rather than registering at startup, so
+# they never appear in the startup registry the editor reads. Listed by name
+# because that is all a whitelist needs; MCP tools are deliberately absent —
+# their names depend on which servers a chat enables, and pinning one into an
+# agent's whitelist would silently disable it the day that server is removed.
+OVERLAY_TOOL_NAMES: tuple[str, ...] = ("web_search", "research", "image_generate")
+
 
 def _require_agent(store: SettingsStore, agent_id: str) -> AgentConfig:
     """Resolve *agent_id* or 404.
@@ -51,20 +58,28 @@ async def list_agents(request: Request) -> list[AgentConfig]:
 
 
 @router.get("/variables", response_model=AgentEditorMeta)
-async def editor_meta() -> AgentEditorMeta:
-    """The variable palette and the switchable prompt sections.
+async def editor_meta(request: Request) -> AgentEditorMeta:
+    """The variable palette, the switchable prompt sections, and the tool roster.
 
     ``volatile`` tells the UI which variables cost prompt caching. ``{base}``
     and ``{block:<module>}`` are absent from the catalog because they're
     structural rather than values — the editor offers those separately, and
     only in replace mode where they mean anything.
+
+    The tool list is read off the startup registry plus the overlay names, so
+    the whitelist checkboxes always match what this build can actually wire.
     """
+    registry = request.app.state.tool_registry
+    tools = list(registry.list_names()) + [
+        name for name in OVERLAY_TOOL_NAMES if name not in registry.list_names()
+    ]
     return AgentEditorMeta(
         variables=[
             PromptVariable(name=spec.name, volatile=spec.volatile)
             for spec in variables.CATALOG.values()
         ],
         toggleable_modules=list(TOGGLEABLE_MODULES),
+        available_tools=sorted(tools),
     )
 
 
@@ -95,6 +110,7 @@ async def preview_prompt(request: Request, body: AgentPreviewRequest) -> AgentPr
         describe_actions=store.describe_actions,
         registry=request.app.state.tool_registry,
         skills_block=request.app.state.skill_reader.render_prompt(),
+        plugins_block=request.app.state.plugin_registry.render_prompt(),
     )
     return AgentPreviewResponse(
         prompt=build.text,

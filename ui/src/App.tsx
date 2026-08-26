@@ -25,6 +25,7 @@ import { shouldPlayGreeting } from "./utils/agentGreeting";
 import { setNotifySoundEnabled, setNotifySound, playNotificationSound } from "./utils/notify";
 import { SettingsContext, type SettingsContextValue } from "./contexts/SettingsContext";
 import { useShortcuts, type ShortcutHandlers } from "./hooks/useShortcuts";
+import { MESSAGE_NAV_EVENT, type MessageNavDetail } from "./hooks/useMessageFocus";
 import { useViewportHeight } from "./hooks/useViewportHeight";
 import { resolveBindings } from "./shortcuts/registry";
 import { i18n } from "./i18n";
@@ -484,6 +485,12 @@ export function App() {
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
   const shortcutBindings = useMemo(() => resolveBindings(shortcuts), [shortcuts]);
+  const moveMessageRing = (dir: -1 | 1) => {
+    setView("chat");
+    window.dispatchEvent(
+      new CustomEvent<MessageNavDetail>(MESSAGE_NAV_EVENT, { detail: { dir } }),
+    );
+  };
   const shortcutHandlers: ShortcutHandlers = {
     new_chat: () => { chats.newChat(); setView("chat"); },
     focus_input: () => {
@@ -498,6 +505,10 @@ export function App() {
     open_settings: () => handleNavigate("settings"),
     goto_projects: () => handleNavigate("projects"),
     goto_skills: () => handleNavigate("skills"),
+    // The ring's state belongs to the message list, not here — App only relays
+    // the keypress, the same way focus_input does.
+    prev_message: () => moveMessageRing(-1),
+    next_message: () => moveMessageRing(1),
   };
   useShortcuts(shortcutBindings, shortcutHandlers);
 
@@ -633,6 +644,8 @@ export function App() {
             agents={agents.agents}
             agentId={chats.activeAgentId}
             onAgentChange={handleAgentChange}
+            mode={chats.activeMode}
+            onModeChange={chats.setMode}
           />
         )}
         </div>

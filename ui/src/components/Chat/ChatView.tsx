@@ -14,6 +14,7 @@ import type { UserQuestionData } from "../../types/tool-call";
 import type { Agent } from "../../types/agent";
 import { API_BASE } from "../../utils/apiBase";
 import { pickGreeting } from "../../utils/greetings";
+import { useMessageFocus } from "../../hooks/useMessageFocus";
 
 /** Derive the pending ask_user prompt from the last assistant turn, if any.
  *
@@ -96,6 +97,9 @@ interface ChatViewProps {
   agents: Agent[];
   agentId: string;
   onAgentChange: (agentId: string) => void;
+  /** Composer mode for this chat; "" = normal. */
+  mode: string;
+  onModeChange: (mode: string) => void;
 }
 
 /** Animates `text` character-by-character. `done` derives from displayed
@@ -142,6 +146,7 @@ export function ChatView({
   webSearchEnabled, webSearchMode, onWebSearchChange,
   researchEnabled, onResearchChange,
   agents, agentId, onAgentChange,
+  mode, onModeChange,
 }: ChatViewProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -187,6 +192,12 @@ export function ChatView({
     () => pendingQuestion(state.messages, branchNodes, state.isStreaming),
     [state.messages, branchNodes, state.isStreaming],
   );
+
+  const messageIds = useMemo(
+    () => state.messages.map((m: ChatMessage) => m.id),
+    [state.messages],
+  );
+  const focusedMessageId = useMessageFocus(messageIds, activeId);
 
   return (
     <div className={`chat${isEmpty ? " chat--welcome" : ""}`}>
@@ -270,6 +281,9 @@ export function ChatView({
               agents={agents}
               agentId={agentId}
               onAgentChange={onAgentChange}
+              mode={mode}
+              onModeChange={onModeChange}
+              showModeTabs
             />
           </div>
         </div>
@@ -297,6 +311,7 @@ export function ChatView({
                 <MessageBubble
                   key={msg.id}
                   message={msg}
+                  chatId={activeId}
                   liveFiles={state.liveFiles}
                   onRetry={isLastInBranch ? onRetry : undefined}
                   onEdit={isUserNode ? onEdit : undefined}
@@ -307,6 +322,7 @@ export function ChatView({
                   nodeId={nodeId}
                   onSwitchVariant={nodeId ? onSwitchVariant : undefined}
                   isGlobalStreaming={isLastInBranch ? state.isStreaming : false}
+                  focused={msg.id === focusedMessageId}
                 />
               );
             })}
@@ -352,6 +368,7 @@ export function ChatView({
             agents={agents}
             agentId={agentId}
             onAgentChange={onAgentChange}
+            mode={mode}
           />
         </>
       )}

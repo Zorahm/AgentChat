@@ -25,6 +25,39 @@ export interface ChatMessage {
   webSearchMode?: string;
   /** Token usage + cost for this assistant turn (backend `usage` SSE event). */
   usage?: MessageUsage;
+  /** Set while the turn is frozen waiting out a failed provider call. */
+  retry?: RetryState;
+}
+
+/** The backend is between attempts at the same model call. The turn is not
+ * lost — its history and finished tool results are held — so this renders as a
+ * waiting state inside the message rather than as an error banner. */
+export interface RetryState {
+  /** 1-based; the attempt that just failed. */
+  attempt: number;
+  maxAttempts: number;
+  /** Wall clock (ms) the next attempt is due, for the countdown. */
+  resumeAt: number;
+  /** What broke, as classified by the backend — the wording is the UI's. */
+  kind: "network" | "provider" | "rate_limit";
+  /** The provider runs on this machine or LAN (LM Studio, Ollama): the cause
+   * is a stopped server, not a lost internet connection. */
+  local: boolean;
+  detail?: string;
+}
+
+/** Where the current model call began — everything after it is one attempt's
+ * output, and gets un-said if that attempt has to be thrown away. Transient:
+ * it is not restored when a chat is reloaded, because a reloaded chat has no
+ * stream in flight. */
+export interface PassMark {
+  steps: number;
+  /** Length of the last kept step's text, when it is a text/thought step that
+   * the pass appended to rather than created. */
+  tailChars: number;
+  content: number;
+  reasoning: number;
+  toolCalls: number;
 }
 
 /** Aggregated token/cost totals for one assistant turn, across every LLM call
@@ -96,6 +129,10 @@ export interface AssistantVariant {
   webSearchMode?: string;
   /** Token usage + cost for this assistant turn (backend `usage` SSE event). */
   usage?: MessageUsage;
+  /** Live while the backend is waiting between attempts at the model call. */
+  retry?: RetryState;
+  /** Rewind point for the attempt in flight. Live-only, never persisted. */
+  passMark?: PassMark;
 }
 
 export interface UserVariant {
@@ -151,4 +188,9 @@ export interface ChatSession {
   projectId?: string;
   /** Agent profile attached to this chat. Empty/undefined = the default agent. */
   agentId?: string;
+  /** Composer mode ("" = normal, "math" = maths). Picked from the tab strip on
+   *  an empty chat and fixed once the first message is sent — the strip is gone
+   *  after that. Shares a slot with `agentId`: setting one clears the other,
+   *  because both answer "who is replying" and their prompts would contradict. */
+  mode?: string;
 }

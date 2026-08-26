@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { Folder, FileText } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
-import { Markdown } from "@astryxdesign/core/Markdown";
-import { latexMarkdownPlugins } from "../../utils/latexPlugins";
+import { MathMarkdown } from "../MathMarkdown";
 import type { Artifact } from "../../types/artifact";
 import { getLang } from "../../utils/getLang";
 import { API_BASE, withToken } from "../../utils/apiBase";
@@ -103,7 +102,7 @@ export function RenderView({
     return (
       <div className="art-render-md">
         {Object.keys(meta).length > 0 && <FrontmatterCard meta={meta} />}
-        <Markdown inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
+        <MathMarkdown>{body}</MathMarkdown>
       </div>
     );
   }
@@ -297,7 +296,7 @@ function MarkdownBody({ content }: { content: string }) {
   return (
     <div className="art-render-md azm-md">
       {Object.keys(meta).length > 0 && <FrontmatterCard meta={meta} />}
-      <Markdown inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
+      <MathMarkdown>{body}</MathMarkdown>
     </div>
   );
 }

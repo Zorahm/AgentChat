@@ -6,6 +6,16 @@
    an Astryx internal) keeps it from looking cramped. */
 .tc-result-detail { margin-top: 6px; }
 
+/* Live preview of the call currently running. It sits OUTSIDE the Astryx row
+   because that row keeps its detail collapsed in internal state with no prop to
+   open it — anything placed there is invisible for exactly as long as there is
+   something to watch. Indented to read as belonging to the row above. */
+.tc-live { margin: 6px 0 2px 22px; }
+
+/* Input/output tabs inside an expanded row: the tab strip needs to breathe
+   above the code block it switches. */
+.tc-io { display: flex; flex-direction: column; gap: 6px; }
+
 /* ── Tool call block ───────────────────────────────────────────────────── */
 .tc {
   border: 1px solid var(--line);

@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS chats (
     root_json         TEXT NOT NULL DEFAULT '[]',
     mcp_enabled_json  TEXT NOT NULL DEFAULT '[]',
     project_id        TEXT NOT NULL DEFAULT '',
-    agent_id          TEXT NOT NULL DEFAULT ''
+    agent_id          TEXT NOT NULL DEFAULT '',
+    mode              TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at DESC);
@@ -41,6 +42,7 @@ _MIGRATIONS: tuple[str, ...] = (
     "ALTER TABLE chats ADD COLUMN mcp_enabled_json TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE chats ADD COLUMN project_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE chats ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE chats ADD COLUMN mode TEXT NOT NULL DEFAULT ''",
 )
 
 
@@ -87,7 +89,7 @@ class ChatStore:
         """Return chats ordered by updated_at desc, WITHOUT root_json (cheap)."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, title, dir_slug, project_id, agent_id, created_at, updated_at "
+                "SELECT id, title, dir_slug, project_id, agent_id, mode, created_at, updated_at "
                 "FROM chats ORDER BY updated_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
@@ -96,7 +98,7 @@ class ChatStore:
         """Return the full chat including parsed root tree."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, title, dir_slug, project_id, agent_id, created_at, updated_at, root_json, mcp_enabled_json "
+                "SELECT id, title, dir_slug, project_id, agent_id, mode, created_at, updated_at, root_json, mcp_enabled_json "
                 "FROM chats WHERE id = ?",
                 (chat_id,),
             ).fetchone()
@@ -123,8 +125,10 @@ class ChatStore:
         mcp_enabled: list[str] | None = None,
         project_id: str | None = None,
         agent_id: str | None = None,
+        mode: str | None = None,
     ) -> dict[str, Any] | None:
-        """Patch any of title / dir_slug / root / mcp_enabled / project_id / agent_id. Touch updated_at."""
+        """Patch any of title / dir_slug / root / mcp_enabled / project_id / agent_id /
+        mode. Touch updated_at."""
         sets: list[str] = []
         params: list[Any] = []
         if title is not None:
@@ -145,6 +149,9 @@ class ChatStore:
         if agent_id is not None:
             sets.append("agent_id = ?")
             params.append(agent_id)
+        if mode is not None:
+            sets.append("mode = ?")
+            params.append(mode)
         if not sets:
             return self.get_chat(chat_id)
 
@@ -196,6 +203,7 @@ class ChatStore:
         mcp_enabled: list[str] | None = None,
         project_id: str = "",
         agent_id: str = "",
+        mode: str = "",
     ) -> dict[str, Any]:
         """Insert or replace a chat — used by the migration path."""
         now = _now_ms()
@@ -204,11 +212,12 @@ class ChatStore:
         mcp_blob = json.dumps(list(mcp_enabled or []), ensure_ascii=False)
         with self._lock:
             self._conn.execute(
-                "INSERT INTO chats (id, title, dir_slug, project_id, agent_id, created_at, updated_at, root_json, mcp_enabled_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "INSERT INTO chats (id, title, dir_slug, project_id, agent_id, mode, created_at, updated_at, root_json, mcp_enabled_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET "
                 "title=excluded.title, dir_slug=excluded.dir_slug, "
                 "project_id=excluded.project_id, agent_id=excluded.agent_id, "
+                "mode=excluded.mode, "
                 "updated_at=excluded.updated_at, "
                 # Never let an EMPTY incoming tree replace a stored one. The UI
                 # fires POST /chats (this upsert, with root=[]) and the debounced
@@ -219,7 +228,7 @@ class ChatStore:
                 "root_json=CASE WHEN excluded.root_json = '[]' "
                 "THEN chats.root_json ELSE excluded.root_json END, "
                 "mcp_enabled_json=excluded.mcp_enabled_json",
-                (chat_id, title, dir_slug, project_id, agent_id, ts, now, root_blob, mcp_blob),
+                (chat_id, title, dir_slug, project_id, agent_id, mode, ts, now, root_blob, mcp_blob),
             )
         return self.get_chat(chat_id) or {}
 

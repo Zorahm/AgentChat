@@ -1,7 +1,10 @@
-/** TEMPORARY debug harness for visually verifying the ChatInput slot
- * rearrangement (+ → footerActions, ModelSelector/Popover → sendActions).
- * Not part of the app — rendered only behind ?debug-composer, removed after
- * verification. */
+/** Debug harness for visually verifying ChatInput without a live backend.
+ * Rendered only behind ?debug-composer; not part of the app.
+ *
+ * Covers the slot layout (+ → footerActions, ModelSelector → sendActions) and
+ * the chat mode's two presentations, which a real chat can never show at once:
+ * the tab strip an empty chat offers, and the chip that replaces it once the
+ * first message has fixed the choice. */
 import { useState } from "react";
 import { Theme } from "@astryxdesign/core/theme";
 import { chocolateTheme } from "@astryxdesign/theme-chocolate/built";
@@ -28,24 +31,36 @@ export function DebugComposerHarness() {
   const [agentId, setAgentId] = useState("default");
   const [thinkingEnabled, setThinkingEnabled] = useState(true);
   const [effortLevel, setEffortLevel] = useState<string | null>("medium");
+  const [mode, setMode] = useState("");
+
+  // The mode has two presentations and a chat only ever shows one of them, so
+  // both are rendered side by side here: the strip an empty chat offers, and
+  // the chip that replaces it once the first message has fixed the choice.
+  const shared = {
+    onSend: () => {},
+    onStop: () => {},
+    models,
+    model,
+    onModelChange: setModel,
+    thinkingEnabled,
+    onThinkingToggle: () => setThinkingEnabled((v) => !v),
+    effortLevel,
+    onEffortChange: setEffortLevel,
+    agents,
+    agentId,
+    onAgentChange: setAgentId,
+  };
 
   return (
     <Theme theme={chocolateTheme} mode="dark">
-      <div style={{ maxWidth: 720, margin: "200px auto 40px", padding: 16 }}>
-        <ChatInput
-          onSend={() => {}}
-          onStop={() => {}}
-          models={models}
-          model={model}
-          onModelChange={setModel}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingToggle={() => setThinkingEnabled((v) => !v)}
-          effortLevel={effortLevel}
-          onEffortChange={setEffortLevel}
-          agents={agents}
-          agentId={agentId}
-          onAgentChange={setAgentId}
-        />
+      <div style={{ maxWidth: 720, margin: "120px auto 40px", padding: 16 }}>
+        <p style={{ opacity: 0.6, font: "12px system-ui" }}>empty chat — mode strip</p>
+        <ChatInput {...shared} mode={mode} onModeChange={setMode} showModeTabs />
+
+        <p style={{ opacity: 0.6, font: "12px system-ui", marginTop: 40 }}>
+          after the first message — strip gone, chip beside the model
+        </p>
+        <ChatInput {...shared} mode={mode} />
       </div>
     </Theme>
   );

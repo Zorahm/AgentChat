@@ -9,6 +9,8 @@ import {
   type ChatComposerTrigger,
   type ChatComposerInputHandle,
 } from "@astryxdesign/core/Chat";
+import { TabList, Tab } from "@astryxdesign/core/TabList";
+import { Badge } from "@astryxdesign/core/Badge";
 import { createStaticSource, TypeaheadItem } from "@astryxdesign/core/Typeahead";
 import type { SearchableItem } from "@astryxdesign/core/Typeahead";
 import type { ModelItem } from "./ChatView";
@@ -21,6 +23,7 @@ import { WebSearchMenuSection } from "./WebSearchMenuSection";
 import { ResearchMenuSection } from "./ResearchMenuSection";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import type { AttachmentInfo } from "../../types/chat";
+import { CHAT_MODES, NORMAL_MODE, findMode } from "../../utils/chatModes";
 import {
   getMentionItems,
   textToDisplayHtml,
@@ -57,6 +60,14 @@ interface ChatInputProps {
   agents?: Agent[];
   agentId?: string;
   onAgentChange?: (agentId: string) => void;
+  /** Composer mode for this chat ("" = normal). */
+  mode?: string;
+  onModeChange?: (mode: string) => void;
+  /** Whether the mode tab strip is offered. True only on an empty chat: the
+   *  mode is fixed by the first message, and a strip that silently stopped
+   *  working would be worse than one that is gone. Once hidden, the chip beside
+   *  the model selector is what says which mode the chat is in. */
+  showModeTabs?: boolean;
   /** When true (e.g. a file is dragged anywhere over a project), show the drop
    *  overlay even before the cursor reaches the composer. */
   externalDragActive?: boolean;
@@ -92,6 +103,7 @@ export function ChatInput({
   webSearchEnabled, webSearchMode, onWebSearchChange,
   researchEnabled, onResearchChange, externalDragActive,
   agents, agentId, onAgentChange,
+  mode, onModeChange, showModeTabs,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -518,6 +530,7 @@ export function ChatInput({
   /* ── render ───────────────────────────────── */
 
   const hasText = value.trim().length > 0;
+  const activeMode = findMode(mode);
   const ph = placeholder ?? t("chat.placeholder");
 
   const attachMenu = (
@@ -649,6 +662,24 @@ export function ChatInput({
           </div>
         )}
 
+        {showModeTabs && onModeChange && (
+          <div className="composer-modes">
+            <TabList
+              value={mode ?? NORMAL_MODE}
+              onChange={onModeChange}
+              size="sm"
+              aria-label={t("chat.modes.label")}
+            >
+              {/* The normal mode is the absence of one, so its value is the
+                  empty string rather than an id of its own. */}
+              <Tab value={NORMAL_MODE} label={t("chat.modes.normal")} />
+              {CHAT_MODES.map((m) => (
+                <Tab key={m.id} value={m.id} label={t(m.labelKey)} />
+              ))}
+            </TabList>
+          </div>
+        )}
+
         <ChatComposer
           value={value}
           onChange={handleChange}
@@ -666,6 +697,15 @@ export function ChatInput({
           footerActions={attachMenu}
           sendActions={
             <>
+              {/* Only once the strip is gone: while it is up, the selected tab
+                  already says which mode this is, and both at once is noise. */}
+              {!showModeTabs && activeMode && (
+                // The tooltip lives on a wrapper: Badge renders a span and
+                // takes no title of its own.
+                <span className="composer-mode-chip" title={t("chat.modes.fixedHint")}>
+                  <Badge variant="purple" label={t(activeMode.labelKey)} />
+                </span>
+              )}
               {(hasText || pendingFiles.length > 0) && (
                 <span className="composer-token-count">
                   {pendingFiles.length > 0 && `${pendingFiles.length} ${t("chat.files", { count: pendingFiles.length })} · `}

@@ -80,6 +80,9 @@ export function ProjectDetail({
   const [webSearchMode, setWebSearchMode] = useState(() => getWebSearchDefault().mode);
   const [researchEnabled, setResearchEnabled] = useState(() => getResearchDefault());
   const [mcpEnabled, setMcpEnabled] = useState<string[]>([]);
+  // Not seeded from a sticky default, unlike the toggles above: a mode is a
+  // decision about one conversation, so each new project chat starts normal.
+  const [mode, setMode] = useState("");
 
   const handleWebSearchChange = useCallback((enabled: boolean, mode?: string) => {
     setWebSearchEnabled(enabled);
@@ -228,8 +231,10 @@ export function ProjectDetail({
               webSearchMode,
               researchEnabled,
               mcpEnabledServers: mcpEnabled,
+              mode,
             });
             setComposeSlug(makeDirSlug()); // fresh sandbox for the next message
+            setMode(""); // the mode belonged to the chat just spawned, not the next one
           }}
           onStop={() => {}}
           isStreaming={false}
@@ -250,6 +255,9 @@ export function ProjectDetail({
           onResearchChange={setResearchEnabled}
           mcpEnabled={mcpEnabled}
           onToggleMcpServer={handleToggleMcpServer}
+          mode={mode}
+          onModeChange={setMode}
+          showModeTabs
         />
 
         <div className="proj-chats-head">{t("projects.chatSectionTitle")}</div>

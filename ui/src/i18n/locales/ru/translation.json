@@ -33,6 +33,15 @@
     "thinking": "Ожидаю ответ…",
     "slowConnection": "Всё ещё жду — возможно, медленное соединение.",
     "connectionLost": "Соединение с бэкендом оборвалось, ответ не завершён.",
+    "retryNotice": {
+      "offline": "Нет связи с провайдером модели.",
+      "localDown": "Локальный сервер модели не отвечает.",
+      "providerDown": "Провайдер вернул ошибку.",
+      "rateLimited": "Провайдер ограничивает частоту запросов.",
+      "waiting": "Повтор через {{seconds}} с",
+      "reconnecting": "Переподключаюсь…",
+      "attempt": "попытка {{n}} из {{total}}"
+    },
     "dropToAttach": "Перетащите файлы сюда, чтобы добавить в чат",
     "send": "Отправить",
     "stop": "Стоп",
@@ -102,6 +111,10 @@
       "readFile": {
         "present": "читает файл",
         "past": "прочитал файл"
+      },
+      "listDir": {
+        "present": "смотрит папку",
+        "past": "посмотрел папку"
       },
       "readPhoto": {
         "present": "смотрит фото",
@@ -285,6 +298,12 @@
         "cancelled": "Отменён"
       }
     },
+    "modes": {
+      "label": "Режим чата",
+      "normal": "Обычный",
+      "math": "Математика",
+      "fixedHint": "Режим закреплён за этим чатом. Чтобы сменить — начните новый."
+    },
     "imageGen": {
       "untitled": "Сгенерированное изображение",
       "rendering": "Рисую…",
@@ -292,6 +311,57 @@
       "seed": "сид",
       "negative": "Исключить:",
       "copyPrompt": "Скопировать промпт и настройки"
+    },
+    "verify": {
+      "running": "Проверяю ответ…",
+      "failed": "Проверка не запустилась",
+      "attemptCount_one": "{{count}} попытка",
+      "attemptCount_few": "{{count}} попытки",
+      "attemptCount_many": "{{count}} попыток",
+      "earlierAttempts": "Предыдущие попытки",
+      "checkedAgainst": "Проверено против",
+      "checkedAgainstHint": "Ответ подставляли именно в эту постановку. Если она расходится с вашим вопросом — проверена не та задача.",
+      "method": "Метод",
+      "symbolic": "Символьно",
+      "numeric": "Численно",
+      "numericDetail": "точек: {{samples}}, худшая относительная ошибка {{error}}",
+      "counterexample": "Контрпример",
+      "seed": "сид {{seed}}",
+      "recheck": "Перепроверить",
+      "rechecking": "Перепроверяю…",
+      "recheckHint": "Запускает независимого проверяющего, который не видит решения.",
+      "status": {
+        "verified": "Проверено",
+        "refuted": "Опровергнуто",
+        "partial": "Проверено частично",
+        "inconclusive": "Проверить нечем",
+        "error": "Проверка недоступна"
+      },
+      "verifier": {
+        "deterministic": "детерминированная проверка",
+        "subagent": "независимый проверяющий"
+      },
+      "kind": {
+        "root": "корни",
+        "identity": "тождество",
+        "derivative": "производная",
+        "integral_indef": "неопределённый интеграл",
+        "integral_def": "определённый интеграл",
+        "limit": "предел",
+        "sum": "ряд",
+        "linalg": "линейная алгебра",
+        "probability": "вероятность",
+        "combinatorics": "перебор",
+        "inequality": "неравенство",
+        "proof": "доказательство",
+        "other": "утверждение"
+      }
+    },
+    "mathPlot": {
+      "rendering": "Рисую график…",
+      "failed": "График построить не удалось",
+      "saveSvg": "Сохранить как SVG",
+      "savePng": "Сохранить как PNG"
     },
     "agent": {
       "rowLabel": "Агент"
@@ -564,6 +634,7 @@
       "sandbox": "Песочница",
       "paths": "Удалённый доступ",
       "mcp": "MCP",
+      "plugins": "Плагины",
       "agents": "Агенты"
     },
     "backendStatus": {
@@ -587,7 +658,9 @@
         "toggle_sidebar": "Свернуть / развернуть сайдбар",
         "open_settings": "Открыть настройки",
         "goto_projects": "Перейти к Проектам",
-        "goto_skills": "Перейти к Навыкам"
+        "goto_skills": "Перейти к Навыкам",
+        "prev_message": "Предыдущее сообщение",
+        "next_message": "Следующее сообщение"
       }
     },
     "general": {
@@ -778,7 +851,49 @@
       "installExitOk": "Готово (код {{code}})",
       "installExitFail": "Ошибка (код {{code}})",
       "installTimedOut": "Превышено время ожидания (300 с)",
-      "installAddServer": "Добавить как сервер"
+      "installAddServer": "Добавить как сервер",
+      "fromPlugin": "плагин",
+      "pluginOwnedHint": "Сервер из плагина «{{plugin}}». Правьте его в mcp.json этого плагина или выключите плагин в разделе «Плагины»."
+    },
+    "plugins": {
+      "title": "Плагины",
+      "description": "Agent Plugins — переносимые пакеты со скиллами и MCP-серверами по стандарту agent-plugins.org.",
+      "install": "Установить",
+      "installing": "Устанавливаю…",
+      "installTitle": "Установка плагина",
+      "refresh": "Обновить",
+      "empty": "Плагины пока не установлены.",
+      "noDescription": "без описания",
+      "sourceGithub": "GitHub",
+      "sourceLocal": "Папка",
+      "sourceArchive": "Архив",
+      "githubLabel": "Репозиторий",
+      "githubHint": "owner/repo — или owner/repo/путь, если плагин лежит в подпапке.",
+      "localLabel": "Путь на этой машине",
+      "localPlaceholder": "/путь/до/my-plugin",
+      "localHint": "Папка с plugin.json. Она копируется, а не подключается ссылкой.",
+      "archiveLabel": "Zip-архив",
+      "archiveHint": ".zip с plugin.json внутри, до 50 МБ.",
+      "chooseFile": "Выбрать файл…",
+      "skillsLabel": "Скиллы",
+      "serversLabel": "MCP-серверы",
+      "issuesLabel": "Проблемы",
+      "toolCount": "{{count}} инструмент",
+      "toolCount_few": "{{count}} инструмента",
+      "toolCount_many": "{{count}} инструментов",
+      "byAuthor": "автор: {{author}}",
+      "source": "Источник: {{source}}",
+      "homepage": "Сайт",
+      "remove": "Удалить",
+      "removeConfirm": "Удалить плагин «{{name}}» и сохранённые для него данные?",
+      "notOurs": "Положен вручную — удалите его сами.",
+      "toggleLabel": "Включить {{name}}",
+      "location": "Установлены в {{path}}",
+      "state": {
+        "enabled": "включён",
+        "disabled": "выключен",
+        "invalid": "невалиден"
+      }
     },
     "agents": {
       "title": "Агенты",
@@ -811,6 +926,7 @@
       "var_tools": "Список доступных инструментов с описаниями",
       "var_tool_names": "Только имена инструментов, через запятую",
       "var_skills": "Установленные навыки",
+      "var_plugins": "Установленные плагины и что каждый принёс",
       "var_mcp": "MCP-серверы, включённые в этом чате",
       "var_lang": "Язык интерфейса",
       "var_date": "Текущая дата",
@@ -881,6 +997,9 @@
       "toolPolicyMemoryTag": "только память",
       "toolPolicyNoneTag": "без тулов",
       "toolPolicyTagHint": "У этого агента урезаны инструменты",
+      "allowedToolsLabel": "Инструменты, доступные агенту",
+      "allowedTools": "Ограничить набор инструментов",
+      "allowedToolsHint": "Агент получит только отмеченные инструменты. Узкий специалист, у которого остался веб-поиск, найдёт готовый ответ вместо того, чтобы решать задачу.",
       "memoryEnabled": "Память",
       "memoryEnabledHint": "Агент сохраняет факты и приносит их в каждый новый чат с собой.",
       "memoryTag": "память",
@@ -1179,21 +1298,40 @@
     "requires": "Требует",
     "metaAuthor": "Автор",
     "catalog": {
-      "agentchat": { "label": "Об AgentChat", "desc": "Позволяет модели отвечать на вопросы об этом приложении и его возможностях" },
-      "docx": { "label": "Word (.docx)", "desc": "Создание и редактирование документов Word" },
-      "xlsx": { "label": "Excel (.xlsx)", "desc": "Создание и редактирование таблиц Excel" },
-      "pptx": { "label": "PowerPoint (.pptx)", "desc": "Создание и редактирование презентаций" },
-      "pdf": { "label": "PDF", "desc": "Чтение, заполнение и генерация PDF" },
-      "frontend-design": { "label": "Frontend Design", "desc": "Гайд по дизайну UI и веб-интерфейсов" }
+      "agentchat": {
+        "label": "Об AgentChat",
+        "desc": "Позволяет модели отвечать на вопросы об этом приложении и его возможностях"
+      },
+      "math": {
+        "label": "Математика",
+        "desc": "Строгое оформление решения, LaTeX везде и машинная проверка финального ответа"
+      },
+      "docx": {
+        "label": "Word (.docx)",
+        "desc": "Создание и редактирование документов Word"
+      },
+      "xlsx": {
+        "label": "Excel (.xlsx)",
+        "desc": "Создание и редактирование таблиц Excel"
+      },
+      "pptx": {
+        "label": "PowerPoint (.pptx)",
+        "desc": "Создание и редактирование презентаций"
+      },
+      "pdf": {
+        "label": "PDF",
+        "desc": "Чтение, заполнение и генерация PDF"
+      },
+      "frontend-design": {
+        "label": "Frontend Design",
+        "desc": "Гайд по дизайну UI и веб-интерфейсов"
+      }
     }
   },
   "onboarding": {
     "connectionError": "Не удалось подключиться к бэкенду",
     "saveError": "Не удалось сохранить",
-    "validationProvider": "Выберите провайдера и введите ключ",
-    "keySaveError": "Не удалось сохранить ключ",
     "validationModel": "Выберите модель по умолчанию",
-    "modelSaveError": "Не удалось сохранить",
     "wslStarting": "Запускаю установку WSL + Ubuntu (потребуется UAC)…",
     "wslStartError": "Не удалось запустить установку WSL",
     "wslWaiting": "Жду готовности дистрибутива (первый запуск может занять до 10 минут)…",
@@ -1205,14 +1343,16 @@
     "skillsError": "Не удалось установить",
     "completeError": "Не удалось завершить",
     "welcome": "Добро пожаловать в AgentChat",
-    "stepName": "1 · Имя",
-    "stepProvider": "2 · Провайдер",
-    "stepWsl": "3 · WSL",
-    "stepSkills": "4 · Скиллы",
+    "subtitle": "Четыре шага — и агент готов к работе.",
+    "stepOf": "Шаг {{current}} из {{total}}",
     "navName": "Имя",
+    "navNameCaption": "Как модель к вам обращается",
     "navProvider": "Провайдер",
+    "navProviderCaption": "API-ключи и модели",
     "navEnvironment": "Окружение",
+    "navEnvironmentCaption": "Оболочка и библиотеки",
     "navSkills": "Скиллы",
+    "navSkillsCaption": "Документы и форматы",
     "depsTitle": "Зависимости",
     "installEverything": "Установить всё",
     "depsReady": "{{ready}}/{{total}} готово",
@@ -1221,21 +1361,16 @@
     "step1Title": "Как к вам обращаться?",
     "step1Description": "Имя будет передано модели в системном промпте.",
     "step1Placeholder": "Имя",
+    "step1Hint": "Позже это можно изменить в Настройках → Профиль.",
     "skip": "Пропустить",
     "saving": "Сохраняю…",
     "next": "Далее",
     "step2Title": "Подключите провайдера и выберите модель",
-    "step2Description": "Введите API-ключ хотя бы одного провайдера. Список моделей обновится автоматически.",
-    "step2Provider": "Провайдер",
-    "step2ApiKey": "API ключ",
-    "step2ApiKeyHint": "(уже установлен — можно перезаписать)",
-    "step2ApiKeyPlaceholder": "sk-…",
-    "step2ApiKeyNewPlaceholder": "•••• новый ключ",
-    "step2SaveKey": "Сохранить ключ",
-    "step2DefaultModel": "Модель по умолчанию",
+    "step2Description": "Раскройте провайдера, сохраните его API-ключ и нажмите на модель, с которой будут стартовать новые чаты. Внизу можно добавить любой OpenAI-совместимый эндпоинт — LM Studio, Ollama, прокси.",
     "step2Refresh": "Обновить",
-    "step2SelectModel": "— выберите —",
-    "step2NoModels": "Список пуст. Сохраните ключ и нажмите «Обновить».",
+    "step2Connected": "Подключено: {{n}}",
+    "step2SummaryReady": "Модель по умолчанию: {{model}}",
+    "step2SummaryEmpty": "Модель по умолчанию не выбрана — раскройте провайдера и нажмите на модель.",
     "back": "Назад",
     "step3Title": "Как агент будет выполнять команды?",
     "step3Description": "Выберите, как агент будет выполнять команды. PowerShell работает сразу; WSL даёт Linux-окружение со всеми библиотеками для офисных форматов.",
@@ -1294,7 +1429,6 @@
     "skillCreate": "Создание скиллов — мета-скилл для написания своих",
     "skillsSource": "Устанавливайте, добавляйте и удаляйте навыки в любой момент на странице «Навыки» в Настройках.",
     "finishing": "Завершаю…",
-    "finish": "Готово",
     "openSkills": "Открыть навыки",
     "skipSkills": "Позже"
   },

@@ -29,6 +29,36 @@ const CHART_DARK = [
   "#b48ce8", "#e88aa8", "#5cc5b5", "#d4b088",
 ];
 
+/**
+ * The same contract, for markup rendered *inline* rather than in an iframe —
+ * today, `math_plot`'s server-drawn SVG.
+ *
+ * Exported from here rather than restated in CSS so the two surfaces cannot
+ * drift: a plot and a widget chart sitting in the same reply, drawn from two
+ * copies of "the" palette, is precisely the kind of mismatch nobody notices
+ * until it is everywhere. Returns a style object, since these variables must
+ * scope to the plot rather than leak onto `:root`.
+ */
+export function inlineChartVars(isDark: boolean): Record<string, string> {
+  const palette = isDark ? CHART_DARK : CHART_LIGHT;
+  const muted = token("--muted", isDark ? "#8a8472" : "#767470");
+  const vars: Record<string, string> = {
+    // The card already paints a surface; a second one inside the SVG would sit
+    // on it as a subtly mismatched rectangle.
+    "--bg": "transparent",
+    "--fg": token("--ink", isDark ? "#f0ead8" : "#1a1a1a"),
+    "--muted": muted,
+    "--axis": muted,
+    "--grid": token("--line", isDark ? "rgba(245,240,225,.10)" : "rgba(20,20,18,.10)"),
+    "--accent": token("--accent", isDark ? "#d4b088" : "#6b4f3a"),
+    "--font-sans": token("--font-body", "system-ui, -apple-system, sans-serif"),
+  };
+  palette.forEach((color, index) => {
+    vars[`--chart-${index + 1}`] = color;
+  });
+  return vars;
+}
+
 /** Resolve every widget-contract variable from the live app theme. */
 function widgetVars(isDark: boolean): string {
   const palette = isDark ? CHART_DARK : CHART_LIGHT;

@@ -6,7 +6,7 @@ import {
   Plus, MagnifyingGlass, DotsThree, Trash, CaretRight, CaretLeft,
   Folder, LinkSimple, CheckCircle,
   FileDoc, FileXls, FilePpt, FilePdf, FileCode, FileText, File,
-  PaintBrush, Sparkle,
+  PaintBrush, Sparkle, MathOperations,
 } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -16,11 +16,11 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { TreeList } from "@astryxdesign/core/TreeList";
 import type { TreeListItemData } from "@astryxdesign/core/TreeList";
-import { Markdown } from "@astryxdesign/core/Markdown";
-import { latexMarkdownPlugins } from "../../utils/latexPlugins";
+import { MathMarkdown } from "../MathMarkdown";
 import { parseFrontmatter } from "../../utils/frontmatter";
 import { FrontmatterCard } from "../FrontmatterCard";
 import { API_BASE } from "../../utils/apiBase";
+import { asArray } from "../../utils/asArray";
 import { playNotificationSound } from "../../utils/notify";
 import { basename } from "../../utils/basename";
 import { useTranslation } from "react-i18next";
@@ -60,6 +60,7 @@ interface CatalogItem {
 
 const CATALOG: CatalogItem[] = [
   { key: "agentchat", icon: <Sparkle size={20} weight="duotone" />, author: "AgentChat" },
+  { key: "math", icon: <MathOperations size={20} weight="duotone" />, author: "AgentChat" },
   { key: "docx", icon: <FileDoc size={20} weight="duotone" />, requires: "Python (python-docx); optional pandoc, LibreOffice", author: "AgentChat" },
   { key: "xlsx", icon: <FileXls size={20} weight="duotone" />, requires: "Python (openpyxl, pandas); optional LibreOffice", author: "AgentChat" },
   { key: "pptx", icon: <FilePpt size={20} weight="duotone" />, requires: "Python (python-pptx); optional LibreOffice, poppler", author: "AgentChat" },
@@ -227,7 +228,7 @@ function SkillReadme({ content }: SkillReadmeProps) {
   return (
     <>
       {Object.keys(rest).length > 0 && <FrontmatterCard meta={rest} />}
-      <Markdown className="sk2-readme" inlinePlugins={latexMarkdownPlugins}>{body}</Markdown>
+      <MathMarkdown className="sk2-readme">{body}</MathMarkdown>
     </>
   );
 }
@@ -369,7 +370,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
   const fetchSkills = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/skills`);
-      if (res.ok) setSkills((await res.json()) as SkillInfo[]);
+      if (res.ok) setSkills(asArray<SkillInfo>(await res.json()));
     } catch { /* offline */ }
   }, []);
 
@@ -399,7 +400,7 @@ export function SkillsManager({ onClose }: SkillsManagerProps) {
     if (!files.has(selected)) {
       fetch(`${API_BASE}/skills/${enc}/files`).then(async (r) => {
         if (r.ok) {
-          const d = (await r.json()) as SkillFileEntry[];
+          const d = asArray<SkillFileEntry>(await r.json());
           setFiles((prev) => new Map(prev).set(selected, d));
         }
       }).catch(() => {});

@@ -166,6 +166,8 @@ class ChatSummary(BaseModel):
     dir_slug: str
     project_id: str = ""
     agent_id: str = ""
+    # Composer mode, fixed at the chat's first message. '' = normal.
+    mode: str = ""
     created_at: int
     updated_at: int
 
@@ -188,6 +190,7 @@ class ChatCreate(BaseModel):
     mcp_enabled: list[str] = Field(default_factory=list)
     project_id: str = ""
     agent_id: str = ""
+    mode: str = ""
 
 
 class ChatUpdate(BaseModel):
@@ -199,6 +202,7 @@ class ChatUpdate(BaseModel):
     mcp_enabled: list[str] | None = None
     project_id: str | None = None
     agent_id: str | None = None
+    mode: str | None = None
 
 
 @router.get("", response_model=list[ChatSummary])
@@ -295,6 +299,7 @@ async def create_chat(request: Request, body: ChatCreate) -> ChatFull:
         mcp_enabled=body.mcp_enabled,
         project_id=body.project_id,
         agent_id=body.agent_id,
+        mode=body.mode,
     )
 
     # Fire-and-forget: init the chat dir + npm init -y.
@@ -318,6 +323,7 @@ async def update_chat(request: Request, chat_id: str, body: ChatUpdate) -> ChatF
         mcp_enabled=body.mcp_enabled,
         project_id=body.project_id,
         agent_id=body.agent_id,
+        mode=body.mode,
     )
     if row is None:
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")
@@ -334,6 +340,14 @@ async def delete_chat(request: Request, chat_id: str) -> dict[str, Any]:
     logger.info("Deleting chat %s, dir_slug=%r", chat_id, dir_slug)
     if not store.delete_chat(chat_id):
         raise HTTPException(status_code=404, detail=f"Chat '{chat_id}' not found")
+
+    # The verification history lives in its own database, so deleting the chat
+    # row leaves it behind. Best-effort: orphaned history is untidy, but failing
+    # the delete over it would leave the chat itself half-removed.
+    try:
+        request.app.state.verification_store.delete_chat(chat_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not purge verification history for chat %s", chat_id)
 
     # The row is gone, so the chat is already invisible in the UI. The folder is
     # a different matter: an agent still streaming for this chat has tools

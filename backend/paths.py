@@ -48,9 +48,23 @@ USAGE_DB_FILE = AGENTS_DIR / "usage.db"
 # Per-agent remembered facts. Its own database rather than a table in
 # agentchat.db because it outlives chats: purging every chat must not touch it.
 MEMORY_DB_FILE = AGENTS_DIR / "memory.db"
+# History of every math_verify outcome. Separate for the same reason as memory:
+# a chat is one JSON blob in agentchat.db, so this cannot be a table beside it
+# without inventing per-message rows that nothing else needs.
+VERIFY_DB_FILE = AGENTS_DIR / "verifications.db"
 # Cross-agent shared locations per the Agent Skills convention.
 USER_AGENTS_DIR = Path.home() / ".agents"
 USER_AGENTS_SKILLS_DIR = USER_AGENTS_DIR / "skills"
+# Agent Plugins packages, and the writable state the spec makes the client
+# keep for each of them. Both live under USER_AGENTS_DIR rather than
+# AGENTS_DIR because that tree is in get_allowed_read_prefixes(): a plugin's
+# skill is useless if the model cannot read the references/ beside it, and
+# AGENTS_DIR is blocked on purpose.
+#
+# The two are siblings, never nested: installing a new version replaces the
+# package directory wholesale, and PLUGIN_DATA has to survive that.
+USER_AGENTS_PLUGINS_DIR = USER_AGENTS_DIR / "plugins"
+USER_AGENTS_PLUGIN_DATA_DIR = USER_AGENTS_DIR / "plugin-data"
 
 USER_NAME = os.environ.get("USER", os.environ.get("USERNAME", "")) or os.getlogin()
 USER_HOME = os.path.expanduser("~")

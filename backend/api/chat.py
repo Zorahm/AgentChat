@@ -14,9 +14,12 @@ from fastapi.responses import StreamingResponse
 
 from agent.config import AgentConfig
 from agent.loop import AgentLoop
+from agent.modes import get_mode
 from agent.sandbox import SandboxPolicy
 from agent.host_exec import host_write_bytes
 from api.agent_runtime import resolve_agent_runtime
+from api.mcp_sources import find_mcp_server
+from plugins.registry import PluginRegistry
 from schemas.agents import DEFAULT_AGENT_ID
 from schemas.chat import AttachmentInfo, ChatMessage, ChatRequest
 from llm.client import LLMClient
@@ -30,7 +33,11 @@ from tools.base import BaseTool
 from tools.bash_tool import BashTool
 from tools.edit_file import EditFileTool
 from tools.image_generate import ImageGenerateTool
+from tools.list_dir import ListDirTool
+from tools.math_verify import MathVerifyTool
+from tools.grep_tool import GrepTool
 from tools.read_file import ReadFileTool
+from tools.read_ledger import ReadLedger
 from tools.present_files import PresentFilesTool
 from tools.read_photo import ReadPhotoTool
 from tools.registry import ToolRegistry
@@ -118,6 +125,7 @@ async def _build_mcp_proxies(
     enabled_ids: list[str] | None,
     settings_store: Any,
     manager: MCPManager,
+    plugin_registry: PluginRegistry,
 ) -> list[BaseTool]:
     """Spin up requested MCP servers and return one proxy per discovered tool.
 
@@ -131,7 +139,7 @@ async def _build_mcp_proxies(
 
     proxies: list[BaseTool] = []
     for server_id in enabled_ids:
-        cfg = settings_store.get_mcp_server(server_id)
+        cfg = find_mcp_server(settings_store, plugin_registry, server_id)
         if cfg is None or not cfg.enabled:
             continue
         try:
@@ -437,9 +445,13 @@ async def chat(
     # down, once the tool registry and the chat's working directory exist: its
     # {tools} / {cwd} variables need them, and a persona built any earlier would
     # describe a toolset that doesn't match the one this request ships.
-    agent_cfg = store.get_agent(body.agent_id or DEFAULT_AGENT_ID) or store.get_agent(
-        DEFAULT_AGENT_ID
-    )
+    # A mode and an agent occupy one slot, and the mode wins: it is chosen per
+    # chat in the composer and cannot be changed after the first message, so it
+    # is the more deliberate of the two. See agent/modes.py for why they are not
+    # composed.
+    agent_cfg = get_mode(body.mode) or store.get_agent(
+        body.agent_id or DEFAULT_AGENT_ID
+    ) or store.get_agent(DEFAULT_AGENT_ID)
     runtime = resolve_agent_runtime(
         agent=agent_cfg,
         requested_model=body.model,
@@ -493,12 +505,23 @@ async def chat(
     base_registry: ToolRegistry = build_tool_registry(
         app_state.skill_reader,
         tool_policy=runtime.tool_policy,
+        allowed_tools=list(runtime.allowed_tools),
         memory_store=runtime.memory_store,
         agent_id=runtime.agent_id,
         chat_id=body.chat_id or "",
+        math_pool=app_state.math_pool,
     )
     mcp_proxies = (
-        await _build_mcp_proxies(body.mcp_enabled_servers, store, app_state.mcp_manager)
+        [
+            proxy
+            for proxy in await _build_mcp_proxies(
+                body.mcp_enabled_servers,
+                store,
+                app_state.mcp_manager,
+                app_state.plugin_registry,
+            )
+            if runtime.permits(proxy.name)
+        ]
         if runtime.allows_overlays
         else []
     )
@@ -525,7 +548,7 @@ async def chat(
         "canonical_model": model,
         "context": "chat",
     }
-    if body.web_search_enabled and runtime.allows_overlays:
+    if body.web_search_enabled and runtime.allows_overlays and runtime.permits("web_search"):
         ws_service = app_state.web_search_service
         ws_config = build_web_search_config(store)
         requested = body.web_search_mode or store.web_search_mode
@@ -541,8 +564,14 @@ async def chat(
     # and run on its own models: a lead that plans and synthesizes, and cheaper
     # workers for the parallel digging. It resolves a web backend itself
     # (independently of the chat model + web-search toggle above).
-    research_on = runtime.allows_overlays and (
-        body.research_enabled if body.research_enabled is not None else store.research_enabled
+    research_on = (
+        runtime.allows_overlays
+        and runtime.permits("research")
+        and (
+            body.research_enabled
+            if body.research_enabled is not None
+            else store.research_enabled
+        )
     )
     if research_on:
         overlay_tools.append(
@@ -561,7 +590,7 @@ async def chat(
     # configured). Advertising a tool that can only ever return "not configured"
     # would cost the model a call to find that out.
     image_config = build_image_config(store)
-    if runtime.allows_overlays and image_config.any_available:
+    if runtime.allows_overlays and runtime.permits("image_generate") and image_config.any_available:
         overlay_tools.append(ImageGenerateTool(app_state.image_service, image_config))
 
     registry: ToolRegistry = (
@@ -605,8 +634,12 @@ async def chat(
     # persona's template variables can be resolved against what this request
     # actually carries. Rebuild the skills index first so {skills} — and the
     # manifest handed to the loop below — reflect a skill installed a moment ago.
+    # Plugin skills are pushed in before the rebuild, since enabling a plugin
+    # does not touch the mtime of any scanned directory.
+    app_state.plugin_registry.apply_to_reader(app_state.skill_reader)
     app_state.skill_reader.rebuild()
     skills_manifest = app_state.skill_reader.render_prompt()
+    plugins_block = app_state.plugin_registry.render_prompt()
 
     prompt_build = app_state.system_prompt_factory(
         agent=agent_cfg,
@@ -615,6 +648,7 @@ async def chat(
         cwd=str(chat_dir),
         mcp_names=body.mcp_enabled_servers or [],
         skills_block=skills_manifest,
+        plugins_block=plugins_block,
         lang=store.language,
         agent_memory=runtime.memory_block,
     )
@@ -643,21 +677,35 @@ async def chat(
         shell=active_shell,
     )
 
+    # One ledger shared by the three tools that care, for the life of this
+    # request: read_file writes to it, write_file and edit_file read it before
+    # replacing an attachment wholesale (see tools/read_ledger.py).
+    ledger = ReadLedger()
+
     bash = registry.get(BashTool.name)
     if isinstance(bash, BashTool):
         bash.set_policy(policy)
     read = registry.get(ReadFileTool.name)
     if isinstance(read, ReadFileTool):
         read.set_policy(policy)
+        read.set_ledger(ledger)
+    list_dir = registry.get(ListDirTool.name)
+    if isinstance(list_dir, ListDirTool):
+        list_dir.set_policy(policy)
+    grep = registry.get(GrepTool.name)
+    if isinstance(grep, GrepTool):
+        grep.set_policy(policy)
     read_photo = registry.get(ReadPhotoTool.name)
     if isinstance(read_photo, ReadPhotoTool):
         read_photo.set_policy(policy)
     write = registry.get(WriteFileTool.name)
     if isinstance(write, WriteFileTool):
         write.set_policy(policy)
+        write.set_ledger(ledger)
     edit = registry.get(EditFileTool.name)
     if isinstance(edit, EditFileTool):
         edit.set_policy(policy)
+        edit.set_ledger(ledger)
     present = registry.get(PresentFilesTool.name)
     if isinstance(present, PresentFilesTool):
         present.set_policy(policy)
@@ -667,6 +715,15 @@ async def chat(
     image_gen = registry.get(ImageGenerateTool.name)
     if isinstance(image_gen, ImageGenerateTool):
         image_gen.set_policy(policy)
+    # Not a sandbox policy — math_verify touches no files. It needs the ids so
+    # each verdict lands in the history table under the turn it belongs to.
+    verify = registry.get(MathVerifyTool.name)
+    if isinstance(verify, MathVerifyTool):
+        verify.set_context(
+            app_state.verification_store,
+            chat_id=body.chat_id or "",
+            message_id=message_id,
+        )
 
     llm = LLMClient(api_base=config.api_base, api_key=config.api_key, extra_headers=config.extra_headers)
     agent = AgentLoop(
@@ -679,6 +736,7 @@ async def chat(
         usage_metadata=usage_metadata,
     )
     agent.set_manifest(skills_manifest)
+    agent.set_plugins(plugins_block)
     if project_block:
         agent.set_project_context(project_block)
     if runtime.appended_memory:

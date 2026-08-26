@@ -14,6 +14,7 @@ wires them into a FastAPI app.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import sys
 from contextlib import asynccontextmanager
@@ -40,6 +41,7 @@ from api.loopback import is_loopback_request
 from api.router import api_router
 from images.service import ImageGenService
 from llm.models_fetcher import ModelsFetcher
+from mathkit.runner import MathWorkerPool
 from mcp_integration import MCPManager
 from paths import (
     BUILD_VERSION,
@@ -50,11 +52,18 @@ from paths import (
     SECRETS_FILE,
     SETTINGS_FILE,
     USAGE_DB_FILE,
+    USER_AGENTS_PLUGIN_DATA_DIR,
+    USER_AGENTS_PLUGINS_DIR,
     USER_AGENTS_SKILLS_DIR,
+    VERIFY_DB_FILE,
+    resolve_bundled_skills,
     resolve_ui_dist,
 )
 import server_mode
 from shell import resolve_active_shell
+from skills.bundled_sync import sync_bundled_skills
+from plugins.installer import PluginInstaller
+from plugins.registry import PluginRegistry
 from skills.installer import GitHubSkillInstaller
 from skills.reader import AgentSkillsReader
 from store.chat_store import ChatStore
@@ -63,6 +72,7 @@ from store.project_store import ProjectStore
 from store.secret_store import SecretStore
 from store.settings_store import SettingsStore
 from store.usage_store import UsageStore
+from store.verification_store import VerificationStore
 from tools.factory import build_tool_registry
 from web_search.service import WebSearchService
 
@@ -109,6 +119,7 @@ def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and state."""
 
     USER_AGENTS_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    USER_AGENTS_PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
 
     # --- stateful singletons ---
     # All installs and scans use ~/.agents/skills/ — the shared Agent Skills
@@ -118,6 +129,23 @@ def create_app() -> FastAPI:
     reader.rebuild()
 
     installer = GitHubSkillInstaller(USER_AGENTS_SKILLS_DIR, reader)
+    # Bundled skills the user already installed are frozen copies until this
+    # runs: a new app version ships rewritten SKILL.md files, and without a
+    # refresh everyone keeps reading the ones from the day they clicked install.
+    #
+    # Skipped when the data dir is relocated, for the same reason the keychain is
+    # below: that means this isn't the user's real profile. ~/.agents/skills is
+    # the shared Agent Skills path and deliberately NOT relocated with it, so
+    # without this guard merely importing `main` — which the test suite does —
+    # would rewrite the developer's actual installed skills.
+    # Never raises: a broken bundle must not stop the app from booting.
+    if not DATA_DIR_IS_OVERRIDDEN:
+        try:
+            if sync_bundled_skills(installer, resolve_bundled_skills()).updated:
+                reader.rebuild(force=True)
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception("Bundled skill sync failed")
+
     models_fetcher = ModelsFetcher()
     # The one place that opts into the OS keychain — everywhere else (tests,
     # embedders) gets the file-backed default so nobody writes into the
@@ -133,6 +161,25 @@ def create_app() -> FastAPI:
     project_store = ProjectStore(PROJECT_DB_FILE)
     usage_store = UsageStore(USAGE_DB_FILE)
     memory_store = MemoryStore(MEMORY_DB_FILE)
+    verification_store = VerificationStore(VERIFY_DB_FILE)
+
+    # Agent Plugins. The registry loads packages in place — nothing of a plugin
+    # is copied into the skills tree or written into settings.json — so the
+    # disabled set is the only piece of plugin state the store owns.
+    plugin_registry = PluginRegistry(USER_AGENTS_PLUGINS_DIR, USER_AGENTS_PLUGIN_DATA_DIR)
+    plugin_registry.set_disabled(settings_store.list_disabled_plugins())
+    plugin_registry.apply_to_reader(reader)
+    plugin_installer = PluginInstaller(
+        USER_AGENTS_PLUGINS_DIR, USER_AGENTS_PLUGIN_DATA_DIR, plugin_registry
+    )
+
+    # --- math workers ---
+    # Shared across requests on purpose, unlike the tool registry: these are warm
+    # child processes that have already paid sympy's import cost, and the point
+    # of keeping them is that the second verification of a session takes
+    # milliseconds rather than seconds. Nothing is spawned until the first math
+    # tool is actually called, so a chat that never does arithmetic never pays.
+    math_pool = MathWorkerPool()
 
     # LiteLLM usage/cost logging — one callback covers every provider, streaming
     # and non-streaming alike. See llm/usage_logging.py.
@@ -145,7 +192,7 @@ def create_app() -> FastAPI:
     # --- tools ---
     # Startup set is kept on app.state for introspection; /api/chat builds its
     # own fresh set per request so concurrent chats don't share tool policy.
-    registry = build_tool_registry(reader)
+    registry = build_tool_registry(reader, math_pool=math_pool)
 
     # --- web search (native capability cache + Tavily/SearXNG client) ---
     def _native_web_search_cap(model_id: str) -> bool | None:
@@ -167,6 +214,10 @@ def create_app() -> FastAPI:
             yield
         finally:
             await mcp_manager.shutdown()
+            # Without this the worker processes outlive the backend and are
+            # orphaned — on Windows they keep the sidecar's port-owner check
+            # confused about what is still running.
+            await math_pool.shutdown()
 
     app = FastAPI(
         title="AgentChat",
@@ -217,11 +268,15 @@ def create_app() -> FastAPI:
     # --- attach state for route handlers ---
     app.state.skill_reader = reader
     app.state.skill_installer = installer
+    app.state.plugin_registry = plugin_registry
+    app.state.plugin_installer = plugin_installer
     app.state.settings_store = settings_store
     app.state.chat_store = chat_store
     app.state.project_store = project_store
     app.state.usage_store = usage_store
     app.state.memory_store = memory_store
+    app.state.verification_store = verification_store
+    app.state.math_pool = math_pool
     app.state.models_fetcher = models_fetcher
     app.state.tool_registry = registry
     app.state.mcp_manager = mcp_manager

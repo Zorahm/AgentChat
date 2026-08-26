@@ -17,7 +17,7 @@ import { AddAgentForm } from "./AddAgentForm";
 import { AgentCard } from "./AgentCard";
 
 const DEFAULT_AGENT_ID = "default";
-const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [] };
+const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [], available_tools: [] };
 
 interface AgentsTabProps {
   /** For the two fields an agent can override: the global temperature it falls

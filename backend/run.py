@@ -31,6 +31,17 @@ def _log_crash(exc: BaseException) -> None:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+
+    # The math worker re-executes this same binary. It must be handled before
+    # anything heavy is imported — and before uvicorn is even considered —
+    # because in the frozen app `sys.executable` IS this exe, so without this
+    # branch every worker spawn would boot a second backend and fight for 8787.
+    if "--math-worker" in sys.argv:
+        from mathkit.worker import main as math_worker_main
+
+        math_worker_main()
+        sys.exit(0)
+
     try:
         import uvicorn
         import server_mode

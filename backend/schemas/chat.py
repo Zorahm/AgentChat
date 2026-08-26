@@ -60,6 +60,14 @@ class ChatRequest(BaseModel):
         "agent when None or unknown. A non-empty agent system_prompt REPLACES the "
         "built-in dynamic system prompt entirely for this turn.",
     )
+    mode: str | None = Field(
+        default=None,
+        description="Chat mode picked in the composer's tab strip before the first "
+        "message ('' / None = normal). A mode supplies its own prompt, tool "
+        "whitelist and temperature, and takes the same slot as agent_id — when "
+        "set, it replaces the attached agent for the turn. An unknown id reads "
+        "as normal.",
+    )
     mcp_enabled_servers: list[str] | None = Field(
         default=None,
         description="IDs of MCP servers to wire in for this turn. Unknown / disabled IDs are skipped silently.",

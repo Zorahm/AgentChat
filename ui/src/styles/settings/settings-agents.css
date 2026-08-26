@@ -40,6 +40,17 @@
   font-size: 12px; font-weight: 500; color: var(--ink-soft);
 }
 
+/* Tool whitelist. Two columns so a dozen names read as a list rather than a
+   long scroll, and monospace because these are literal tool ids the model sees. */
+.ag-tool-grid {
+  display: grid; gap: 4px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  padding: 8px 10px; margin-top: 2px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2, var(--paper-2));
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .ag-color-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ag-color-row input[type="color"] {
   width: 30px; height: 30px; padding: 2px; border-radius: 7px;

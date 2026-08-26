@@ -105,7 +105,12 @@ async def open_session(
 
     if isinstance(transport, MCPStdioConfig):
         command, args, env = _build_stdio_params(transport)
-        params = StdioServerParameters(command=command, args=args, env=env)
+        # Only the host runtime honours ``cwd``: the WSL branch runs the real
+        # command inside ``bash -lc``, where a Windows-side working directory
+        # means nothing. Agent Plugins servers are always host-run, so the
+        # spec's "default to the plugin root" lands here.
+        cwd = transport.cwd if transport.runtime == "host" else None
+        params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
         read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
     elif isinstance(transport, MCPHttpConfig):
         result = await stack.enter_async_context(

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../utils/apiBase";
+import { asArray } from "../utils/asArray";
 import type {
   Agent,
   AgentEditorMeta,
@@ -11,7 +12,7 @@ import type {
   ToolPolicy,
 } from "../types/agent";
 
-const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [] };
+const EMPTY_META: AgentEditorMeta = { variables: [], toggleable_modules: [], available_tools: [] };
 
 export interface AgentPatch {
   name?: string;
@@ -21,6 +22,8 @@ export interface AgentPatch {
   prompt_mode?: PromptMode;
   disabled_modules?: string[];
   tool_policy?: ToolPolicy;
+  /** Empty = unrestricted. Sent on every save so clearing the whitelist sticks. */
+  allowed_tools?: string[];
   memory_enabled?: boolean;
   user_persona?: string;
   greeting?: string;
@@ -70,7 +73,10 @@ export function useAgents(): UseAgentsResult {
     setLoading(true);
     try {
       const r = await fetch(`${API_BASE}/agents`);
-      if (r.ok) setAgents((await r.json()) as Agent[]);
+      // A 200 is not a promise of a list — see utils/asArray. Storing a
+      // non-array here took the whole chat column down: ModelSelector calls
+      // agents.find() on every render.
+      if (r.ok) setAgents(asArray<Agent>(await r.json()));
     } catch {
       /* offline — keep last known list */
     } finally {
@@ -171,7 +177,7 @@ export function useAgents(): UseAgentsResult {
     try {
       const r = await fetch(memoryUrl(agentId));
       if (!r.ok) return [];
-      return (await r.json()) as MemoryFact[];
+      return asArray<MemoryFact>(await r.json());
     } catch {
       return [];
     }

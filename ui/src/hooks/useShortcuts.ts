@@ -1,13 +1,14 @@
 /** Global keyboard-shortcut dispatcher.
  *
  * Installs a single window keydown listener and fires the matching action's
- * handler. Combos that use the command modifier (Ctrl/⌘) fire everywhere;
+ * handler. Combos that use a modifier (Ctrl/⌘ or Alt) fire everywhere;
  * plain-key combos are ignored while the user is typing in a field, so we
  * don't hijack normal input.
  */
 
 import { useEffect, useRef } from "react";
 import {
+  comboHasAlt,
   comboHasMod,
   eventMatches,
   type ShortcutBindings,
@@ -42,8 +43,10 @@ export function useShortcuts(bindings: ShortcutBindings, handlers: ShortcutHandl
       for (const id of Object.keys(binds) as ShortcutId[]) {
         const combo = binds[id];
         if (!combo) continue;
-        // While typing, only let command-modifier combos through.
-        if (editing && !comboHasMod(combo)) continue;
+        // While typing, only let modifier combos through. Alt counts: the
+        // message ring is bound to Alt+↑/↓ precisely so it stays reachable
+        // with the caret in the composer, which is where it always is.
+        if (editing && !comboHasMod(combo) && !comboHasAlt(combo)) continue;
         if (eventMatches(e, combo)) {
           const handler = hands[id];
           if (handler) {

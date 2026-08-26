@@ -9,12 +9,16 @@ import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Spinner as AstryxSpinner } from "@astryxdesign/core/Spinner";
+import { TabList, Tab } from "@astryxdesign/core/TabList";
 import { parseMcpToolName } from "../../utils/mcpName";
 import { API_BASE, withToken } from "../../utils/apiBase";
 import type { ChatMessage, AttachmentInfo, MessageUsage } from "../../types/chat";
 import type { ToolCall, ToolCallStatus, ProcessStep } from "../../types/tool-call";
 import { ResearchCard } from "./Research/ResearchCard";
 import { ImageGenCard } from "./ImageGenCard";
+import { MathPlotCard } from "./MathPlotCard";
+import { VerificationBadge } from "./VerificationBadge";
+import { RetryNotice } from "./RetryNotice";
 import { copyText } from "../../utils/copyText";
 import { SourcesBox } from "./SourcesBox";
 import { aggregateUrls, extractUrls } from "../../utils/research";
@@ -22,7 +26,7 @@ import { ArtifactCard } from "../Artifacts/ArtifactCard";
 import { WidgetView, WidgetSkeleton } from "../Artifacts/WidgetView";
 import { SupportCard } from "./SupportCard";
 import { Markdown } from "@astryxdesign/core/Markdown";
-import { latexMarkdownPlugins } from "../../utils/latexPlugins";
+import { MathMarkdown } from "../MathMarkdown";
 import { ChatMessage as ChatMsg, ChatMessageBubble, ChatMessageMetadata, ChatToolCalls } from "@astryxdesign/core/Chat";
 import type { ChatToolCallItem, ChatToolCallStatus } from "@astryxdesign/core/Chat";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
@@ -31,12 +35,16 @@ import { presentedArtifacts } from "../../utils/presentedFiles";
 import { getLang } from "../../utils/getLang";
 import { basename } from "../../utils/basename";
 import { toolActivity } from "../../utils/toolActivity";
+import { messageDomId } from "../../hooks/useMessageFocus";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import type { LiveFile } from "../../types/artifact";
 import { Question } from "@phosphor-icons/react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  /** The chat this message belongs to — the Re-check button files its result
+   *  under it, so the history is purged with the chat rather than orphaned. */
+  chatId?: string;
   liveFiles?: LiveFile[];
   onRetry?: () => void;
   onEdit?: (userNodeId: string, content: string, displayHtml?: string) => void;
@@ -47,19 +55,22 @@ interface MessageBubbleProps {
   variantIndex?: number;
   nodeId?: string;
   onSwitchVariant?: (nodeId: string, idx: number) => void;
+  /** The keyboard ring (Alt+↑/↓) is on this message — see useMessageFocus. */
+  focused?: boolean;
 }
 
 function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {
   return (
-    <Markdown display="block" isStreaming={streaming} className="msg-markdown" inlinePlugins={latexMarkdownPlugins}>
+    <MathMarkdown display="block" isStreaming={streaming} className="msg-markdown">
       {text}
-    </Markdown>
+    </MathMarkdown>
   );
 }
 
 export function MessageBubble({
-  message, liveFiles = [], onRetry, onEdit, canEdit = false, isLastAssistantInBranch,
+  message, chatId = "", liveFiles = [], onRetry, onEdit, canEdit = false, isLastAssistantInBranch,
   isGlobalStreaming = false, variantCount = 0, variantIndex = 0, nodeId, onSwitchVariant,
+  focused = false,
 }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
@@ -71,6 +82,7 @@ export function MessageBubble({
         variantIndex={variantIndex}
         nodeId={nodeId}
         onSwitchVariant={onSwitchVariant}
+        focused={focused}
       />
     );
   }
@@ -93,7 +105,11 @@ export function MessageBubble({
   const hasVariants = variantCount > 1;
 
   return (
-    <ChatMsg sender="assistant" className="msg msg-assistant">
+    <ChatMsg
+      sender="assistant"
+      id={messageDomId(message.id)}
+      className={`msg msg-assistant${focused ? " msg--focused" : ""}`}
+    >
       {hasVariants && (
         <VariantNav
           total={variantCount}
@@ -113,82 +129,70 @@ export function MessageBubble({
         const isLast = i === groups.length - 1;
         const parsed = groupText ? parseArtifacts(groupText) : { cleanText: "", support: false };
 
-        // Widgets render directly under the call that produced them — a skeleton
-        // while the model is still generating the HTML, the live widget once the
-        // call succeeds (the full HTML lives in the persisted tool input).
-        const groupWidgets = procSteps
+        // Research, images, plots and widgets each draw their own card instead
+        // of hiding inside the collapsed process block — a picture the user
+        // never sees is worth nothing. They are emitted in CALL ORDER, so a
+        // reply that draws, explains, then draws again reads in that order
+        // rather than stacking both pictures at the top.
+        // The badge belongs with the ANSWER, so it is rendered after this
+        // group's text rather than up with the tool calls that produced it.
+        const groupVerify = procSteps
           .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
           .map((s) => s.call)
-          .filter((c) => c.name === "show_widget");
-
-        // Research renders as its own card (Claude-style) — clicking it opens the
-        // side-panel timeline. It's lifted OUT of the collapsed process block.
-        const groupResearch = procSteps
-          .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
-          .map((s) => s.call)
-          .filter((c) => c.name === "research");
-        // Generated images render as their own card too — an image the user
-        // can't see is worth nothing, so image_generate never depends on the
-        // model remembering to call present_files afterwards.
-        const groupImages = procSteps
-          .filter((s): s is { type: "tool"; call: ToolCall } => s.type === "tool")
-          .map((s) => s.call)
-          .filter((c) => c.name === "image_generate");
+          .filter((c) => c.name === "math_verify" && c.verify !== undefined);
         // present_files surfaces its results as ArtifactCards below the message
-        // (see `presented`), so its raw tool call is lifted out of the process
-        // block — otherwise it shows up twice and looks like a stray tool.
+        // (see `presented`), and math_verify as the badge above — so neither
+        // belongs in the process block, where it would show up twice.
         const visibleProc = procSteps.filter(
           (s) =>
             !(
               s.type === "tool" &&
-              (s.call.name === "research" ||
-                s.call.name === "present_files" ||
-                s.call.name === "image_generate")
+              (s.call.name === "present_files" || s.call.name === "math_verify")
             ),
+        );
+        const segments = splitCardSegments(visibleProc);
+        const lastProcIndex = segments.reduce(
+          (last, segment, index) => (segment.kind === "proc" ? index : last),
+          -1,
         );
 
         // Spinner while: any tool in this group is still running,
         // OR the global SSE stream is active but this group has no text yet
         // (tools just completed, model hasn't responded yet).
         // Non-last groups are always done — checkmark.
-        // Research has its own card + spinner, so it doesn't drive the process
-        // block's streaming state (visibleProc excludes it).
-        const anyGroupToolRunning = visibleProc
+        // Card tools carry their own spinner, so they don't drive the process
+        // block's streaming state — only the steps still inside one do.
+        const anyGroupToolRunning = segments
+          .flatMap((segment) => (segment.kind === "proc" ? segment.steps : []))
           .filter((s): s is Extract<ProcessStep, { type: "tool" }> => s.type === "tool")
           .some((s) => s.call.status === "running");
         const blockStreaming = isLast && (anyGroupToolRunning || (isGlobalStreaming && !groupText));
 
         return (
           <div className="msg-group" key={i}>
-            {visibleProc.length > 0 && (
-              <ProcessBlock
-                steps={visibleProc}
-                isStreaming={blockStreaming}
-                liveFiles={liveFiles}
-                webSearchMode={message.webSearchMode}
-              />
+            {segments.map((segment, index) =>
+              segment.kind === "proc" ? (
+                <ProcessBlock
+                  key={`proc-${index}`}
+                  steps={segment.steps}
+                  // Only the last process block can still be running; an earlier
+                  // one is finished by definition, since a card came after it.
+                  isStreaming={blockStreaming && index === lastProcIndex}
+                  liveFiles={liveFiles}
+                  webSearchMode={message.webSearchMode}
+                />
+              ) : (
+                <CardForCall key={`card-${segment.call.id}`} call={segment.call} />
+              ),
             )}
-            {groupResearch.map((c) => (
-              <ResearchCard key={`research-${c.id}`} call={c} />
-            ))}
-            {groupImages.map((c) => (
-              <ImageGenCard key={`imggen-${c.id}`} call={c} />
-            ))}
-            {groupWidgets.map((c) => {
-              const wTitle = typeof c.input?.title === "string" ? c.input.title : undefined;
-              if (c.status === "success" && typeof c.input?.html === "string") {
-                return <WidgetPreviewBlock key={`widget-${c.id}`} html={String(c.input.html ?? "")} title={wTitle} />;
-              }
-              if (c.status === "running") {
-                return <WidgetSkeleton key={`widget-${c.id}`} title={wTitle} />;
-              }
-              return null;
-            })}
             {parsed.cleanText.trim() && (
               <ChatMessageBubble variant="ghost">
                 <MarkdownContent text={parsed.cleanText} streaming={blockStreaming} />
               </ChatMessageBubble>
             )}
+            {groupVerify.map((c) => (
+              <VerificationBadge key={`verify-${c.id}`} call={c} chatId={chatId} />
+            ))}
             {parsed.support && <SupportCard />}
           </div>
         );
@@ -205,8 +209,11 @@ export function MessageBubble({
         <ArtifactCard key={`art-${i}`} artifact={a} />
       ))}
 
-      {/* Nothing streamed yet — reassure the user the model is still alive. */}
-      {isGlobalStreaming && !hasContent && <ThinkingIndicator />}
+      {/* Nothing streamed yet — reassure the user the model is still alive.
+          A frozen turn has its own, more specific card instead. */}
+      {isGlobalStreaming && !hasContent && !message.retry && <ThinkingIndicator />}
+
+      {message.retry && <RetryNotice retry={message.retry} />}
 
       {message.webSearchMode === "native" && <NativeWebSearchChip />}
 
@@ -314,10 +321,11 @@ interface UserBubbleProps {
   variantIndex: number;
   nodeId?: string;
   onSwitchVariant?: (nodeId: string, idx: number) => void;
+  focused: boolean;
 }
 
 function UserBubble({
-  message, onEdit, canEdit, variantCount, variantIndex, nodeId, onSwitchVariant,
+  message, onEdit, canEdit, variantCount, variantIndex, nodeId, onSwitchVariant, focused,
 }: UserBubbleProps) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -343,7 +351,7 @@ function UserBubble({
 
   if (editing && onEdit && nodeId) {
     return (
-      <div className="msg msg-user msg-user--editing">
+      <div id={messageDomId(message.id)} className="msg msg-user msg-user--editing">
         <InlineEditor
           initialText={textContent}
           onCancel={() => setEditing(false)}
@@ -357,7 +365,11 @@ function UserBubble({
   }
 
   return (
-    <ChatMsg sender="user" className="msg msg-user">
+    <ChatMsg
+      sender="user"
+      id={messageDomId(message.id)}
+      className={`msg msg-user${focused ? " msg--focused" : ""}`}
+    >
       {hasAttachments && (() => {
         const images = message.attachments!.filter((a) => a.mime_type.startsWith("image/"));
         const files = message.attachments!.filter((a) => !a.mime_type.startsWith("image/"));
@@ -599,6 +611,53 @@ function MsgActions({ content, onRetry, onEdit, canEdit, compact }: {
 
 /* ── Process block ─────────────────────────── */
 
+/** Tools that draw their own card instead of sitting inside the process block.
+ *  `present_files` is absent on purpose — it surfaces at the end of the message
+ *  as ArtifactCards, and `math_verify` renders as a badge after the text. */
+const CARD_TOOLS = new Set(["research", "image_generate", "math_plot", "show_widget"]);
+
+type Segment =
+  | { kind: "proc"; steps: ProcessStep[] }
+  | { kind: "card"; call: ToolCall };
+
+/** Cut a group's steps into an ordered run of process blocks and cards.
+ *
+ * The cards used to be bucketed by type and emitted together ahead of the text,
+ * so a reply that drew one plot, explained it, then drew another showed both
+ * plots stacked at the top. Walking the steps in order puts each card back where
+ * the model actually produced it. */
+function splitCardSegments(steps: ProcessStep[]): Segment[] {
+  const segments: Segment[] = [];
+  let pending: ProcessStep[] = [];
+  for (const step of steps) {
+    if (step.type === "tool" && CARD_TOOLS.has(step.call.name)) {
+      if (pending.length > 0) {
+        segments.push({ kind: "proc", steps: pending });
+        pending = [];
+      }
+      segments.push({ kind: "card", call: step.call });
+    } else {
+      pending.push(step);
+    }
+  }
+  if (pending.length > 0) segments.push({ kind: "proc", steps: pending });
+  return segments;
+}
+
+/** The card a card-tool draws. One place that knows which tool means which. */
+function CardForCall({ call }: { call: ToolCall }) {
+  if (call.name === "research") return <ResearchCard call={call} />;
+  if (call.name === "image_generate") return <ImageGenCard call={call} />;
+  if (call.name === "math_plot") return <MathPlotCard call={call} />;
+
+  const title = typeof call.input?.title === "string" ? call.input.title : undefined;
+  if (call.status === "success" && typeof call.input?.html === "string") {
+    return <WidgetPreviewBlock html={String(call.input.html ?? "")} title={title} />;
+  }
+  if (call.status === "running") return <WidgetSkeleton title={title} />;
+  return null;
+}
+
 function splitStepGroups(steps: ProcessStep[]): ProcessStep[][] {
   const groups: ProcessStep[][] = [];
   let current: ProcessStep[] = [];
@@ -620,6 +679,7 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
   const TOOL_VERBS_PRESENT: Record<string, string> = {
     bash_tool: t("chat.tools.bash.present"),
     read_file: t("chat.tools.readFile.present"),
+    list_dir: t("chat.tools.listDir.present"),
     read_photo: t("chat.tools.readPhoto.present"),
     write_file: t("chat.tools.writeFile.present"),
     edit_file: t("chat.tools.editFile.present"),
@@ -630,6 +690,7 @@ function buildProcessTitle(steps: ProcessStep[], streaming: boolean, t: (key: st
   const TOOL_VERBS_PAST: Record<string, string> = {
     bash_tool: t("chat.tools.bash.past"),
     read_file: t("chat.tools.readFile.past"),
+    list_dir: t("chat.tools.listDir.past"),
     read_photo: t("chat.tools.readPhoto.past"),
     write_file: t("chat.tools.writeFile.past"),
     edit_file: t("chat.tools.editFile.past"),
@@ -747,6 +808,25 @@ function renderProcessSteps(
     nodes.push(
       <ChatToolCalls key={`tcg-${calls[0]!.id}`} calls={items} defaultIsExpanded={hasRunning || undefined} />,
     );
+    // A running call's preview is rendered NEXT TO the group, not inside the
+    // row's `resultDetail`: Astryx's CallRow keeps that collapsed in its own
+    // state and exposes no way to open it, so anything put there is invisible
+    // unless the user clicks the row — and the click has to land before the
+    // call ends, since a finished call has no live preview left to show.
+    // Latest first: a batch streams its calls in order, so the last running one
+    // is what the model is typing now. Falls back to an earlier call when that
+    // one has nothing to show yet (a write whose bytes haven't started).
+    for (const call of [...calls].reverse()) {
+      if (call.status !== "running") continue;
+      const detail =
+        call.name === "write_file"
+          ? liveFileDetail(liveFiles.find((lf) => lf.id === call.id))
+          : liveInputDetail(call);
+      if (detail) {
+        nodes.push(<div key={`live-${call.id}`} className="tc-live">{detail}</div>);
+        break;
+      }
+    }
     buffer = [];
   };
 
@@ -773,6 +853,7 @@ function renderProcessSteps(
 const TOOL_DISPLAY_NAME: Record<string, string> = {
   bash_tool: "bash",
   read_file: "read",
+  list_dir: "list",
   read_photo: "read",
   write_file: "write",
   edit_file: "edit",
@@ -784,6 +865,7 @@ const TOOL_DISPLAY_NAME: Record<string, string> = {
 /** Which input key holds the one argument worth previewing as `target`. */
 const TARGET_ARG: Record<string, string> = {
   read_file: "path",
+  list_dir: "path",
   read_photo: "path",
   write_file: "path",
   edit_file: "path",
@@ -792,17 +874,84 @@ const TARGET_ARG: Record<string, string> = {
   web_fetch: "url",
 };
 
+/** The argument name the model fills in when `describe_actions` is on — shown as
+ *  the row's own label, so it never doubles as an argument preview. */
+const ACTIVITY_ARG = "activity";
+
+function clip(text: string, max = 80): string {
+  return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+/** First string argument of a call. Gives tools with no dedicated target key —
+ *  MCP proxies, image_generate, anything added later — a live one-line preview
+ *  instead of a bare tool name. */
+function firstStringArg(input: Record<string, unknown>): string {
+  for (const [key, value] of Object.entries(input)) {
+    if (key === ACTIVITY_ARG) continue;
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
+}
+
 function targetFor(call: ToolCall): string {
   const activity = toolActivity(call);
   if (activity) return activity;
   if (call.name === "bash_tool") {
     const command = String(call.input?.command ?? "");
-    const firstLine = command.split("\n")[0] ?? "";
-    return firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
+    return clip(command.split("\n")[0] ?? "");
   }
   const key = TARGET_ARG[call.name];
-  const raw = key ? call.input[key] : undefined;
-  return typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
+  if (key) {
+    const raw = call.input[key];
+    return typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
+  }
+  return clip(firstStringArg(call.input).replace(/\s+/g, " ").trim());
+}
+
+/** Longest slice of a streaming argument worth rendering. The *tail* is what
+ *  matters mid-stream — that's where the model's caret is. */
+const LIVE_PREVIEW_CHARS = 2000;
+
+function argLanguage(toolName: string, key: string): string {
+  if (toolName === "bash_tool") return "bash";
+  if (key === "html") return "html";
+  return "plaintext";
+}
+
+/** What the model is typing right now, for a call that hasn't run yet.
+ *  Arguments stream in live (backend/agent/tool_stream.py), so this is where the
+ *  user watches a call take shape — and can stop it — before it executes. */
+function liveInputDetail(call: ToolCall): ReactNode | undefined {
+  const entries = Object.entries(call.input ?? {}).filter(
+    ([key, value]) => key !== ACTIVITY_ARG && value !== "" && value != null,
+  );
+  const first = entries[0];
+  if (!first) return undefined;
+
+  const soleText = entries.length === 1 && typeof first[1] === "string" ? first[1] : undefined;
+  const code = soleText ?? JSON.stringify(Object.fromEntries(entries), null, 2);
+  const language = soleText !== undefined ? argLanguage(call.name, first[0]) : "json";
+
+  return <CodeBlock code={clipTail(code)} language={language} maxHeight="300px" isWrapped />;
+}
+
+/** The file taking shape under write_file, chunk by chunk. Its content never
+ *  rides the tool call's arguments — it arrives as `tool_chunk` and is collected
+ *  in `liveFiles` — so it needs its own reader. */
+function liveFileDetail(liveFile: LiveFile | undefined): ReactNode | undefined {
+  if (!liveFile || liveFile.done || liveFile.content.length === 0) return undefined;
+  return (
+    <CodeBlock
+      code={clipTail(liveFile.content)}
+      language={getLang(liveFile.path)}
+      maxHeight="300px"
+      isWrapped
+    />
+  );
+}
+
+function clipTail(code: string): string {
+  return code.length > LIVE_PREVIEW_CHARS ? "…" + code.slice(-LIVE_PREVIEW_CHARS) : code;
 }
 
 function toChatStatus(status: ToolCallStatus): ChatToolCallStatus {
@@ -840,6 +989,49 @@ function OpenInPanelButton({ path, label }: { path: string; label: string }) {
   );
 }
 
+/** The call's arguments, formatted for reading rather than for a status line. */
+function inputCode(call: ToolCall): { code: string; language: string } {
+  if (call.name === "bash_tool") {
+    return { code: String(call.input?.command ?? ""), language: "bash" };
+  }
+  const entries = Object.entries(call.input ?? {}).filter(([key]) => key !== ACTIVITY_ARG);
+  return { code: JSON.stringify(Object.fromEntries(entries), null, 2), language: "json" };
+}
+
+/** Input and output side by side, one tab each.
+ *
+ *  The row's own header only ever shows the first 80 characters of the first
+ *  line, so a multi-line command — or the arguments of a call that failed — had
+ *  nowhere to be read in full. Output leads, because that is what you look at
+ *  first; the input is one click away when the output needs explaining. */
+function ToolIOTabs({ call, t }: { call: ToolCall; t: TFunc }) {
+  const [active, setActive] = useState("output");
+  const { code, language } = inputCode(call);
+
+  return (
+    <div className="tc-result-detail tc-io">
+      <TabList value={active} onChange={setActive} size="sm">
+        <Tab value="output" label={t("chat.toolCall.output")} />
+        <Tab value="input" label={t("chat.toolCall.input")} />
+      </TabList>
+      {active === "output" ? (
+        <CodeBlock
+          code={call.output || t("chat.toolCall.emptyOutput")}
+          language={call.name === "bash_tool" ? "bash" : guessOutputLang(call.output ?? "")}
+          maxHeight="50vh"
+        />
+      ) : (
+        <CodeBlock
+          code={code || t("chat.toolCall.emptyInput")}
+          language={language}
+          maxHeight="50vh"
+          isWrapped
+        />
+      )}
+    </div>
+  );
+}
+
 /** Builds one Astryx `ChatToolCalls` row from a raw ToolCall — folding in the
  * per-tool extras (live file preview, diff stats, source list, open-in-panel
  * affordance, ...) that used to live in bespoke Bash/Write/Edit/Skill/Mcp/
@@ -868,20 +1060,20 @@ function buildToolCallItem(
     statsNodes.push(<Badge key="cancelled" variant="neutral" label={t("chat.toolCall.cancelled")} />);
   }
 
+  // A failed call is exactly when both halves matter: what came back, and what
+  // was sent that produced it. Set before the per-tool switch so tools that
+  // otherwise render nothing expandable (write_file, edit_file, read_skill)
+  // still let the user open up the failure instead of just seeing a red cross.
+  if (call.status === "error") {
+    item.resultDetail = <ToolIOTabs call={call} t={t} />;
+  }
+
   switch (call.name) {
     case "write_file": {
+      // The file taking shape is rendered outside this row while the write
+      // runs (see renderProcessSteps); once it completes the full file is one
+      // click away in the artifacts side panel.
       const path = String(call.input?.path ?? "");
-      const liveFile = opts.liveFile;
-      // Live preview shows ONLY while actively writing — once the write
-      // completes the liveFile entry is gone, and the full file is one click
-      // away in the artifacts side panel via the open button below.
-      if (liveFile && !liveFile.done && liveFile.content.length > 0) {
-        item.resultDetail = (
-          <div className="tc-result-detail">
-            <CodeBlock code={liveFile.content} language={getLang(path)} maxHeight="300px" isWrapped />
-          </div>
-        );
-      }
       if (path) statsNodes.push(<OpenInPanelButton key="open" path={path} label={t("chat.writeFile.openInPanel")} />);
       break;
     }
@@ -902,13 +1094,9 @@ function buildToolCallItem(
       break;
     }
     case "bash_tool": {
-      if (!isRunning && call.output) {
-        item.resultDetail = (
-          <div className="tc-result-detail">
-            <CodeBlock code={call.output} language="bash" maxHeight="50vh" />
-          </div>
-        );
-      }
+      // Two tabs: the header can only show a truncated first line, so the full
+      // command lives here next to what it printed.
+      if (!isRunning) item.resultDetail = <ToolIOTabs call={call} t={t} />;
       break;
     }
     case "web_search": {

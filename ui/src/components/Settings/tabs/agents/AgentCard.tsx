@@ -71,6 +71,7 @@ export function AgentCard({
   // carries none of these, and seeding state with `undefined` would blow up on
   // the first `temperature.toFixed()` / `greeting.trim()`.
   const [toolPolicy, setToolPolicy] = useState<ToolPolicy>(agent.tool_policy ?? "full");
+  const [allowedTools, setAllowedTools] = useState<string[]>(agent.allowed_tools ?? []);
   const [memoryEnabled, setMemoryEnabled] = useState(agent.memory_enabled ?? false);
   const [userPersona, setUserPersona] = useState(agent.user_persona ?? "");
   const [greeting, setGreeting] = useState(agent.greeting ?? "");
@@ -113,6 +114,7 @@ export function AgentCard({
         prompt_mode: mode,
         disabled_modules: disabledModules,
         tool_policy: toolPolicy,
+        allowed_tools: allowedTools,
         memory_enabled: memoryEnabled,
         user_persona: userPersona,
         greeting,
@@ -200,8 +202,11 @@ export function AgentCard({
                 <ToolPolicyPicker
                   policy={toolPolicy}
                   memoryEnabled={memoryEnabled}
+                  allowedTools={allowedTools}
+                  availableTools={meta.available_tools ?? []}
                   onPolicyChange={setToolPolicy}
                   onMemoryChange={setMemoryEnabled}
+                  onAllowedToolsChange={setAllowedTools}
                 />
               </>
             )}

@@ -3,6 +3,7 @@
 
 import type { ChatNode, ChatSession } from "../../types/chat";
 import { API_BASE } from "../../utils/apiBase";
+import { asArray } from "../../utils/asArray";
 import { safeStringify } from "../../utils/safeJson";
 import { MIGRATION_FLAG, migrateTreeNodes, readLocalSessions } from "./persistence";
 
@@ -12,6 +13,7 @@ interface ChatSummaryDTO {
   dir_slug: string;
   project_id?: string;
   agent_id?: string;
+  mode?: string;
   created_at: number;
   updated_at: number;
 }
@@ -31,6 +33,7 @@ function summaryToSession(s: ChatSummaryDTO): ChatSession {
     dirSlug: s.dir_slug || undefined,
     projectId: s.project_id || undefined,
     agentId: s.agent_id || undefined,
+    mode: s.mode || undefined,
   };
 }
 
@@ -45,6 +48,7 @@ function fullToSession(f: ChatFullDTO): ChatSession {
     mcpEnabledServers: Array.isArray(f.mcp_enabled) ? f.mcp_enabled : [],
     projectId: f.project_id || undefined,
     agentId: f.agent_id || undefined,
+    mode: f.mode || undefined,
   };
 }
 
@@ -52,8 +56,7 @@ export async function fetchChatList(): Promise<ChatSession[]> {
   try {
     const r = await fetch(`${API_BASE}/chats`);
     if (!r.ok) return [];
-    const list = (await r.json()) as ChatSummaryDTO[];
-    return list.map(summaryToSession);
+    return asArray<ChatSummaryDTO>(await r.json()).map(summaryToSession);
   } catch {
     return [];
   }
@@ -80,6 +83,7 @@ export async function createChatRemote(s: ChatSession): Promise<ChatSession> {
       mcp_enabled: s.mcpEnabledServers ?? [],
       project_id: s.projectId ?? "",
       agent_id: s.agentId ?? "",
+      mode: s.mode ?? "",
     });
     // A cyclic payload is corrupt — sending it would fail backend validation
     // (422). Skip the create and keep the local copy rather than POST garbage.
@@ -110,6 +114,7 @@ export async function putChatRemote(s: ChatSession): Promise<boolean> {
       mcp_enabled: s.mcpEnabledServers ?? [],
       project_id: s.projectId ?? "",
       agent_id: s.agentId ?? "",
+      mode: s.mode ?? "",
     };
     // Never overwrite a non-empty dir_slug with an empty string — this
     // would break WSL folder cleanup on deletion.
@@ -212,6 +217,7 @@ export function snapshot(s: ChatSession): string {
     m: s.mcpEnabledServers ?? [],
     p: s.projectId ?? "",
     a: s.agentId ?? "",
+    md: s.mode ?? "",
   });
   if (hadCycle) warnCyclicTree("snapshot", s);
   return json;

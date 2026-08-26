@@ -10,8 +10,10 @@ from api.chats import router as chats_router
 from api.config_routes import router as config_router
 from api.files import router as files_router
 from api.health import router as health_router
+from api.math import router as math_router
 from api.mcp import router as mcp_router
 from api.models_routes import router as models_router
+from api.plugins import router as plugins_router
 from api.projects import router as projects_router
 from api.remote import router as remote_router
 from api.searxng import router as searxng_router
@@ -28,6 +30,7 @@ api_router.include_router(agents_router)
 api_router.include_router(projects_router)
 api_router.include_router(files_router)
 api_router.include_router(skills_router)
+api_router.include_router(plugins_router)
 api_router.include_router(settings_router)
 api_router.include_router(remote_router)
 api_router.include_router(models_router)
@@ -38,3 +41,4 @@ api_router.include_router(win_deps_router)
 api_router.include_router(config_router)
 api_router.include_router(searxng_router)
 api_router.include_router(usage_router)
+api_router.include_router(math_router)

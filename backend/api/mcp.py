@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from api.mcp_sources import all_mcp_servers, find_mcp_server
 from schemas.mcp import (
     MCPHttpConfig,
     MCPImportPayload,
@@ -47,7 +48,21 @@ def _view(cfg: MCPServerConfig, request: Request) -> MCPServerView:
         last_error=status.last_error,
         tool_count=len(status.tools),
         last_used=status.last_used,
+        plugin=request.app.state.plugin_registry.owns_server(cfg.id),
     )
+
+
+def _reject_if_plugin_owned(request: Request, server_id: str) -> None:
+    """Guard the write routes: a plugin's servers are edited by editing the plugin."""
+    owner = request.app.state.plugin_registry.owns_server(server_id)
+    if owner is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{server_id}' is provided by the '{owner}' plugin. Edit it in that "
+                "plugin's mcp.json, or disable the plugin."
+            ),
+        )
 
 
 @router.post("/config-dir/open")
@@ -123,7 +138,8 @@ async def run_install_command(body: MCPInstallRequest) -> MCPInstallResult:
 @router.get("/servers", response_model=list[MCPServerView])
 async def list_servers(request: Request) -> list[MCPServerView]:
     store = request.app.state.settings_store
-    return [_view(cfg, request) for cfg in store.list_mcp_servers()]
+    registry = request.app.state.plugin_registry
+    return [_view(cfg, request) for cfg in all_mcp_servers(store, registry)]
 
 
 @router.post("/probe", response_model=list[MCPServerView])
@@ -143,7 +159,7 @@ async def probe_servers(request: Request) -> list[MCPServerView]:
     """
     store = request.app.state.settings_store
     manager = request.app.state.mcp_manager
-    configs = store.list_mcp_servers()
+    configs = all_mcp_servers(store, request.app.state.plugin_registry)
 
     # Concurrent, so one slow server doesn't serialize the rest. Each spawn is
     # already bounded by the manager's own operation timeout.
@@ -175,6 +191,7 @@ async def update_server(
     request: Request, server_id: str, body: MCPServerUpdate
 ) -> MCPServerView:
     store = request.app.state.settings_store
+    _reject_if_plugin_owned(request, server_id)
     try:
         cfg = store.update_mcp_server(server_id, body)
     except ValueError as exc:
@@ -189,6 +206,7 @@ async def update_server(
 @router.delete("/servers/{server_id}")
 async def delete_server(request: Request, server_id: str) -> dict[str, str]:
     store = request.app.state.settings_store
+    _reject_if_plugin_owned(request, server_id)
     try:
         store.remove_mcp_server(server_id)
     except ValueError as exc:
@@ -202,7 +220,7 @@ async def delete_server(request: Request, server_id: str) -> dict[str, str]:
 @router.post("/servers/{server_id}/test", response_model=MCPTestResult)
 async def test_server(request: Request, server_id: str) -> MCPTestResult:
     store = request.app.state.settings_store
-    cfg = store.get_mcp_server(server_id)
+    cfg = find_mcp_server(store, request.app.state.plugin_registry, server_id)
     if cfg is None:
         raise HTTPException(status_code=404, detail=f"Unknown MCP server: {server_id}")
     if not cfg.enabled:

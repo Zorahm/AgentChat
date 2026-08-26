@@ -41,6 +41,44 @@
 }
 
 .msg { max-width: 680px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+
+/* ── Keyboard ring (Alt+↑/↓ — see hooks/useMessageFocus.ts) ──────────────
+ * Drawn with outline + box-shadow rather than a border: both are painted
+ * outside the box model, so the ring appearing on a message does not move the
+ * hundred messages under it. The shadow's spread exactly fills the outline's
+ * offset, turning the gap into a tinted mat instead of a floating rectangle. */
+.msg {
+  border-radius: 8px;
+  scroll-margin: 24px;
+  transition: box-shadow .15s ease, outline-color .15s ease;
+  outline: 2px solid transparent;
+  outline-offset: 10px;
+}
+.msg--focused {
+  outline-color: var(--accent);
+  box-shadow: 0 0 0 10px var(--accent-soft);
+}
+
+/* ── Frozen turn: waiting out a failed model call ────────────────────────
+ * Amber, not red — nothing is lost yet, and a red card here trains the user
+ * to read a recoverable pause as a failed answer. */
+.retry-notice {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--running-line);
+  border-radius: var(--radius);
+  background: var(--running-soft);
+  font-size: 13px;
+}
+.retry-notice-ic {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  color: var(--running);
+}
+.retry-notice-ic svg { display: block; }
+.retry-notice-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.retry-notice-cause { color: var(--ink); }
+.retry-notice-meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .msg-user {
   align-self: flex-end; align-items: flex-end;
   max-width: 560px;
@@ -303,6 +341,19 @@
   padding: 8px 10px 10px 12px;
 }
 .composer-token-count { font-family: var(--font-mono); font-size: 10px; color: var(--faint); margin-right: 6px; white-space: nowrap; }
+
+/* Mode tab strip — only ever rendered on an empty chat, above the composer box.
+ * Sits inside .composer-shell so it inherits the composer's centered width and
+ * reads as part of it rather than as chrome floating above. */
+.composer-modes {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+/* The chip that replaces the strip once the mode is fixed. Non-interactive by
+ * construction (Badge renders a span), which is the point: after the first
+ * message the mode is not changeable, so it must not look clickable. */
+.composer-mode-chip { margin-right: 8px; flex: none; }
 .composer-disclaimer {
   text-align: center; font-size: 11px; color: var(--faint);
   margin: 8px 0 0; padding: 0 12px; line-height: 1.4;

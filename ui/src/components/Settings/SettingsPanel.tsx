@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, Robot, CaretLeft, CaretRight, X as XIcon } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowClockwise, WarningCircle, User, Palette, TerminalWindow, ShieldWarning, Keyboard, Info, Cube, Cpu, Books, DeviceMobile, Plugs, PuzzlePiece, Robot, CaretLeft, CaretRight, X as XIcon } from "@phosphor-icons/react";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -19,6 +19,7 @@ import { ModelsTab } from "./tabs/ModelsTab";
 import { PathsTab } from "./tabs/PathsTab";
 import { AboutTab } from "./tabs/AboutTab";
 import { MCPTab } from "./tabs/MCPTab";
+import { PluginsTab } from "./tabs/PluginsTab";
 import { AgentsTab } from "./tabs/agents/AgentsTab";
 import { ShortcutsTab } from "./tabs/ShortcutsTab";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -98,7 +99,7 @@ export interface SettingsData {
 export type NavTab =
   | "profile" | "appearance" | "shortcuts" | "about"
   | "providers" | "models" | "skills"
-  | "terminal" | "sandbox" | "paths" | "mcp" | "agents";
+  | "terminal" | "sandbox" | "paths" | "mcp" | "plugins" | "agents";
 
 interface SettingsPanelProps {
   onClose?: () => void;
@@ -198,21 +199,8 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
 
   if (!settings) return <Loading error={error} onRetry={reload} onClose={onClose} />;
 
-  const tabDefs: Array<{ id: NavTab; icon: React.ReactNode }> = [
-    { id: "profile", icon: <User size={20} /> },
-    { id: "appearance", icon: <Palette size={20} /> },
-    { id: "shortcuts", icon: <Keyboard size={20} /> },
-    { id: "about", icon: <Info size={20} /> },
-    { id: "providers", icon: <Cube size={20} /> },
-    { id: "models", icon: <Cpu size={20} /> },
-    { id: "skills", icon: <Books size={20} /> },
-    { id: "terminal", icon: <TerminalWindow size={20} /> },
-    { id: "sandbox", icon: <ShieldWarning size={20} /> },
-    { id: "paths", icon: <DeviceMobile size={20} /> },
-    { id: "mcp", icon: <Plugs size={20} /> },
-    { id: "agents", icon: <Robot size={20} /> },
-  ];
-
+  // The desktop nav is written out as <NavItem>s below and the mobile list is
+  // built from mobileGroups; a third list used to sit here, driving neither.
   const mobileGroups: Array<{ group: string; items: Array<{ id: NavTab; icon: React.ReactNode }> }> = [
     {
       group: t("settings.nav.personal"),
@@ -238,6 +226,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
         { id: "sandbox", icon: <ShieldWarning size={18} /> },
         { id: "paths", icon: <DeviceMobile size={18} /> },
         { id: "mcp", icon: <Plugs size={18} /> },
+        { id: "plugins", icon: <PuzzlePiece size={18} /> },
         { id: "agents", icon: <Robot size={18} /> },
       ],
     },
@@ -272,6 +261,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
         <NavItem t="sandbox" cur={tab} label={t("settings.nav.sandbox")} ic={<ShieldWarning size={16} />} onClick={handleTabClick} />
         <NavItem t="paths" cur={tab} label={t("settings.nav.paths")} ic={<DeviceMobile size={16} />} onClick={handleTabClick} />
         <NavItem t="mcp" cur={tab} label={t("settings.nav.mcp")} ic={<Plugs size={16} />} onClick={handleTabClick} />
+        <NavItem t="plugins" cur={tab} label={t("settings.nav.plugins")} ic={<PuzzlePiece size={16} />} onClick={handleTabClick} />
         <NavItem t="agents" cur={tab} label={t("settings.nav.agents")} ic={<Robot size={16} />} onClick={handleTabClick} />
 
         <div className="st2-nav-pad" />
@@ -334,6 +324,7 @@ export function SettingsPanel({ onClose, initialTab, onSignOut, onOpenOnboarding
           {tab === "paths" && <PathsTab />}
           {tab === "skills" && <SkillsManager />}
           {tab === "mcp" && <MCPTab />}
+          {tab === "plugins" && <PluginsTab />}
           {tab === "agents" && <AgentsTab settings={settings} />}
           {tab === "shortcuts" && <ShortcutsTab />}
           {tab === "about" && <AboutTab />}

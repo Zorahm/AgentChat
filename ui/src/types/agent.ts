@@ -35,6 +35,9 @@ export interface Agent {
   // predates the field. Same convention as SettingsData's later additions.
 
   tool_policy?: ToolPolicy;
+  /** Whitelist applied on top of `tool_policy`. Empty (or absent) means no
+   *  restriction — the shape every agent written before the field loads with. */
+  allowed_tools?: string[];
   /** Whether this agent keeps facts across chats. */
   memory_enabled?: boolean;
   /** Who the *user* is playing, reachable in the prompt as `{user_persona}`. */
@@ -73,6 +76,10 @@ export interface PromptVariable {
 export interface AgentEditorMeta {
   variables: PromptVariable[];
   toggleable_modules: string[];
+  /** Every tool name an agent may whitelist, served by the backend so the
+   *  checkboxes can never offer a tool this build doesn't ship. Optional: a
+   *  bundled sidecar can predate the UI (see AGENTS.md, "Don't forget step 2"). */
+  available_tools?: string[];
 }
 
 /** What the draft persona would actually produce, assembled by the backend. */

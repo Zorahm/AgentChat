@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Button } from "@astryxdesign/core/Button";
 import { API_BASE } from "../../../utils/apiBase";
+import { asArray } from "../../../utils/asArray";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { RestartBackendButton } from "../RestartBackendButton";
 import { ServerModeCard } from "./paths/ServerModeCard";
@@ -55,10 +56,22 @@ export function PathsTab() {
         return;
       }
       if (!res.ok) return;
-      const data = (await res.json()) as RemoteAccessInfo;
+      // `as RemoteAccessInfo` is a cast, not a check. A 200 whose body lacks
+      // `urls` — an older backend, a differently-versioned remote one, a proxy
+      // answering on the port — used to reach `data.urls[0]` and take the whole
+      // settings panel down with "can't access property 0, data.urls is
+      // undefined". Same failure `utils/asArray` already exists for; the nested
+      // field just wasn't going through it.
+      const body = (await res.json()) as Partial<RemoteAccessInfo> | null;
+      const urls = asArray<string>(body?.urls);
       setManageable(true);
-      setInfo(data);
-      setSelectedUrl((prev) => prev || data.urls[0] || "");
+      setInfo({
+        enabled: Boolean(body?.enabled),
+        token: typeof body?.token === "string" ? body.token : "",
+        port: typeof body?.port === "number" ? body.port : 0,
+        urls,
+      });
+      setSelectedUrl((prev) => prev || urls[0] || "");
     } catch {
       /* backend unreachable — leave section hidden */
     }
@@ -99,8 +112,14 @@ export function PathsTab() {
     try {
       const res = await fetch(`${API_BASE}/remote-access/rotate`, { method: "POST" });
       if (res.ok) {
-        const data = (await res.json()) as RemoteAccessInfo;
-        setInfo(data);
+        // Same shape, same guard — this response feeds the QR and the token row.
+        const body = (await res.json()) as Partial<RemoteAccessInfo> | null;
+        setInfo({
+          enabled: Boolean(body?.enabled),
+          token: typeof body?.token === "string" ? body.token : "",
+          port: typeof body?.port === "number" ? body.port : 0,
+          urls: asArray<string>(body?.urls),
+        });
       }
     } catch {
       /* backend unreachable — the old token stays valid */

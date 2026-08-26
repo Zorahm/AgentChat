@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { DebugComposerHarness } from "./DebugComposerHarness";
 import { DebugImageHarness } from "./DebugImageHarness";
+import { DebugMathHarness } from "./DebugMathHarness";
+import { DebugOnboardingHarness } from "./DebugOnboardingHarness";
 import { DebugResearchHarness } from "./DebugResearchHarness";
+import { DebugToolStreamHarness } from "./DebugToolStreamHarness";
 import { DebugUpdateHarness } from "./DebugUpdateHarness";
 import { DebugUsageHarness } from "./DebugUsageHarness";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -51,6 +54,9 @@ createRoot(document.getElementById("root")!).render(
         : window.location.search.includes("debug-usage") ? <DebugUsageHarness />
         : window.location.search.includes("debug-research") ? <DebugResearchHarness />
         : window.location.search.includes("debug-images") ? <DebugImageHarness />
+        : window.location.search.includes("debug-math") ? <DebugMathHarness />
+        : window.location.search.includes("debug-toolstream") ? <DebugToolStreamHarness />
+        : window.location.search.includes("debug-onboarding") ? <DebugOnboardingHarness />
         : <App />}
     </ErrorBoundary>
   </StrictMode>

@@ -122,8 +122,13 @@ export function ModelSelector({
   const topModels = models.filter((m) => providerOf(m.id) === currentProvider);
   const allGroups = groupModels(models);
 
-  const currentAgent = agents?.find((a) => a.id === agentId) ?? agents?.find((a) => a.id === "default");
-  const showAgentRow = !!agents && agents.length > 0 && !!onAgentChange;
+  // The prop is whatever the agents fetch produced, and this component sits in
+  // the composer — a backend that answered with something other than a list
+  // must cost the user the agent row, not the whole chat view.
+  const agentList = Array.isArray(agents) ? agents : [];
+  const currentAgent =
+    agentList.find((a) => a.id === agentId) ?? agentList.find((a) => a.id === "default");
+  const showAgentRow = agentList.length > 0 && !!onAgentChange;
 
   const pick = (id: string) => { onChange(id); setOpen(false); setSub(null); };
   const pickAgent = (id: string) => { onAgentChange?.(id); setSub(null); };
@@ -206,7 +211,7 @@ export function ModelSelector({
 
       {sub === "agent" && showAgentRow && (
         <div className="ms-sheet-sub ms-sheet-sub--scroll">
-          {agents!.map((a) => (
+          {agentList.map((a) => (
             <button
               key={a.id}
               className={`ms-fly-item${a.id === currentAgent?.id ? " ms-fly-item--sel" : ""}`}
@@ -384,7 +389,7 @@ export function ModelSelector({
 
             {sub === "agent" && showAgentRow && (
               <div className={`ms-flyout ms-flyout--scroll${flySide === "right" ? " ms-flyout--right" : ""}`} onMouseEnter={() => setSub("agent")}>
-                {agents!.map((a) => (
+                {agentList.map((a) => (
                   <button
                     key={a.id}
                     className={`ms-fly-item${a.id === currentAgent?.id ? " ms-fly-item--sel" : ""}`}

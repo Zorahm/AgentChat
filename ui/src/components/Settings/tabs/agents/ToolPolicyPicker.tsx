@@ -8,6 +8,7 @@
  */
 
 import { useTranslation } from "react-i18next";
+import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import { Switch } from "@astryxdesign/core/Switch";
 import type { ToolPolicy } from "../../../../types/agent";
@@ -15,17 +16,38 @@ import type { ToolPolicy } from "../../../../types/agent";
 interface ToolPolicyPickerProps {
   policy: ToolPolicy;
   memoryEnabled: boolean;
+  /** Empty means "no restriction" — the whitelist is off, not empty. */
+  allowedTools: string[];
+  /** Every name this build can wire, served by the backend. */
+  availableTools: string[];
   onPolicyChange: (policy: ToolPolicy) => void;
   onMemoryChange: (enabled: boolean) => void;
+  onAllowedToolsChange: (tools: string[]) => void;
 }
 
 export function ToolPolicyPicker({
   policy,
   memoryEnabled,
+  allowedTools,
+  availableTools,
   onPolicyChange,
   onMemoryChange,
+  onAllowedToolsChange,
 }: ToolPolicyPickerProps) {
   const { t } = useTranslation();
+  const restricted = allowedTools.length > 0;
+
+  const toggleRestriction = (next: boolean) => {
+    // Turning the whitelist on with nothing ticked would ship an agent with no
+    // tools at all, which is what `none` already means — so it starts from
+    // everything and the user narrows from there.
+    onAllowedToolsChange(next ? [...availableTools] : []);
+  };
+
+  // Unticking the last tool is read as "stop restricting", not as "no tools at
+  // all": an empty list is how the backend spells unrestricted. Turning the
+  // whole toolbox off is what `none` is for, and it is one radio away.
+  const pickTools = (values: string[]) => onAllowedToolsChange(values);
 
   const pickPolicy = (next: ToolPolicy) => {
     onPolicyChange(next);
@@ -72,6 +94,32 @@ export function ToolPolicyPicker({
         labelPosition="start"
         labelSpacing="spread"
       />
+
+      {policy === "full" && availableTools.length > 0 && (
+        <>
+          <Switch
+            label={t("settings.agents.allowedTools")}
+            description={t("settings.agents.allowedToolsHint")}
+            value={restricted}
+            onChange={() => toggleRestriction(!restricted)}
+            labelPosition="start"
+            labelSpacing="spread"
+          />
+          {restricted && (
+            <div className="ag-tool-grid">
+              <CheckboxList
+                label={t("settings.agents.allowedToolsLabel")}
+                value={allowedTools}
+                onChange={pickTools}
+              >
+                {availableTools.map((name) => (
+                  <CheckboxListItem key={name} value={name} label={name} />
+                ))}
+              </CheckboxList>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
