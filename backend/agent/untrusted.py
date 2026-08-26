@@ -36,8 +36,20 @@ def untrusted_source(tool_name: str, args: dict[str, Any]) -> str | None:
     """
     if tool_name == "web_fetch":
         return f"web_fetch {str(args.get('url', '')).strip()}".strip()
+    # Result titles and snippets are written by whoever owns the page, not by
+    # the search engine — the same trust boundary web_fetch crosses, reached
+    # without the model having chosen a URL.
+    if tool_name == "web_search":
+        return f"web_search {str(args.get('query', '')).strip()}".strip()
     if tool_name == "read_file" and _reads_upload(str(args.get("path", ""))):
         return f"upload {str(args.get('path', '')).strip()}".strip()
+    # An MCP server is chosen by the user, so the *server* is trusted — but what
+    # it hands back usually isn't its own: a Slack proxy relays messages other
+    # people wrote, a docs proxy relays pages. The prefix is spelled out rather
+    # than imported because this module is a leaf the agent package can reach
+    # without pulling in mcp_integration.
+    if tool_name.startswith("mcp__"):
+        return f"mcp {tool_name}"
     return None
 
 

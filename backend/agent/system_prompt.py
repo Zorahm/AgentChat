@@ -68,6 +68,8 @@ def make_context(
     describe_actions: bool = False,
     show_widget: bool = True,
     has_skills: bool = True,
+    has_plugins: bool = False,
+    has_math_verify: bool = True,
     agent: AgentSpec | None = None,
     runtime: RuntimeFacts | None = None,
     now: datetime | None = None,
@@ -87,6 +89,8 @@ def make_context(
         describe_actions=describe_actions,
         show_widget=show_widget,
         has_skills=has_skills,
+        has_plugins=has_plugins,
+        has_math_verify=has_math_verify,
         today=_format_today(stamp),
         now_time=f"{stamp:%H:%M}",
         os_name=facts.os_name or platform.system(),
@@ -94,6 +98,7 @@ def make_context(
         tools_block=facts.tools_block,
         tool_names=facts.tool_names,
         skills_block=facts.skills_block,
+        plugins_block=facts.plugins_block,
         mcp_block=facts.mcp_block,
         lang=facts.lang,
         user_persona=facts.user_persona,
@@ -118,6 +123,8 @@ def build_system_prompt(
     *,
     show_widget: bool = True,
     has_skills: bool = True,
+    has_plugins: bool = False,
+    has_math_verify: bool = True,
     agent: AgentSpec | None = None,
     runtime: RuntimeFacts | None = None,
 ) -> str:
@@ -129,6 +136,8 @@ def build_system_prompt(
     ``describe_actions`` mirrors the Settings toggle that adds an ``activity``
     field to tool schemas. ``show_widget`` / ``has_skills`` gate the widget and
     skills sections; both default true so existing callers are unaffected.
+    ``has_plugins`` gates the Agent Plugins section and defaults *false* — an
+    install with no plugins should not be told what one is.
     ``agent`` supplies a persona (appended, or replacing the built-in prompt)
     and ``runtime`` the facts its ``{…}`` variables interpolate.
     """
@@ -139,6 +148,8 @@ def build_system_prompt(
         describe_actions=describe_actions,
         show_widget=show_widget,
         has_skills=has_skills,
+        has_plugins=has_plugins,
+        has_math_verify=has_math_verify,
         agent=agent,
         runtime=runtime,
     )

@@ -41,6 +41,7 @@ TOGGLEABLE_MODULES: tuple[str, ...] = (
     "reading_files",
     "creating_files",
     "visualizations",
+    "math_verification",
     "formatting",
     "agentic_safety",
     "crisis",
@@ -96,6 +97,16 @@ def _core_modules(ctx: PromptContext) -> list[PromptModule]:
             lambda _c: sections.VISUALIZATIONS,
             applies=lambda c: c.show_widget,
         ),
+        # Short on purpose. The detailed rules — when verification is mandatory,
+        # how a solution is laid out — live in the `math` skill, which only
+        # loads when the conversation is actually about mathematics. Putting
+        # them here instead would have every chat that mentions a number
+        # reaching for the verifier.
+        PromptModule(
+            "math_verification",
+            lambda _c: sections.MATH_VERIFICATION,
+            applies=lambda c: c.has_math_verify,
+        ),
         PromptModule("formatting", lambda _c: sections.FORMATTING),
         PromptModule("agentic_safety", lambda _c: sections.AGENTIC_SAFETY),
         PromptModule("crisis", lambda _c: sections.CRISIS),
@@ -108,6 +119,15 @@ def _core_modules(ctx: PromptContext) -> list[PromptModule]:
             "skills",
             lambda _c: sections.SKILLS_HEADER,
             applies=lambda c: c.has_skills,
+        ),
+        # Right after skills, because a plugin is mostly a *source* of them —
+        # the roster the loop appends ties the two lists together, and reading
+        # this section before the skills contract would explain provenance for
+        # something not yet introduced.
+        PromptModule(
+            "plugins",
+            lambda _c: sections.PLUGINS_HEADER,
+            applies=lambda c: c.has_plugins,
         ),
         # Last of the static block: per-model-family corrections. Cacheable —
         # for a given model it's constant; switching model families is expected

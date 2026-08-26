@@ -186,6 +186,86 @@ class _StreamingTool(BaseTool):
         return "tool finished"
 
 
+def _arg_chunk(arguments: str) -> SimpleNamespace:
+    """A continuation delta: same call index, more argument characters."""
+    tc = SimpleNamespace(index=0, id=None, function=SimpleNamespace(name=None, arguments=arguments))
+    delta = SimpleNamespace(content=None, tool_calls=[tc])
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+
+
+class _ChunkedToolLLM:
+    """Turn 0 streams one tool call's arguments across many deltas, as a real
+    provider does; turn 1 emits final text."""
+
+    def __init__(self, call_id: str, name: str, args: str, step: int, final: str) -> None:
+        pieces = [args[i : i + step] for i in range(0, len(args), step)]
+        self._turns = [
+            [_toolcall_chunk(call_id, name, ""), *(_arg_chunk(p) for p in pieces)],
+            [_chunk(content=final)],
+        ]
+        self.call_count = 0
+
+    async def completion_stream(
+        self, *, model: str, messages: Any, tools: Any = None, extra_body: Any = None, metadata: Any = None
+    ) -> Any:
+        turn = self._turns[self.call_count]
+        self.call_count += 1
+        for ch in turn:
+            yield ch
+
+
+class TestLiveToolInputStreaming:
+    """End to end: the block opens before the arguments exist, the arguments
+    arrive as deltas the UI can append, and the parsed input still lands."""
+
+    @pytest.mark.asyncio
+    async def test_arguments_stream_before_the_tool_runs(self, tmp_path: Path) -> None:
+        import json
+
+        from agent.sandbox import SandboxPolicy
+        from shell import resolve_active_shell
+        from tools.list_dir import ListDirTool
+
+        (tmp_path / "notes.txt").write_text("hi", encoding="utf-8")
+        policy = SandboxPolicy(chat_dir=str(tmp_path), shell=resolve_active_shell("powershell"))
+        tool = ListDirTool()
+        tool.set_policy(policy)
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        args = json.dumps({"path": str(tmp_path), "depth": 1})
+        llm = _ChunkedToolLLM("call-1", "list_dir", args, step=5, final="done")
+        loop = AgentLoop(
+            config=AgentConfig(model="test", max_iterations=5),
+            tools=registry,
+            llm=llm,  # type: ignore[arg-type]
+            policy=policy,
+        )
+
+        events = [ev async for ev in loop.run_stream("look around")]
+
+        # The block opened before the path had finished arriving…
+        start = next(e for e in events if e["type"] == "tool_start")
+        assert start["name"] == "list_dir"
+        assert start["input"].get("path") != str(tmp_path)
+
+        # …and the deltas the UI appends rebuild it exactly.
+        path = str(start["input"].get("path", ""))
+        for event in events:
+            if event["type"] == "tool_input_delta" and event["key"] == "path":
+                path += str(event["chunk"])
+        assert path == str(tmp_path)
+
+        # The loop's own refresh still carries the fully parsed arguments.
+        final_input = [e for e in events if e["type"] == "tool_input"][-1]["input"]
+        assert final_input["path"] == str(tmp_path)
+        assert final_input["depth"] == 1
+
+        end = next(e for e in events if e["type"] == "tool_end")
+        assert end["success"] is True
+        assert "notes.txt" in end["output"]
+
+
 class TestAskUserPausesTurn:
     """ask_user is non-blocking: the tool returns at once and the loop ends the
     turn (emitting user_question + done) instead of calling the model again.

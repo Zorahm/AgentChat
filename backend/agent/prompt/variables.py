@@ -69,6 +69,7 @@ CATALOG: dict[str, VariableSpec] = {
         _spec("tools", lambda c: c.tools_block),
         _spec("tool_names", lambda c: c.tool_names),
         _spec("skills", lambda c: c.skills_block),
+        _spec("plugins", lambda c: c.plugins_block),
         _spec("mcp", lambda c: c.mcp_block),
         _spec("lang", lambda c: c.lang),
         _spec("user_persona", lambda c: c.user_persona),

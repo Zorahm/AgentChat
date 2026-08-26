@@ -45,6 +45,7 @@ class RuntimeFacts:
     tools_block: str = ""
     tool_names: str = ""
     skills_block: str = ""
+    plugins_block: str = ""
     mcp_block: str = ""
     lang: str = ""
     # Who the user is playing, from the agent record. Session-stable.
@@ -77,6 +78,14 @@ class PromptContext:
     # so toggling them cannot shift the cache prefix mid-conversation.
     show_widget: bool = True
     has_skills: bool = True
+    # Whether any Agent Plugin is installed and enabled. Gates the section that
+    # explains what a plugin is: with none installed the prose describes a
+    # concept the model will never meet in this session.
+    has_plugins: bool = False
+    # Whether `math_verify` is in this request's registry. Session-stable: it
+    # depends on the agent's tool policy and whitelist, not on what has been
+    # said in the chat, so gating on it cannot shift the cache prefix mid-turn.
+    has_math_verify: bool = True
     # Pre-formatted current day (e.g. "24 July 2026"). Injected by the caller so
     # the pure registry stays clock-free and testable; lives in the tail only.
     today: str = ""
@@ -90,6 +99,7 @@ class PromptContext:
     tools_block: str = ""
     tool_names: str = ""
     skills_block: str = ""
+    plugins_block: str = ""
     mcp_block: str = ""
     lang: str = ""
     user_persona: str = ""

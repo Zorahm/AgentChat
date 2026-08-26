@@ -44,6 +44,15 @@ class AgentConfig(BaseModel):
         default=None,
         description="Extra HTTP headers added to every LiteLLM request for this provider.",
     )
+    max_retries: int = Field(
+        default=10,
+        ge=1,
+        le=20,
+        description="Attempts a single model call gets before the turn fails. The loop "
+        "freezes between them — history and finished tool results are kept — so this is "
+        "how long a provider outage can last without losing the turn. Research agents "
+        "run with far fewer: their round has its own timeout to respect.",
+    )
     describe_actions: bool = Field(
         default=False,
         description="When true, tool schemas expose an optional 'activity' field and the "

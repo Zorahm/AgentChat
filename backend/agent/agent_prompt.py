@@ -34,10 +34,12 @@ def _spec(agent: AgentConfig | None) -> AgentSpec:
 
 
 def _facts(
+    *,
     registry: ToolRegistry | None,
     cwd: str,
     mcp_names: Sequence[str],
     skills_block: str,
+    plugins_block: str,
     lang: str,
     user_persona: str,
     agent_memory: str,
@@ -47,6 +49,7 @@ def _facts(
         tools_block=registry.describe() if registry is not None else "",
         tool_names=", ".join(registry.list_names()) if registry is not None else "",
         skills_block=skills_block,
+        plugins_block=plugins_block,
         mcp_block=", ".join(mcp_names),
         lang=lang,
         user_persona=user_persona,
@@ -67,6 +70,7 @@ def build_agent_prompt(
     cwd: str = "",
     mcp_names: Sequence[str] = (),
     skills_block: str = "",
+    plugins_block: str = "",
     lang: str = "",
     agent_memory: str = "",
 ) -> PromptBuild:
@@ -88,15 +92,24 @@ def build_agent_prompt(
         describe_actions=describe_actions,
         show_widget=show_widget,
         has_skills=has_skills,
+        # Derived from the registry rather than passed in: an agent whose
+        # whitelist drops math_verify must not be told to call it. With no
+        # registry (the editor's preview) the section stays, since the preview
+        # is of the built-in prompt rather than of one request's toolset.
+        has_math_verify=registry is None or registry.get("math_verify") is not None,
+        # Derived, not passed: the section is worth its tokens only when there
+        # is a roster to go with it.
+        has_plugins=bool(plugins_block),
         agent=_spec(agent),
         runtime=_facts(
-            registry,
-            cwd,
-            mcp_names,
-            skills_block,
-            lang,
-            agent.user_persona if agent is not None else "",
-            agent_memory,
+            registry=registry,
+            cwd=cwd,
+            mcp_names=mcp_names,
+            skills_block=skills_block,
+            plugins_block=plugins_block,
+            lang=lang,
+            user_persona=agent.user_persona if agent is not None else "",
+            agent_memory=agent_memory,
         ),
     )
     return build_prompt(ctx)
