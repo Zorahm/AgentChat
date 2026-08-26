@@ -75,6 +75,8 @@ AgentChat/
 │   ├── shell.py                # Shell abstraction (WSL/PowerShell/posix)
 │   ├── server_mode.py          # AGENTCHAT_SERVER_MODE — drops the loopback exemption, owns the token
 │   ├── extraction.py           # Content/text extraction utilities
+│   ├── retry.py                # Transient-vs-fatal classification + backoff — a LEAF, shared by the loop and the network tools
+│   ├── archive_fetch.py        # GitHub zip download + Zip-Slip-safe extraction — a LEAF shared by both installers
 │   ├── _buildstamp.py          # Version stamped in by build-backend.ps1/.sh
 │   ├── api/                    # FastAPI route handlers
 │   │   ├── chat.py             # POST /api/chat — SSE streaming (core)
@@ -82,12 +84,15 @@ AgentChat/
 │   │   ├── settings.py         # GET/PUT /api/settings
 │   │   ├── files.py            # File upload/download/serve/preview (Office→PDF)
 │   │   ├── skills.py           # Skills install/list/delete
+│   │   ├── plugins.py          # Agent Plugins install/list/toggle/remove
+│   │   ├── mcp_sources.py      # The full MCP server set: settings store + installed plugins
 │   │   ├── wsl.py              # WSL detection & management
 │   │   ├── health.py           # GET /api/system-status
 │   │   ├── models_routes.py    # GET /api/models
 │   │   ├── mcp.py              # MCP server management routes
 │   │   ├── projects.py         # Projects CRUD
-│   │   ├── agents.py           # Agent-persona CRUD + memory CRUD + rendered greeting
+│   │   ├── agents.py           # Agent-persona CRUD + memory CRUD + rendered greeting + the whitelist roster
+│   │   ├── math.py             # POST /math/recheck (the Re-check button) + verification history
 │   │   ├── agent_runtime.py    # resolve_agent_runtime() — model/temperature/tool-policy/memory the agent contributes
 │   │   ├── remote.py           # Remote access (token, toggle, QR)
 │   │   ├── searxng.py          # SearXNG proxy
@@ -104,8 +109,10 @@ AgentChat/
 │   │   ├── settings.py         # Settings schemas; ProviderPublic is the only shape sent over HTTP
 │   │   ├── redaction.py        # MASK + redact_map/unredact_map for secret-bearing maps
 │   │   ├── skills.py           # Skills schemas
-│   │   ├── agents.py           # Agent-persona schemas (AgentFields base; tool policy, RP fields)
-│   │   └── memory.py           # Agent-memory contracts (MemoryFact/Create/Update)
+│   │   ├── agents.py           # Agent-persona schemas (AgentFields base; tool policy, allowed_tools, RP fields)
+│   │   ├── math.py             # VerifyOutcome + the five statuses — verified/refuted/partial/inconclusive/error
+│   │   ├── memory.py           # Agent-memory contracts (MemoryFact/Create/Update)
+│   │   └── plugins.py          # Agent Plugins: manifest, canonical $schema ids, the API's plugin views
 │   ├── agent/                  # Agent core logic
 │   │   ├── loop.py             # AgentLoop — run_stream() is the main path
 │   │   ├── config.py           # AgentConfig dataclass
@@ -117,12 +124,15 @@ AgentChat/
 │   │   │   ├── sections.py     # Static section constants (verbatim)
 │   │   │   ├── shells.py       # Shell-dialect fragments (shared body + deltas)
 │   │   │   └── model_family.py # Model-family detection + per-family quirks
-│   │   ├── untrusted.py        # Fences web_fetch/uploads tool output in <untrusted_content>
+│   │   ├── modes.py           # Chat modes (composer tab strip) as AgentConfigs — maths; shares a slot with agent_id
+│   │   ├── untrusted.py        # Fences web_fetch/web_search/uploads/MCP output in <untrusted_content>
 │   │   ├── types.py            # Agent event/message types
 │   │   ├── sandbox.py          # SandboxPolicy — path access control
-│   │   ├── write_file_stream.py # write_file streaming chunk emitter
+│   │   ├── partial_json.py     # ArgScanner — decodes a tool call's JSON args while they stream (single pass)
+│   │   ├── tool_stream.py      # Live tool events: tool_start / tool_input_delta / tool_input / tool_chunk
+│   │   ├── dir_listing.py      # DirEntry + local_list_dir — the shape every list backend returns
 │   │   ├── exec_common.py      # Shared subprocess plumbing (run_blocking/run_capture/decode_loose)
-│   │   ├── host_exec.py        # Platform dispatch — host_run/host_read_*/host_write_* (single import point)
+│   │   ├── host_exec.py        # Platform dispatch — host_run/host_read_*/host_write_*/host_list_dir (single import point)
 │   │   ├── posix_exec.py       # Native Linux/macOS execution (bash/zsh) + AppImage env scrub
 │   │   ├── wsl_exec.py         # WSL-only execution — tunnels through wsl.exe
 │   │   └── reasoning_split.py  # Splits model output into thinking/text
@@ -141,6 +151,16 @@ AgentChat/
 │   │   ├── sources.py          # URL extraction/dedup + citation audit
 │   │   ├── report.py           # research-<slug>.md path resolution + write
 │   │   └── types.py            # ModelEndpoint, SubagentTask, Finding, ResearchOutcome
+│   ├── mathkit/                # Maths engine — runs in a CHILD process, never in the server
+│   │   ├── parsing.py          # Closed-namespace SymPy parsing + a LaTeX pre-pass (sympify is a code-exec hole)
+│   │   ├── numeric.py          # Seeded sampling, RELATIVE tolerance, Wilson interval
+│   │   ├── pysandbox.py        # Restricted Python for math_eval + Monte Carlo (a calculator, not an OS sandbox)
+│   │   ├── verifiers/          # One strategy per kind — algebra/calculus/linalg/stochastic + registry
+│   │   ├── worker.py           # The child's loop: one JSON job per line, in and out
+│   │   ├── runner.py           # Parent side: a pool of warm workers, killed and replaced on timeout
+│   │   ├── subagent.py         # Fallback verifier — gets problem + claim, never the solution
+│   │   ├── progress.py         # tool_progress vocabulary for math_verify + math_plot
+│   │   └── plot/               # sampler.py (breaks curves at poles) + svg.py + render.py
 │   ├── images/                 # Image generation: local samplers + hosted APIs
 │   │   ├── config.py           # ImageRequest/ImageGenConfig/GeneratedImage — a LEAF
 │   │   ├── service.py          # ImageGenService — backend resolution (no silent fallback)
@@ -153,16 +173,27 @@ AgentChat/
 │   │   └── workflows/          # Bundled ComfyUI graphs (txt2img/img2img, API format)
 │   ├── tools/                  # Tool implementations (agent-callable)
 │   │   ├── base.py             # BaseTool ABC
-│   │   ├── registry.py         # ToolRegistry — register/execute tools
+│   │   ├── registry.py         # ToolRegistry — register/execute tools; binds args BEFORE calling
 │   │   ├── factory.py          # build_tool_registry() — per-request assembly
-│   │   ├── bash_tool.py        # BashTool — shell command execution
-│   │   ├── read_file.py        # ReadFileTool
+│   │   ├── arg_coerce.py       # "5" → 5 for model-supplied numbers, with a fallback
+│   │   ├── output_budget.py    # clamp_output() — the cap on bash_tool + MCP output
+│   │   ├── shell_exec.py       # run_in_shell() — 4 dialects + WSL fallbacks, shared by bash_tool/grep
+│   │   ├── bash_tool.py        # BashTool — shell command execution (timeout arg, output budget)
+│   │   ├── grep_tool.py        # GrepTool — content search in one process, grep/Select-String
+│   │   ├── read_file.py        # ReadFileTool — bounded read, refuses binary/non-UTF-8
+│   │   ├── read_ledger.py      # ReadLedger — an unread upload/ file is not overwritten blind
+│   │   ├── url_guard.py        # web_fetch SSRF policy — link-local always, private in server mode
+│   │   ├── list_dir.py         # ListDirTool — directory listing (depth/pattern), no shell
+│   │   ├── binary_formats.py   # Office/binary formats write_file+edit_file refuse (generate via code)
 │   │   ├── write_file.py       # WriteFileTool — canonical file write path
 │   │   ├── edit_file.py        # EditFileTool — in-place file edits
 │   │   ├── present_files.py    # PresentFilesTool — surfaces files as cards
 │   │   ├── read_skill.py       # ReadSkillTool — reads SKILL.md
 │   │   ├── read_photo.py       # ReadPhotoTool — image content extraction
 │   │   ├── ask_user.py         # AskUserTool — pauses the turn for user input
+│   │   ├── math_verify.py      # Independent check of a FINAL claim; enforces the one-rewrite cap
+│   │   ├── math_eval.py        # Preconfigured calculator (sympy/numpy/mpmath preloaded, no imports)
+│   │   ├── math_plot.py        # Plot kind + expressions → a themed, self-contained SVG
 │   │   ├── research_tool.py    # ResearchTool — model-written brief → research/lead
 │   │   ├── image_generate.py   # ImageGenerateTool — prompt → PNG in <chat>/images/
 │   │   ├── show_widget.py      # ShowWidgetTool — inline HTML/SVG visualizations
@@ -188,20 +219,33 @@ AgentChat/
 │   │   ├── settings_io.py      # settings.json format: atomic I/O + secret split/merge
 │   │   ├── secret_store.py     # Named secrets — OS keychain, 0600 file fallback
 │   │   ├── usage_store.py      # SQLite usage/cost log (usage_log + model_pricing tables)
+│   │   ├── verification_store.py # Cross-chat history of every math_verify outcome, keyed on message_id
+│   │   ├── agent_presets.py    # Shipped presets, seeded ONCE per install — deletion sticks; now empty (Math became a mode) + retirement of untouched copies
 │   │   └── memory_store.py     # SQLite agent memory + FTS5; core() is the ranked always-on window, search() the archive
 │   ├── web_search/             # Web search module
 │   │   ├── config.py           # Provider config (native/Tavily/SearXNG)
 │   │   └── service.py          # WebSearchService — routes to active provider
-│   └── skills/                 # Skills system
-│       ├── reader.py           # AgentSkillsReader — scans SKILL.md files
-│       ├── installer.py        # GitHub/archive skill installer
-│       └── catalog.py          # Curated Anthropic skill catalog (docx/xlsx/pptx/pdf/...)
+│   ├── skills/                 # Skills system
+│   │   ├── reader.py           # AgentSkillsReader — scans SKILL.md files; set_plugin_skills() merges the plugins' in
+│   │   ├── installer.py        # GitHub/archive skill installer; marker carries version+fingerprint
+│   │   ├── install_marker.py   # .agentchat-installed — "did we put this here?"; a LEAF shared with plugins/
+│   │   ├── catalog.py          # Curated Anthropic skill catalog (docx/xlsx/pptx/pdf/...)
+│   │   ├── fingerprint.py      # sha256 of a skill folder — a LEAF shared by installer + sync
+│   │   └── bundled_sync.py     # Startup refresh of installed bundled skills when the app ships new ones
+│   └── plugins/                # Agent Plugins 1.0.0 (agent-plugins.org) — see the contour below
+│       ├── manifest.py         # §5 plugin.json: closed schema, two non-fatal violations, everything else rejects
+│       ├── safety.py           # §4.1 containment — decided on the RESOLVED path, never the string
+│       ├── skill_discovery.py  # §7.1 skills/ — immediate children only, never a deeper walk
+│       ├── mcp_config.py       # §7.2/§9 mcp.json → MCPServerConfig: transports, URL rules, ${…} expansion
+│       ├── variables.py        # PLUGIN_ROOT/PLUGIN_DATA single-pass expansion + derived server ids
+│       ├── registry.py         # PluginRegistry — plugins are a VIRTUAL source; nothing is copied out
+│       └── installer.py        # GitHub / local folder / zip → ~/.agents/plugins/<manifest name>
 │
 ├── ui/                         # React + TypeScript frontend, on Meta's Astryx design system
 │   └── src/
 │       ├── main.tsx            # React entry point; also routes ?debug-* query params to the harnesses below
 │       ├── App.tsx             # Root component, settings context, layout (Astryx AppShell/Theme)
-│       ├── Debug{Composer,Update,Usage,Research,Image}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage/-research/-images) — render one component tree in isolation against fabricated props for visual verification without a live backend
+│       ├── Debug{Composer,Update,Usage,Research,Image,ToolStream,Math}Harness.tsx # Dev-only presentation harnesses (?debug-composer/-update/-usage/-research/-images/-toolstream/-math) — render one component tree in isolation against fabricated props for visual verification without a live backend
 │       ├── hooks/
 │       │   ├── useChats/           # Multi-session chat manager (THE main hook)
 │       │   │   ├── index.ts        # useChats() — composes the pieces below
@@ -212,7 +256,9 @@ AgentChat/
 │       │   ├── useAvatar.ts        # Avatar URL management
 │       │   ├── useProjects.ts      # Projects data hook
 │       │   ├── useAgents.ts        # Agent-persona CRUD hook (mirrors useProjects)
+│       │   ├── usePlugins.ts       # Agent Plugins CRUD; install calls resolve to the backend's message
 │       │   ├── useShortcuts.ts     # Keyboard shortcut registration
+│       │   ├── useMessageFocus.ts  # The Alt+↑/↓ ring around one message (pure half in utils/messageRing.ts)
 │       │   ├── useAppUpdate.ts     # Auto-update check
 │       │   ├── useFileDrop.ts      # File drop handling
 │       │   ├── useIsMobile.ts      # matchMedia-backed mobile breakpoint hook
@@ -233,6 +279,9 @@ AgentChat/
 │       │   │   ├── WebSearchMenuSection.tsx # Composer "+" menu — web search toggle/mode
 │       │   │   ├── ResearchMenuSection.tsx  # Composer "+" menu — research toggle
 │       │   │   ├── ImageGenCard.tsx     # image_generate card — progress + result tiles
+│       │   │   ├── VerificationBadge.tsx # math_verify badge — 5 states told apart by icon, colour AND border
+│       │   │   ├── MathPlotCard.tsx     # math_plot card — themed inline SVG + SVG/PNG export
+│       │   │   ├── RetryNotice.tsx      # The turn is frozen between attempts — cause + countdown, not an error
 │       │   │   ├── Research/            # ResearchCard, ResearchPanel (agent tree),
 │       │   │   │                        # AgentNode, PlanList
 │       │   │   ├── SourcesBox.tsx       # Web-search/research source list
@@ -240,6 +289,7 @@ AgentChat/
 │       │   ├── Mobile/
 │       │   │   └── MobileConnect.tsx    # Backend connect/reconnect screen (APK + PWA)
 │       │   ├── BottomSheet.tsx      # Generic mobile bottom-sheet primitive (drag handle)
+│       │   ├── MathMarkdown.tsx     # THE markdown renderer to use — Astryx <Markdown/> + LaTeX that survives it
 │       │   ├── AgentAvatar.tsx      # Gradient agent avatar — wraps Astryx Avatar, snaps to its pixel size scale
 │       │   ├── Settings/
 │       │   │   ├── SettingsPanel.tsx    # Shell — nav, tab routing, state
@@ -256,7 +306,9 @@ AgentChat/
 │       │   │       ├── ModelsTab.tsx
 │       │   │       ├── PathsTab.tsx
 │       │   │       ├── paths/            # ServerModeCard — point this client at a remote backend
-│       │   │       ├── MCPTab.tsx
+│       │   │       ├── MCPTab.tsx        # A server carrying `plugin` is read-only here — the plugin owns it
+│       │   │       ├── PluginsTab.tsx    # Agent Plugins — one card per package
+│       │   │       ├── plugins/          # PluginCard, InstallPluginForm (GitHub / folder / zip)
 │       │   │       ├── AgentsTab.tsx
 │       │   │       ├── ShortcutsTab.tsx
 │       │   │       └── AboutTab.tsx
@@ -290,7 +342,8 @@ AgentChat/
 │       │   ├── tool-call.ts    # ToolCall, ProcessStep
 │       │   ├── artifact.ts     # LiveFile
 │       │   ├── project.ts      # Project
-│       │   └── agent.ts        # Agent persona
+│       │   ├── agent.ts        # Agent persona
+│       │   └── plugin.ts       # Agent Plugin + its skills, servers and load issues
 │       ├── i18n/
 │       │   ├── index.ts
 │       │   ├── languages.ts
@@ -317,13 +370,17 @@ AgentChat/
 │           ├── mcpStatus.ts        # MCP state → StatusDot variant/label (settings + composer share it)
 │           ├── research.ts         # Research report/event helpers
 │           ├── imageGen.ts         # image_generate tool_progress → card state (mirrors images/progress.py)
+│           ├── verification.ts     # math_verify tool_progress → badge state (mirrors mathkit/progress.py)
+│           ├── mathPlot.ts         # math_plot tool_progress → plot card state
 │           ├── widgetTheme.ts      # Resolves app design tokens into a show_widget iframe's <style> block
 │           ├── zoom.ts             # UI zoom level handling
+│           ├── chatModes.ts        # Composer mode ids + labels — mirrors backend/agent/modes.py
 │           ├── greetings.ts        # Welcome-screen greeting (revealed by clicking the ghost); applyName() is the pure half
 │           ├── frontmatter.ts      # Markdown frontmatter parsing
 │           ├── getLang.ts          # Syntax-highlighter language detection
 │           ├── basename.ts         # Path basename helper
-│           ├── latexPlugins.tsx    # KaTeX inlinePlugins for Astryx's <Markdown/> (no built-in math support)
+│           ├── latexExtract.ts     # Lifts $…$/$$…$$/\[…\] OUT before Astryx parses — it eats backslashes as escapes
+│           ├── latexPlugins.tsx    # KaTeX render of the sentinels latexExtract left behind
 │           └── updater.ts          # Tauri auto-updater
 │
 ├── src-tauri/                  # Tauri shell — Rust
@@ -336,7 +393,7 @@ AgentChat/
 │       ├── default.json            # Core permissions, all platforms
 │       ├── desktop-downloads.json  # fs:allow-download-write — desktop only
 │       └── mobile.json             # Barcode-scanner permissions — android/iOS only
-├── skills/                     # Bundled skills shipped in the repo (office four + agentchat)
+├── skills/                     # Bundled skills shipped in the repo (office four + agentchat + math)
 ├── scripts/                    # build-backend.ps1/.sh + install-server.sh (VDS deployment)
 ├── tests/                      # All tests
 │   ├── backend/                # pytest — agent loop, tools, sandbox, streaming, research, ...
@@ -390,6 +447,161 @@ App.handleModelChange → updateSettings({ default_model }) → context syncs al
 - [ ] Single responsibility per module
 - [ ] No commented-out code
 - [ ] No hardcoded secrets or keys
+
+---
+
+## Agent Plugins — a plugin is a virtual source
+
+AgentChat is a conformant [Agent Plugins 1.0.0](https://agent-plugins.org/specification)
+client: it loads a package (`plugin.json` + `skills/` + `mcp.json`), runs both
+component types, and reports what it refused. Four things hold it up, and each
+has a plausible-looking alternative that breaks something.
+
+**Nothing is copied out of a plugin.** The registry loads packages in place and
+*derives* `SkillEntry`s and `MCPServerConfig`s from them on every rebuild. The
+obvious alternative — copy the skills into `~/.agents/skills/` and write the
+servers into `settings.json` on install — makes uninstall a two-sided undo, lets
+an update clobber a file the user edited, and turns a plugin's server into
+something indistinguishable from one they configured. Here, uninstalling is
+"delete the directory and rebuild". `api/mcp_sources.py` is the one place that
+knows the full server set; a plugin's server is read-only over `/api/mcp` and
+its write routes 400 by design.
+
+**Failure isolation is the shape of the code, not a `try` at the top.** §11.3
+draws three separate boundaries: a rejected manifest costs one plugin, a bad
+`mcp.json` costs one plugin's MCP (never its skills), and a bad entry costs one
+server. Every refusal becomes a `PluginIssue` rather than a log line, because
+the spec's "MUST skip" without its "SHOULD report" makes a broken component
+indistinguishable from one that was never there.
+
+**Discovery inside a plugin stops at the immediate children of `skills/`.**
+`AgentSkillsReader` walks a whole tree — correct for `~/.agents/skills/`, which
+people nest by hand, and wrong here: a plugin shipping an example `SKILL.md`
+under `references/` would otherwise install a skill it never declared. That is
+why `plugins/skill_discovery.py` exists instead of pointing the reader at a
+second root.
+
+**`${PLUGIN_ROOT}` and `${PLUGIN_DATA}` are the only expansion, in three fields
+only.** One non-recursive pass over `args`, `env` *values* and `cwd`; `command`
+is exempt and stays the literal token it was written as; every other
+placeholder-looking string stays literal, so a plugin cannot read the backend's
+environment by writing `${OPENAI_API_KEY}`. An entry that sets either reserved
+name in its own `env` is invalid, which is what lets the client set them last
+without a collision check.
+
+**The model is told a plugin is a plugin.** Merging a plugin's skills into the
+shared index and stopping there produced a skill the model could use but could
+not place: no way to say where it came from, no way to find the README beside
+it, no idea the concept existed. So provenance rides on the skill line
+(`skills/reader.py::_describe`), `PluginRegistry.render_prompt()` adds the
+roster with each package's components and directory, and the `plugins` prompt
+module explains the concept — gated on `has_plugins`, because an install with
+none should not be taught what one is.
+
+Three consequences worth knowing:
+
+- Packages live in `~/.agents/plugins/`, **not** under `AGENTS_DIR`, because
+  that tree is in `get_allowed_read_prefixes()` — a plugin's skill is useless if
+  the model cannot read the `references/` beside it. `PLUGIN_DATA` is a
+  *sibling* (`~/.agents/plugin-data/<name>/`), never nested, since an update
+  replaces the package directory wholesale and that state has to survive it.
+- Only the *disabled* set is persisted (`settings.json` → `plugins.disabled`),
+  so a freshly installed plugin is live without a write, and disabling one that
+  is not installed still sticks — a re-install cannot silently come back on.
+  Toggling a plugin touches no directory the skills reader watches, which is why
+  `PluginRegistry.apply_to_reader()` exists and why every mutation route calls it.
+- The roster is appended by the loop (`AgentLoop.set_plugins`), *after* the
+  skills manifest and — unlike it — ungated by `read_skill`: a plugin's MCP
+  servers and package directory still mean something to an agent that cannot
+  read skills. It shares the usage dashboard's `skills` token bucket on
+  purpose; a few hundred bytes does not earn its own column.
+
+`tests/backend/test_plugins_{manifest,discovery,mcp,registry,installer}.py`
+mirror the spec's Appendix A conformance checklist; they are not tests to
+"simplify" by relaxing a MUST.
+
+---
+
+## The verification contour (`math_verify`)
+
+`math_verify` is in the **base** tool set, not just the maths preset: a
+machine-checked answer is worth having wherever one is produced. Four invariants
+hold it up, and each has a failure mode that looks like success.
+
+**The verifier never sees the solution.** `VerifyJob` carries the problem and the
+claim and has no field reasoning could arrive through. A checker handed the
+working reliably agrees with it, error included — a green badge that means
+nothing. Independence here is structural, not a promise in a prompt.
+
+**Checks run backwards.** Roots go back into the equation; an antiderivative is
+*differentiated*; a probability is checked against a Monte Carlo run the model
+supplies. Re-deriving would repeat whatever method produced the answer, mistake
+and all, and the two would agree.
+
+**The five statuses are not interchangeable.** `verified` / `refuted` / `partial`
+/ `inconclusive` / `error`. `error` means the *checker* failed and says nothing
+about the answer — read as `refuted`, it makes the agent rewrite a correct
+solution, the costliest outcome the design can produce. `inconclusive` drawn
+like `verified` turns the badge into a light that is always on. The UI separates
+all five on icon, colour **and** border style; `tests/backend/test_mathkit_verify.py`
+and `tests/ui/src/verification.ts` pin the semantics.
+
+**One automatic rewrite, never two** (`tools/math_verify.py`). A refuted claim
+earns exactly one retry, counted per claim rather than per message, and both
+attempts stay visible. Hiding the failed first pass is how the badge becomes
+theatre.
+
+Two consequences worth knowing:
+
+- The engine runs in a **child process** (`mathkit/runner.py`), because `simplify`
+  on a pathological expression cannot be interrupted and Windows has no
+  `SIGALRM`. Workers are kept warm — sympy costs seconds to import, and the pool
+  is what lets a base-set tool answer in milliseconds. A timeout kills and
+  replaces the worker rather than waiting for it.
+- The verdict is persisted **on the tool call**, which the chat tree already
+  saves; `store/verification_store.py` is a separate cross-chat history, not the
+  source the badge renders from. Chats are one JSON blob with no per-message
+  rows, so there is nothing for a foreign key to point at.
+
+---
+
+## Freezing a turn instead of failing it (`retry.py`)
+
+A provider that drops the socket used to end the turn: the `error` event went
+out, the composer came back, and everything the model had already done — the
+files it read, the commands it ran, the half-written answer — was rubbish. Now
+the loop **freezes** instead. `self.messages` is untouched, so nothing re-runs;
+only the one call to the provider is made again, up to `AgentConfig.max_retries`
+times (10 by default, 3 for research agents, whose round has its own timeout).
+
+Three rules hold it up.
+
+**"Do not retry" is the default.** `retry.is_retryable` only says yes to
+failures it can name as transient — 429, 5xx, the socket-shaped exceptions.
+A rejected key, a 400 or an over-long prompt fails at once, because ten waits
+of up to thirty seconds cannot make any of them true. An unrecognised
+exception — a bug of ours — is fatal for the same reason.
+
+**A retried attempt is un-said first.** `pass_start` marks the client's rewind
+point, `pass_rewind` takes the abandoned attempt's tokens, thoughts and
+half-streamed tool rows back out (`useChats/tree.ts`), `stream_retry` carries
+the countdown and `stream_resume` clears it. Skipping the rewind is what makes
+the model appear to stutter: half an answer, then the whole answer under it.
+`tool_start` is emitted while arguments are still streaming
+(`agent/tool_stream.py`), so a rewind that only trimmed text would leave a tool
+row stuck at "running" forever.
+
+**The wait is not silent.** `_sleep_with_heartbeat` breaks the backoff into
+5-second steps and emits `ping`, because an idle SSE response is one a reverse
+proxy may cut — and because a single long `await` would ignore Stop until it
+expired.
+
+`is_retryable` decides *whether* to try again; `looks_like_lost_connection`
+decides *what to say*. They disagree exactly where it matters: litellm gives a
+refused connection a status of 500, so classifying by the number alone tells a
+user whose LM Studio is not running that their provider is having an outage.
+`tests/backend/test_agent_retry.py` and `tests/ui/src/stream_rewind.ts` pin all
+of the above.
 
 ---
 
