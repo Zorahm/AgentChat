@@ -9,12 +9,17 @@ plain text, XML) is returned verbatim; binary responses are summarised.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
 
 import httpx
 
+import server_mode
+from retry import TOOL_POLICY, with_retry
+from tools.arg_coerce import clamp_int
 from tools.base import BaseTool, ToolDefinition, ToolSchema
+from tools.url_guard import blocked_reason
 
 # Hard cap on returned characters so a huge page can't blow the context window.
 DEFAULT_MAX_CHARS = 20_000
@@ -22,6 +27,18 @@ HARD_MAX_CHARS = 100_000
 # Cap on bytes pulled off the wire before we stop reading the body.
 MAX_DOWNLOAD_BYTES = 5_000_000
 _TIMEOUT = 20.0
+# Followed by hand, so the count is ours to enforce.
+_MAX_REDIRECTS = 5
+
+
+@dataclass(frozen=True)
+class _Fetched:
+    """What one successful download hands back to the formatting half."""
+
+    raw: bytes
+    content_type: str
+    final_url: str
+    encoding: str | None
 
 # Tags whose textual content is noise — never emit anything inside them.
 _SKIP_TAGS = {"script", "style", "noscript", "head", "template", "svg", "iframe"}
@@ -141,23 +158,74 @@ class WebFetchTool(BaseTool):
         if not re.match(r"^https?://", url, re.IGNORECASE):
             return f"[web_fetch error] Only http(s) URLs are supported — got: {url!r}"
 
-        cap = max(500, min(int(max_chars), HARD_MAX_CHARS))
-        try:
+        cap = clamp_int(max_chars, fallback=DEFAULT_MAX_CHARS, low=500, high=HARD_MAX_CHARS)
+        # Loopback and the private ranges stay reachable on a desktop, where they
+        # are the user's own machine, and are refused on a server-mode host,
+        # where they are the operator's private surface — including this
+        # backend's own token-guarded API. Link-local is refused either way.
+        allow_local = not server_mode.enabled()
+
+        async def download() -> _Fetched | str:
+            """One whole attempt. Returns the payload, or a refusal that no
+            number of retries could turn into a page."""
             async with httpx.AsyncClient(
                 timeout=_TIMEOUT,
-                follow_redirects=True,
+                # Redirects are followed by hand so each hop can be checked:
+                # letting httpx follow them means only the URL the model typed
+                # is ever inspected, and one 302 to 127.0.0.1 undoes the guard.
+                follow_redirects=False,
                 headers={"User-Agent": "AgentChat/1.0 (+web_fetch)"},
             ) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                raw = resp.content[:MAX_DOWNLOAD_BYTES]
+                target = url
+                for _hop in range(_MAX_REDIRECTS + 1):
+                    denied = await blocked_reason(target, allow_local=allow_local)
+                    if denied:
+                        return f"[web_fetch error] refused — {denied}."
+
+                    # Streamed, not `client.get(...).content`: that buffers the
+                    # whole body before MAX_DOWNLOAD_BYTES can trim it, so a URL
+                    # that turns out to be a disk image is a backend-sized
+                    # allocation rather than a tool error. Here the connection is
+                    # dropped at the cap.
+                    async with client.stream("GET", target) as resp:
+                        hop = resp.headers.get("location") if resp.is_redirect else None
+                        if hop:
+                            target = str(resp.url.join(hop))
+                            continue
+
+                        resp.raise_for_status()
+                        chunks: list[bytes] = []
+                        downloaded = 0
+                        async for chunk in resp.aiter_bytes():
+                            chunks.append(chunk)
+                            downloaded += len(chunk)
+                            if downloaded >= MAX_DOWNLOAD_BYTES:
+                                break
+                        return _Fetched(
+                            raw=b"".join(chunks)[:MAX_DOWNLOAD_BYTES],
+                            content_type=resp.headers.get("content-type", "").lower(),
+                            final_url=str(resp.url),
+                            encoding=resp.encoding,
+                        )
+                return (
+                    f"[web_fetch error] more than {_MAX_REDIRECTS} redirects "
+                    f"starting at {url}."
+                )
+
+        # A flaky link or a 503 gets a few more goes before the model is told the
+        # web is broken — but only a few: the turn is stopped dead while we wait,
+        # and a model that hears "fetch failed" can pick another source.
+        try:
+            fetched = await with_retry(download, TOOL_POLICY)
         except httpx.HTTPStatusError as exc:
             return f"[web_fetch error] HTTP {exc.response.status_code} for {url}"
         except httpx.HTTPError as exc:
             return f"[web_fetch error] {type(exc).__name__}: {exc}"
-
-        content_type = resp.headers.get("content-type", "").lower()
-        final_url = str(resp.url)
+        if isinstance(fetched, str):
+            return fetched
+        raw, content_type, final_url, encoding = (
+            fetched.raw, fetched.content_type, fetched.final_url, fetched.encoding,
+        )
 
         # Binary / non-text payloads: don't dump bytes into the model.
         if not _is_textual(content_type, raw):
@@ -167,7 +235,11 @@ class WebFetchTool(BaseTool):
                 f"{len(raw)} bytes of non-text content (not rendered)."
             )
 
-        text = raw.decode(resp.encoding or "utf-8", errors="replace")
+        try:
+            text = raw.decode(encoding or "utf-8", errors="replace")
+        except LookupError:
+            # A server can name a charset Python has never heard of.
+            text = raw.decode("utf-8", errors="replace")
         title: str | None = None
         if "html" in content_type or (not content_type and "<html" in text[:2000].lower()):
             text, title = _html_to_text(text)

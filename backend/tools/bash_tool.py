@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-
 from agent.sandbox import SandboxPolicy
-from agent.exec_common import decode_loose, run_blocking
-from agent.posix_exec import host_tool_env
+from tools.arg_coerce import clamp_int
 from tools.base import BaseTool, ToolDefinition, ToolSchema
+from tools.output_budget import MAX_TOOL_OUTPUT_CHARS, clamp_output
+from tools.shell_exec import ShellResult, run_in_shell
+
+# Wall-clock ceiling for one command. The default suits the overwhelming
+# majority (a build, a script, a git operation); the model can raise it per call
+# for a long install and lower it for something that might hang.
+DEFAULT_TIMEOUT = 300
+MAX_TIMEOUT = 600
+
+# stderr rarely carries the answer but often carries the reason, so it gets its
+# own slice of the budget instead of competing with stdout for one.
+_STDERR_BUDGET = MAX_TOOL_OUTPUT_CHARS // 4
 
 
 class BashTool(BaseTool):
@@ -44,7 +52,15 @@ class BashTool(BaseTool):
         "This is zsh, not bash — avoid bash-only syntax. "
         "$USER and $USER_HOME are pre-set environment variables."
     )
-    description = _DESC_WSL
+    # Appended to whichever shell dialect applies: the parts that are true of
+    # every one of them, and that the model needs in order to write a command
+    # that fits (rather than discovering the cap from a clipped result).
+    _DESC_COMMON = (
+        f" Output is capped at ~{MAX_TOOL_OUTPUT_CHARS} characters — the middle is "
+        "cut out of anything longer, so pipe through head/tail/grep, or redirect "
+        "to a file and read it back, instead of printing something large."
+    )
+    description = _DESC_WSL + _DESC_COMMON
 
     def __init__(self, user_name: str, user_home: str | None = None, shell: str = "wsl") -> None:
         self._user_name = user_name
@@ -77,159 +93,98 @@ class BashTool(BaseTool):
         return ToolDefinition(
             function=ToolSchema(
                 name=self.name,
-                description=desc,
+                description=desc + self._DESC_COMMON,
                 parameters={
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
                             "description": cmd_desc,
-                        }
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": (
+                                f"Seconds to wait before killing the command "
+                                f"(default {DEFAULT_TIMEOUT}, max {MAX_TIMEOUT}). "
+                                "Raise it for a long install or build; lower it for "
+                                "something that might hang."
+                            ),
+                        },
                     },
                     "required": ["command"],
                 },
             )
         )
 
-    async def execute(self, command: str) -> str:
-        """Dispatch to native bash, bash-in-WSL, or PowerShell by active shell.
+    async def execute(self, command: str, timeout: int = DEFAULT_TIMEOUT) -> str:
+        """Run *command* and render what it produced.
 
-        On a native POSIX host the command runs against the local bash directly.
-        On Windows there are two auto-fallback layers for "wsl" mode:
-          1. wsl.exe missing from PATH → PowerShell.
-          2. WSL spawns but reports "no installed distributions" or similar
-             setup failure → PowerShell (one retry).
-        Keeps the chat working when the user couldn't finish the WSL install.
+        The dispatch, the sandbox envelope and the two WSL fallbacks all live in
+        :mod:`tools.shell_exec`, shared with ``grep``. What stays here is the
+        part that is specific to handing a command's output to a model: the
+        timeout ceiling, the output budget, and the two markers
+        (:mod:`agent.tool_outcome`) that tell the loop this call failed.
         """
-        shell = self._shell
-        if shell in ("posix", "zsh"):
-            return await self._exec_native(command)
-
-        ps_present = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
-
-        if shell == "wsl" and shutil.which("wsl") is None and ps_present:
-            shell = "powershell"
-
-        if shell == "powershell":
-            return await self._exec_powershell(command)
-
-        wsl_out = await self._exec_wsl(command)
-        if ps_present and _looks_like_wsl_setup_failure(wsl_out):
-            ps_out = await self._exec_powershell(command)
-            return (
-                "[bash_tool] WSL has no working distro installed. "
-                "Command re-ran in PowerShell — set up WSL or switch to PowerShell "
-                "mode in Settings → Shell.\n\n" + ps_out
-            )
-        return wsl_out
-
-    async def _exec_wsl(self, command: str) -> str:
-        # Outer envelope sets USER/USER_HOME/HOME — these are inherited into
-        # the bwrap sandbox via --setenv, but we also keep them on the outer
-        # shell for backwards compatibility with any tool that bypasses
-        # wrap_bash (e.g. the host_run helpers in agent/host_exec.py).
-        inner = self._policy.wrap_bash(command)
-        full_cmd = (
-            f"export USER='{self._user_name}' "
-            f"USER_HOME='{self._user_home}' "
-            f"HOME='{self._user_home}'; {inner}"
+        secs = _clamp_timeout(timeout)
+        result = await run_in_shell(
+            command,
+            policy=self._policy,
+            user_name=self._user_name,
+            user_home=self._user_home,
+            timeout=secs,
         )
-        try:
-            result = await run_blocking(["wsl.exe", "bash", "-c", full_cmd])
-        except FileNotFoundError:
-            return (
-                "[bash_tool error] wsl.exe not found in PATH — install WSL "
-                "(Settings → Shell) or switch to PowerShell mode."
-            )
-        except subprocess.TimeoutExpired:
-            return "[bash_tool error] command timed out after 300s."
-        except OSError as exc:
-            return f"[bash_tool error] failed to spawn wsl.exe: {exc}"
-
+        if result.error:
+            return self._error_text(result.error, secs)
         return _format_result(result)
 
-    async def _exec_native(self, command: str) -> str:
-        # Native Linux/macOS: the bwrap envelope wrap_bash produces is plain
-        # POSIX shell, so we run it through the host's own interpreter — no
-        # wsl.exe. The interpreter is /bin/zsh when the user explicitly picked
-        # zsh, otherwise /bin/bash; wrap_bash matches the cage's inner shell to
-        # self.shell. The outer USER/HOME export mirrors the WSL path; the cage
-        # overrides HOME to the chat dir via --setenv.
-        binary = "zsh" if self._shell == "zsh" else "bash"
-        inner = self._policy.wrap_bash(command)
-        full_cmd = (
-            f"export USER='{self._user_name}' "
-            f"USER_HOME='{self._user_home}' "
-            f"HOME='{self._user_home}'; {inner}"
-        )
-        try:
-            result = await run_blocking([binary, "-c", full_cmd], env=host_tool_env())
-        except FileNotFoundError:
-            return (
-                f"[bash_tool error] {binary} not found in PATH"
-                + (" — install zsh or switch the shell to bash in Settings → Terminal."
-                   if binary == "zsh" else ".")
+    def _error_text(self, error: str, timeout: int) -> str:
+        """Turn "no process ran" into something the model can act on."""
+        if error.startswith("timed out"):
+            return _timeout_message(timeout)
+        if error.startswith("wsl.exe not found"):
+            error = (
+                "wsl.exe not found in PATH — install WSL (Settings → Shell) or "
+                "switch to PowerShell mode."
             )
-        except subprocess.TimeoutExpired:
-            return "[bash_tool error] command timed out after 300s."
-        except OSError as exc:
-            return f"[bash_tool error] failed to spawn {binary}: {exc}"
-
-        return _format_result(result)
-
-    async def _exec_powershell(self, command: str) -> str:
-        inner = self._policy.wrap_powershell(command)
-        try:
-            result = await run_blocking(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", inner]
+        elif error.startswith("zsh not found"):
+            error = (
+                "zsh not found in PATH — install zsh or switch the shell to bash "
+                "in Settings → Terminal."
             )
-        except FileNotFoundError:
-            return "[bash_tool error] powershell.exe not found in PATH."
-        except subprocess.TimeoutExpired:
-            return "[bash_tool error] command timed out after 300s."
-        except OSError as exc:
-            return f"[bash_tool error] failed to spawn powershell.exe: {exc}"
-
-        return _format_result(result)
+        return f"[bash_tool error] {error}"
 
 
-def _looks_like_wsl_setup_failure(output: str) -> bool:
-    """Heuristic: WSL is on PATH but has no working distro.
+def _clamp_timeout(timeout: object) -> int:
+    """Coerce a model-supplied timeout into 1..MAX_TIMEOUT seconds."""
+    return clamp_int(timeout, fallback=DEFAULT_TIMEOUT, low=1, high=MAX_TIMEOUT)
 
-    wsl.exe emits UTF-16-encoded messages like "Windows Subsystem for Linux has
-    no installed distributions". ``decode_loose`` handles that encoding now, but
-    NULs are still stripped here so the check keeps working on any output that
-    reached us through a plain utf-8 decode.
-    """
-    if not output:
-        return False
-    flat = output.replace("\x00", "").lower()
-    # WSL emits these strings in both English and localized form. The Russian
-    # variant lands as mojibake after the utf-8/utf-16 decode dance, so we
-    # only match the ASCII fragments that survive.
-    needles = (
-        "no installed distributions",
-        "wsl --install",
-        "wsl.exe --install",
-        "wsl --list --online",
-        "wsl.exe --list --online",
-        "wsl is not installed",
-        "the wsl optional component is not enabled",
+
+def _timeout_message(timeout: int) -> str:
+    """Say what the limit was and how to get past it — a bare "timed out" leaves
+    the model guessing whether to retry the same command unchanged."""
+    raise_it = (
+        f" Pass a larger `timeout` (up to {MAX_TIMEOUT}) if the command genuinely "
+        "needs longer."
+        if timeout < MAX_TIMEOUT
+        else f" {MAX_TIMEOUT}s is the ceiling — run it in the background and poll, "
+        "or split the work."
     )
-    return any(n in flat for n in needles)
+    return f"[bash_tool error] command timed out after {timeout}s.{raise_it}"
 
 
-def _format_result(result: subprocess.CompletedProcess[bytes]) -> str:
-    # decode_loose, not a bare utf-8 decode: wsl.exe's own diagnostics come back
-    # as UTF-16LE, which utf-8 renders as NUL-interleaved text in the model's
-    # tool output. Same helper every other shell-out site already uses.
-    out = decode_loose(result.stdout)
-    err = decode_loose(result.stderr)
+def _format_result(result: ShellResult) -> str:
+    out = result.stdout
+    err = result.stderr
     parts: list[str] = []
+    if result.notice:
+        parts.append(f"[bash_tool] {result.notice}\n")
+    # Clamped per stream rather than once at the end, so a flood of stdout can
+    # never push the [stderr] block or the exit code out of the result — those
+    # two are what the model needs most when a command went wrong.
     if out.strip():
-        parts.append(out.strip())
+        parts.append(clamp_output(out.strip()))
     if err.strip():
-        parts.append(f"[stderr]\n{err.strip()}")
+        parts.append(f"[stderr]\n{clamp_output(err.strip(), limit=_STDERR_BUDGET)}")
     if result.returncode != 0:
         parts.append(f"[exit code: {result.returncode}]")
     return "\n".join(parts) if parts else "(no output)"

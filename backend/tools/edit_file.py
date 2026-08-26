@@ -17,6 +17,8 @@ from typing import Callable
 from agent.sandbox import SandboxPolicy
 from agent.host_exec import host_read_text, host_write_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
+from tools.binary_formats import binary_format_refusal
+from tools.read_ledger import ReadLedger
 
 # Similarity thresholds for block-anchor fallback matching
 _SINGLE_CANDIDATE_THRESHOLD = 0.0
@@ -44,8 +46,17 @@ def _convert_to_line_ending(text: str, ending: str) -> str:
     return text.replace("\n", "\r\n")
 
 
+# The distance matrix is (len(a)+1)×(len(b)+1) Python ints. Two 20k-character
+# lines — one minified bundle, one long CSV row — is 400M cells: not slow, but
+# fatal, and it dies inside a fuzzy *fallback* the edit never needed. Past this
+# length the pair is treated as dissimilar, which only costs that one candidate.
+_LEVENSHTEIN_MAX_LEN = 2_000
+
+
 def _levenshtein(a: str, b: str) -> int:
     if not a or not b:
+        return max(len(a), len(b))
+    if len(a) > _LEVENSHTEIN_MAX_LEN or len(b) > _LEVENSHTEIN_MAX_LEN:
         return max(len(a), len(b))
     matrix = [
         [j if i == 0 else (i if j == 0 else 0) for j in range(len(b) + 1)]
@@ -365,9 +376,14 @@ class EditFileTool(BaseTool):
 
     def __init__(self) -> None:
         self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
+        self._ledger: ReadLedger = ReadLedger()
 
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
+
+    def set_ledger(self, ledger: ReadLedger) -> None:
+        """Share the request's read ledger — see :mod:`tools.read_ledger`."""
+        self._ledger = ledger
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -410,6 +426,31 @@ class EditFileTool(BaseTool):
         new_string: str,
         replace_all: bool = False,
     ) -> str:
+        """Apply the edit, reporting any failure as text.
+
+        Wrapped like ``write_file``'s: the replacer cascade runs nine strategies
+        over model-supplied strings, and a failure in any of them must read as a
+        tool error the model can retry against, not as a bare exception message
+        from the loop's generic handler.
+        """
+        try:
+            return await self._edit(path, old_string, new_string, replace_all)
+        except Exception as exc:  # noqa: BLE001 — the tool must never raise into the loop
+            return f"Error editing file: {type(exc).__name__}: {exc}"
+
+    async def _edit(
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> str:
+        # A .docx is a ZIP: string surgery on it corrupts the archive rather
+        # than editing the document. Regenerate it with code instead.
+        refusal = binary_format_refusal(path, verb="edit")
+        if refusal:
+            return refusal
+
         denied = self._policy.check_write(path)
         if denied:
             return f"Error: {denied}"
@@ -417,7 +458,12 @@ class EditFileTool(BaseTool):
         is_wsl = path.startswith("/")
 
         if old_string == "":
-            # Create / overwrite
+            # Create / overwrite. This is the branch that replaces a whole file
+            # sight unseen; a real old_string carries its own evidence that the
+            # model already knows what it is changing.
+            blind = self._ledger.refuse_blind_overwrite(path)
+            if blind:
+                return blind
             if is_wsl:
                 try:
                     await host_write_bytes(path, new_string.encode("utf-8"), append=False)

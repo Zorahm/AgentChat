@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from retry import TOOL_POLICY, with_retry
+from tools.arg_coerce import clamp_int
 from tools.base import BaseTool, ToolDefinition, ToolSchema
-from web_search.config import EffectiveBackend, WebSearchConfig
+from web_search.config import EffectiveBackend, SearchResult, WebSearchConfig
 from web_search.service import WebSearchService
 
 
@@ -57,11 +59,16 @@ class WebSearchTool(BaseTool):
         )
 
     async def execute(self, query: str, max_results: int = 5, **_: Any) -> str:
-        capped = max(1, min(int(max_results), 10))
+        capped = clamp_int(max_results, fallback=5, low=1, high=10)
+
+        async def search() -> list[SearchResult]:
+            return await self._service.search(query, self._config, self._backend, capped)
+
         try:
-            results = await self._service.search(
-                query, self._config, self._backend, capped
-            )
+            # A search backend that is briefly unreachable (SearXNG restarting,
+            # Tavily rate-limiting) is worth a few quiet retries; a rejected key
+            # is not, and is_retryable tells them apart.
+            results = await with_retry(search, TOOL_POLICY)
         except Exception as exc:  # noqa: BLE001 — surface backend errors to the model
             return f"[web_search error] {exc}"
 

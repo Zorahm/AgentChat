@@ -18,6 +18,8 @@ from pathlib import Path
 from agent.sandbox import SandboxPolicy
 from agent.host_exec import host_read_bytes, host_write_bytes
 from tools.base import BaseTool, ToolDefinition, ToolSchema
+from tools.binary_formats import binary_format_refusal
+from tools.read_ledger import ReadLedger
 from tools.edit_file import (
     _convert_to_line_ending,
     _detect_line_ending,
@@ -27,6 +29,9 @@ from tools.edit_file import (
 # UTF-8 byte-order mark, in both its text (U+FEFF) and byte forms.
 _BOM_TEXT = "﻿"
 _BOM_BYTES = b"\xef\xbb\xbf"
+
+# How much of an existing file is enough to answer "BOM?" and "CRLF?".
+_SNIFF_BYTES = 65_536
 
 
 def _looks_windows_abs(path: str) -> bool:
@@ -84,9 +89,14 @@ class WriteFileTool(BaseTool):
 
     def __init__(self) -> None:
         self._policy: SandboxPolicy = SandboxPolicy(unrestricted=True)
+        self._ledger: ReadLedger = ReadLedger()
 
     def set_policy(self, policy: SandboxPolicy) -> None:
         self._policy = policy
+
+    def set_ledger(self, ledger: ReadLedger) -> None:
+        """Share the request's read ledger — see :mod:`tools.read_ledger`."""
+        self._ledger = ledger
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -145,6 +155,13 @@ class WriteFileTool(BaseTool):
         if not isinstance(content, str):
             content = "" if content is None else str(content)
 
+        # Checked before anything touches the filesystem: a .docx written as text
+        # is a corrupt file, and the user only finds out when the download card
+        # refuses to open.
+        refusal = binary_format_refusal(path)
+        if refusal:
+            return refusal
+
         resolved = _resolve_write_path(path, self._policy)
         if not resolved:
             return "Error: empty path — provide a file path to write to."
@@ -172,15 +189,24 @@ class WriteFileTool(BaseTool):
         if not is_wsl and Path(path).is_dir():
             return f"Error: path is a directory, not a file — {path}"
 
-        existing = await self._read_existing(path, is_wsl)
+        existing = await self._read_existing_prefix(path, is_wsl)
         existed = existing is not None
 
-        src_bom = existed and existing.startswith(_BOM_BYTES)
+        # Only once we know the file is really there: refusing to "overwrite" a
+        # path that does not exist yet would block creating a file next to an
+        # attachment for no reason.
         if existed:
+            blind = self._ledger.refuse_blind_overwrite(path)
+            if blind:
+                return blind
+
+        if existing is not None:
+            src_bom = existing.startswith(_BOM_BYTES)
             body = existing[len(_BOM_BYTES):] if src_bom else existing
             eol = _detect_line_ending(body.decode("utf-8", "replace"))
         else:
             # New file: follow the content's own ending (defaults to LF).
+            src_bom = False
             eol = _detect_line_ending(content)
 
         next_bom = content.startswith(_BOM_TEXT)
@@ -206,30 +232,40 @@ class WriteFileTool(BaseTool):
             return f"Error: path is a directory, not a file — {path}"
 
         data = content.encode("utf-8")
+        # Both branches report the same quantity — the bytes this call added.
+        # They used to differ (added vs. total on disk), which is how a model
+        # splitting a long file across appends came to believe it had written
+        # far more than it had.
         if is_wsl:
             await host_write_bytes(path, data, append=True)
-            return f"Appended to {path} ({len(data)} bytes)"
-
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("ab") as f:
-            f.write(data)
-        return f"Appended to {path} ({p.stat().st_size} bytes total)"
+        else:
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("ab") as f:
+                f.write(data)
+        return f"Appended {len(data)} bytes to {path}"
 
     @staticmethod
-    async def _read_existing(path: str, is_wsl: bool) -> bytes | None:
-        """Return the file's current bytes, or None if it does not exist.
+    async def _read_existing_prefix(path: str, is_wsl: bool) -> bytes | None:
+        """Return the start of the file's current bytes, or None if it is new.
 
         This is the extra round-trip that buys BOM/line-ending preservation on
-        overwrite. A missing file is the common case for a chat agent (it mostly
-        creates new artifacts) and surfaces as None, not an error.
+        overwrite. A *prefix* is enough for both: the BOM is the first three
+        bytes, and a file whose first 64 KB contains no CRLF is not a CRLF file.
+        Reading it whole meant overwriting a 200 MB file loaded 200 MB first —
+        through a wsl.exe pipe on Windows — to answer two questions about its
+        opening bytes.
+
+        A missing file is the common case for a chat agent (it mostly creates
+        new artifacts) and surfaces as None, not an error.
         """
         if is_wsl:
             try:
-                return await host_read_bytes(path)
+                return await host_read_bytes(path, max_bytes=_SNIFF_BYTES)
             except FileNotFoundError:
                 return None
         p = Path(path)
         if not p.exists():
             return None
-        return p.read_bytes()
+        with p.open("rb") as fp:
+            return fp.read(_SNIFF_BYTES)

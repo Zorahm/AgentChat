@@ -15,6 +15,28 @@ import subprocess
 from shell import NO_WINDOW
 
 
+def trim_partial_utf8(data: bytes) -> bytes:
+    """Drop a multi-byte UTF-8 sequence left dangling at the end of *data*.
+
+    Only needed when *data* is a byte-bounded prefix of a larger file. Without
+    it :func:`decode_loose` sees a genuine UnicodeDecodeError on the last one to
+    three bytes, falls through to its UTF-16LE branch — which succeeds on almost
+    any byte string — and returns the whole file as mojibake.
+    """
+    # A UTF-8 sequence is at most 4 bytes, so at most 3 trailing bytes can be
+    # incomplete. Walk back over continuation bytes (10xxxxxx) to the lead byte.
+    for back in range(1, min(4, len(data)) + 1):
+        byte = data[-back]
+        if byte & 0b1100_0000 == 0b1000_0000:
+            continue  # continuation byte — keep walking back
+        if byte & 0b1000_0000 == 0:
+            return data  # plain ASCII lead: nothing dangling
+        # Lead byte: 110xxxxx = 2, 1110xxxx = 3, 11110xxx = 4 bytes long.
+        length = 2 if byte >> 5 == 0b110 else 3 if byte >> 4 == 0b1110 else 4
+        return data if back >= length else data[:-back]
+    return data
+
+
 def decode_loose(data: bytes) -> str:
     """Best-effort bytes → str. WSL CLI sometimes emits UTF-16LE."""
     if not data:

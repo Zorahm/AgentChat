@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,23 @@ def strip_activity_field(arguments: dict[str, Any]) -> dict[str, Any]:
     if ACTIVITY_FIELD not in arguments:
         return arguments
     return {k: v for k, v in arguments.items() if k != ACTIVITY_FIELD}
+
+
+def _binding_error(tool: BaseTool, arguments: dict[str, Any]) -> str | None:
+    """Why *arguments* don't fit ``tool.execute``, or None when they do.
+
+    Tools that accept ``**kwargs`` bind anything, which is the correct answer
+    for them — MCP proxies and ``ask_user`` take their arguments that way.
+    """
+    try:
+        signature = inspect.signature(tool.execute)
+    except (TypeError, ValueError):  # builtins / C-implemented callables
+        return None
+    try:
+        signature.bind(**arguments)
+    except TypeError as exc:
+        return str(exc)
+    return None
 
 
 class ToolRegistry:
@@ -91,14 +109,32 @@ class ToolRegistry:
         return inject_activity_field(schemas) if describe_actions else schemas
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str | list[dict[str, Any]]:
-        """Execute a registered tool by name with keyword arguments."""
+        """Execute a registered tool by name with keyword arguments.
+
+        Every failure comes back as ``Error: …`` text rather than an exception,
+        because the turn has to continue and the model is the one that has to
+        act on it — see :mod:`agent.tool_outcome` for how the loop still marks
+        such a call failed.
+        """
         tool = self._tools.get(name)
         if tool is None:
             return f"Error: unknown tool '{name}'. Available: {self.list_names()}"
+
+        args = strip_activity_field(arguments)
+
+        # Checked before the call, not caught after it. A TypeError raised *by*
+        # a tool's body reads exactly like one raised by the call itself, and
+        # reporting that as "invalid arguments" sends the model off to fix
+        # arguments that were never wrong — a loop it cannot escape, since the
+        # next attempt fails identically.
+        bind_error = _binding_error(tool, args)
+        if bind_error:
+            return f"Error: invalid arguments for '{name}' — {bind_error}"
+
         try:
-            return await tool.execute(**strip_activity_field(arguments))
-        except TypeError as e:
-            return f"Error: invalid arguments for '{name}' — {e}"
+            return await tool.execute(**args)
+        except Exception as exc:  # noqa: BLE001 — a tool must never break the turn
+            return f"Error: '{name}' failed — {type(exc).__name__}: {exc}"
 
     def get_skill_md_path(self, skill_name: str) -> Path | None:
         """Return the absolute path to a skill's SKILL.md, or None."""

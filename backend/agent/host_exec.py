@@ -18,6 +18,7 @@ import subprocess
 import sys
 
 from agent import posix_exec, wsl_exec
+from agent.dir_listing import DirEntry, local_list_dir
 
 # True on a native POSIX host — the agent runs bash and touches files directly
 # instead of tunnelling through wsl.exe.
@@ -47,11 +48,33 @@ async def host_read_text(path: str) -> str:
     return await wsl_exec.wsl_read_text(path)
 
 
-async def host_read_bytes(path: str) -> bytes:
-    """Read a binary file. Returns raw bytes. Raises FileNotFoundError or OSError."""
+async def host_read_bytes(path: str, *, max_bytes: int | None = None) -> bytes:
+    """Read a binary file. Returns raw bytes. Raises FileNotFoundError or OSError.
+
+    ``max_bytes`` caps the read at its source on both platforms, which is the
+    only place a cap helps: the WSL path pipes the bytes back through a buffer
+    the parent holds whole.
+    """
     if IS_POSIX:
-        return await posix_exec.posix_read_bytes(path)
-    return await wsl_exec.wsl_read_bytes(path)
+        return await posix_exec.posix_read_bytes(path, max_bytes=max_bytes)
+    return await wsl_exec.wsl_read_bytes(path, max_bytes=max_bytes)
+
+
+async def host_list_dir(
+    path: str,
+    *,
+    depth: int = 1,
+    skip: frozenset[str] = frozenset(),
+) -> list[DirEntry]:
+    """List a directory — natively, or through WSL for a POSIX path on Windows.
+
+    One rule more than the read/write helpers above: on Windows a drive-letter
+    path (PowerShell shell mode) names the *host's* own filesystem, which the
+    distro cannot see, so it is listed directly instead of being tunnelled.
+    """
+    if IS_POSIX or not path.startswith("/"):
+        return await local_list_dir(path, depth=depth, skip=skip)
+    return await wsl_exec.wsl_list_dir(path, depth=depth, skip=skip)
 
 
 async def host_write_bytes(path: str, data: bytes, *, mkdir: bool = True, append: bool = False) -> None:

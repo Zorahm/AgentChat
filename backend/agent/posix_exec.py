@@ -110,9 +110,20 @@ async def posix_read_text(path: str) -> str:
     return decode_loose(data)
 
 
-async def posix_read_bytes(path: str) -> bytes:
-    """Read a binary file natively. Raises FileNotFoundError or OSError on failure."""
-    return await asyncio.to_thread(Path(path).read_bytes)
+async def posix_read_bytes(path: str, *, max_bytes: int | None = None) -> bytes:
+    """Read a binary file natively. Raises FileNotFoundError or OSError on failure.
+
+    ``max_bytes`` bounds what is pulled into memory, so a caller that only ever
+    shows a prefix never pays for the whole file.
+    """
+    if max_bytes is None:
+        return await asyncio.to_thread(Path(path).read_bytes)
+
+    def _read_prefix() -> bytes:
+        with Path(path).open("rb") as fp:
+            return fp.read(max_bytes)
+
+    return await asyncio.to_thread(_read_prefix)
 
 
 async def posix_write_bytes(path: str, data: bytes, *, mkdir: bool = True, append: bool = False) -> None:

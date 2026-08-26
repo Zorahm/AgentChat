@@ -19,7 +19,7 @@ import agent.host_exec as host_exec  # noqa: E402
 import agent.posix_exec as posix_exec  # noqa: E402
 import shell  # noqa: E402
 from agent.sandbox import SandboxPolicy  # noqa: E402
-from tools.bash_tool import BashTool  # noqa: E402
+from tools.bash_tool import DEFAULT_TIMEOUT, BashTool  # noqa: E402
 
 POSIX_CHAT_DIR = "/home/user/AgentChat/chats/chat-abcd-20260601-1200"
 
@@ -190,18 +190,26 @@ def test_bash_tool_zsh_definition_advertises_zsh() -> None:
 async def test_bash_tool_native_execute_routes_to_native(
     monkeypatch: pytest.MonkeyPatch, shell_mode: str
 ) -> None:
+    from tools import shell_exec
+
     tool = BashTool(user_name="user", user_home="/home/user", shell=shell_mode)
-    seen: dict[str, str] = {}
+    seen: dict[str, object] = {}
 
-    async def fake_exec_native(command: str) -> str:
-        seen["command"] = command
-        return "native-ok"
+    async def fake_spawn(argv: list[str], timeout: float, **_: object) -> shell_exec.ShellResult:
+        seen["argv"] = argv
+        seen["timeout"] = timeout
+        return shell_exec.ShellResult(stdout="native-ok")
 
-    monkeypatch.setattr(tool, "_exec_native", fake_exec_native)
+    monkeypatch.setattr(shell_exec, "_spawn", fake_spawn)
     out = await tool.execute("echo hi")
 
     assert out == "native-ok"
-    assert seen["command"] == "echo hi"
+    # The host's own interpreter, not wsl.exe — and zsh only when explicitly picked.
+    argv = seen["argv"]
+    assert isinstance(argv, list)
+    assert argv[0] == shell_mode.replace("posix", "bash")
+    assert "echo hi" in argv[-1]
+    assert seen["timeout"] == DEFAULT_TIMEOUT
 
 
 # ── host_tool_env — strip AppImage/PyInstaller lib pollution ────────────
