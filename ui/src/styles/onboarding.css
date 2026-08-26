@@ -21,36 +21,81 @@
   color: var(--ink);
   border: 1px solid var(--line-2);
   border-radius: 16px;
-  width: min(820px, 94vw);
+  width: min(860px, 94vw);
   max-height: 92vh;
   overflow-y: auto;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  padding: 32px 36px;
+  padding: 28px 32px 26px;
+  transition: width 0.25s ease;
 }
+
+/* The providers step carries the full Settings editor — cards, key fields,
+   model rows — and reads as cramped at the wizard's normal width. */
+.ob-card--wide { width: min(1140px, 96vw); }
 
 /* One or two children (MobileConnect adds a close button beside the heading). */
 .ob-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 22px;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
 .ob-header h2 {
   font-family: var(--font-hand);
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ob-mark { width: 20px; height: 20px; opacity: 0.8; }
+
+.ob-header-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ob-step-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 11px;
+  white-space: nowrap;
+}
+
+/* ── Progress ── */
+
+.ob-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+.ob-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
 }
 
 /* ── Layout: step rail + content ── */
 
 .ob-shell-layout {
   display: grid;
-  grid-template-columns: 184px 1fr;
+  grid-template-columns: 208px 1fr;
   gap: 28px;
   align-items: start;
 }
@@ -58,21 +103,85 @@
 .ob-rail {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   border-right: 1px solid var(--line);
-  padding-right: 16px;
+  padding-right: 14px;
 }
 
-/* Layout only — the Astryx Button owns its height, padding, type and variant
-   colours. (It used to restate padding/border/background/font-size; the sm
-   Button keeps its own 28px box, so that padding squeezed the label inside it
-   and the steps read as cramped.) The rail is a column, so the steps stretch. */
-.ob-rail-step {
+/* A step is a row, not a button-shaped block: the number carries the state and
+   the label stays readable at rest, so the rail reads as a map of the setup
+   rather than four competing calls to action. */
+.ob-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
   width: 100%;
-  justify-content: flex-start;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ob-rail-item:disabled { opacity: 0.45; cursor: default; }
+.ob-rail-item:not(:disabled):hover { background: var(--surface-2); }
+.ob-rail-item.is-active {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.ob-rail-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+}
+.ob-rail-item.is-active .ob-rail-num {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.ob-rail-item.is-done .ob-rail-num {
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+  color: var(--ok);
+}
+
+.ob-rail-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ob-rail-label { font-size: 13px; font-weight: 500; }
+.ob-rail-cap {
+  font-size: 11px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ob-content { min-width: 0; }
+
+/* ── Step header (title + sub, with room for one action on the right) ── */
+
+.ob-step-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ob-step-head-text { min-width: 0; }
+/* The pair already owns the gap below the header. */
+.ob-step-head .ob-sub { margin-bottom: 14px; }
 
 .ob-error {
   background: var(--err-soft);
@@ -116,33 +225,88 @@
   color: var(--muted);
 }
 
-.ob-bullets {
-  list-style: none;
-  padding: 0;
-  margin: 16px 0 16px;
+/* ── Step 1: name ── */
+
+.ob-name-field { max-width: 380px; }
+
+/* ── Step 2: providers ── */
+
+/* The list scrolls inside the step so the wizard's own Back/Next never leave
+   the screen — with seven providers expanded the page would otherwise be
+   metres long and the primary action would sit below the fold. */
+.ob-pv-list {
+  max-height: min(52vh, 540px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 14px 14px;
+  margin: 0 -2px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+/* The first label in the scroller shouldn't push the list open. */
+.ob-pv-list .st2-pv-section-label:first-child { margin-top: 10px; }
+
+.ob-pv-summary {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 13.5px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-left-color: var(--line-2);
+  border-radius: 8px;
+  font-size: 13px;
   color: var(--ink-soft);
-  line-height: 1.5;
 }
-.ob-bullets li {
+.ob-pv-summary.is-ready {
+  border-left-color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.ob-pv-summary-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
+}
+.ob-pv-summary-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Step 4: skills ── */
+
+.ob-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.ob-skill-tile {
   display: flex;
+  align-items: center;
   gap: 10px;
-  padding-left: 16px;
-  position: relative;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
 }
-.ob-bullets li::before {
-  content: "·";
-  position: absolute;
-  left: 2px;
+.ob-skill-ic {
+  display: flex;
+  flex-shrink: 0;
   color: var(--accent);
-  font-weight: 700;
-  font-size: 16px;
-  line-height: 1;
 }
-.ob-bullets b { color: var(--ink); font-weight: 600; }
+.ob-skill-text { min-width: 0; }
 
 .ob-success {
   margin-top: 16px;
@@ -380,19 +544,26 @@
 
 /* ── Narrow screens: rail becomes a top strip ── */
 
-@media (max-width: 640px) {
-  .ob-card { padding: 24px 20px; }
+@media (max-width: 860px) {
+  .ob-card, .ob-card--wide { width: 96vw; padding: 22px 18px; }
   .ob-shell-layout { grid-template-columns: 1fr; gap: 16px; }
   .ob-rail {
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 6px;
     border-right: none;
     border-bottom: 1px solid var(--line);
     padding-right: 0;
     padding-bottom: 12px;
   }
-  /* A wrapped row, not a column — the steps size to their labels. */
-  .ob-rail-step { width: auto; }
+  /* A wrapped row, not a column — the steps size to their labels, and the
+     one-line captions no longer fit beside them. */
+  .ob-rail-item { width: auto; padding: 7px 11px 7px 8px; }
+  .ob-rail-cap { display: none; }
+  .ob-pv-list { max-height: 48vh; padding: 2px 10px 12px; }
+  .ob-pv-summary { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .ob-pv-summary-count { border-right: none; padding-right: 0; }
+  .ob-skill-grid { grid-template-columns: 1fr; }
   .ob-dep-list { grid-template-columns: 1fr; }
   .ob-shell-choice { grid-template-columns: 1fr; }
   .ob-wsl-creds-row { grid-template-columns: 1fr; }

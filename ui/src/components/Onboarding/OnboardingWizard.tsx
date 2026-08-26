@@ -1,31 +1,19 @@
-/** Onboarding wizard — first-run setup: name → provider/model → environment → skills.
+/** Onboarding wizard — first-run setup: name → providers → environment → skills.
  *
- * Side-rail layout: a clickable step rail on the left, the active step on the
- * right. Step 3 (shell + dependencies) lives in {@link EnvironmentStep}. */
+ * Side-rail layout: numbered steps on the left, the active step on the right.
+ * Step 2 ({@link ProviderStep}) is the Settings providers editor in full, and
+ * step 3 (shell + dependencies) lives in {@link EnvironmentStep}. */
 
 import { useEffect, useState } from "react";
-import { Check } from "@phosphor-icons/react";
-import { API_BASE } from "../../utils/apiBase";
+import {
+  Check, FileDoc, FilePdf, FilePpt, FileXls, MagicWand,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { EnvironmentStep } from "./EnvironmentStep";
 import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Selector } from "@astryxdesign/core/Selector";
-
-interface ProviderConfig {
-  id: string;
-  name: string;
-  api_key: string | null;
-  api_base: string | null;
-  enabled: boolean;
-  api_key_set: boolean;
-  custom?: boolean;
-}
-
-interface ModelConfig {
-  id: string;
-  name?: string | null;
-}
+import { API_BASE } from "../../utils/apiBase";
+import { EnvironmentStep } from "./EnvironmentStep";
+import { ProviderStep } from "./ProviderStep";
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -33,16 +21,14 @@ interface OnboardingWizardProps {
 
 type Step = 1 | 2 | 3 | 4;
 
+const TOTAL_STEPS = 4;
+
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [maxStep, setMaxStep] = useState<Step>(1);
   const [userName, setUserName] = useState("");
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
-  const [models, setModels] = useState<ModelConfig[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>("");
-  const [apiKey, setApiKey] = useState("");
-  const [defaultModel, setDefaultModel] = useState<string>("");
+  const [defaultModel, setDefaultModel] = useState("");
   const [envBusy, setEnvBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,37 +41,19 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     setMaxStep((m) => (n > m ? n : m));
   };
 
-  // Initial load: fetch providers list
   useEffect(() => {
     fetch(`${API_BASE}/settings`)
       .then((r) => r.json())
       .then((d) => {
-        setProviders(d.providers ?? []);
         if (typeof d.user_name === "string") setUserName(d.user_name);
-        if (d.providers?.length && !selectedProvider) {
-          setSelectedProvider(d.providers[0].id);
-        }
       })
       .catch(() => setError(t("onboarding.connectionError")));
-    // Cheap platform probe (no WSL spawning) so we know whether to show the
-    // WSL/environment setup step at all.
+    // Cheap platform probe (no WSL spawning) so we know which face step 3 wears.
     fetch(`${API_BASE}/system-status`)
       .then((r) => r.json())
       .then((d) => { if (typeof d.os_platform === "string") setOsPlatform(d.os_platform); })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const refreshModels = async () => {
-    try {
-      const r = await fetch(`${API_BASE}/models?refresh=true`);
-      if (r.ok) {
-        const d = await r.json();
-        setModels(d.models ?? []);
-      }
-    } catch {
-      /* no-op */
-    }
-  };
 
   // ── Step 1: name ──
   const handleNextFromName = async () => {
@@ -106,50 +74,16 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
-  // ── Step 2: provider + key + model ──
-  const handleSaveKey = async () => {
-    if (!selectedProvider || !apiKey.trim()) {
-      setError(t("onboarding.validationProvider"));
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    try {
-      const r = await fetch(`${API_BASE}/settings/providers/${selectedProvider}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: apiKey.trim(), enabled: true }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setApiKey("");
-      await refreshModels();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.keySaveError"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleNextFromProvider = async () => {
+  // ── Step 2: providers ──
+  // The model is already persisted the moment it is picked (ProviderStep writes
+  // straight through), so this only guards the step from being left half done.
+  const handleNextFromProvider = () => {
     if (!defaultModel) {
       setError(t("onboarding.validationModel"));
       return;
     }
     setError(null);
-    setSaving(true);
-    try {
-      const r = await fetch(`${API_BASE}/settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ default_model: defaultModel }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      go(3);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("onboarding.modelSaveError"));
-    } finally {
-      setSaving(false);
-    }
+    go(3);
   };
 
   const finish = async (): Promise<boolean> => {
@@ -179,39 +113,60 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
   };
 
-  const selectedProviderObj = providers.find((p) => p.id === selectedProvider);
-  const providerModels = models.filter((m) => m.id.startsWith(selectedProvider + "/"));
+  const rail: { n: Step; label: string; caption: string }[] = [
+    { n: 1, label: t("onboarding.navName"), caption: t("onboarding.navNameCaption") },
+    { n: 2, label: t("onboarding.navProvider"), caption: t("onboarding.navProviderCaption") },
+    { n: 3, label: t("onboarding.navEnvironment"), caption: t("onboarding.navEnvironmentCaption") },
+    { n: 4, label: t("onboarding.navSkills"), caption: t("onboarding.navSkillsCaption") },
+  ];
 
-  const rail: { n: Step; label: string }[] = [
-    { n: 1, label: t("onboarding.navName") },
-    { n: 2, label: t("onboarding.navProvider") },
-    { n: 3, label: t("onboarding.navEnvironment") },
-    { n: 4, label: t("onboarding.navSkills") },
+  const skills: { icon: React.ReactNode; text: string }[] = [
+    { icon: <FileDoc size={18} weight="duotone" />, text: t("onboarding.skillDocx") },
+    { icon: <FileXls size={18} weight="duotone" />, text: t("onboarding.skillXlsx") },
+    { icon: <FilePpt size={18} weight="duotone" />, text: t("onboarding.skillPptx") },
+    { icon: <FilePdf size={18} weight="duotone" />, text: t("onboarding.skillPdf") },
+    { icon: <MagicWand size={18} weight="duotone" />, text: t("onboarding.skillCreate") },
   ];
 
   return (
     <div className="ob-overlay">
-      <div className="ob-card">
+      {/* Step 2 carries the whole providers editor, so it gets the wider card. */}
+      <div className={`ob-card${step === 2 ? " ob-card--wide" : ""}`}>
         <div className="ob-header">
-          <h2>{t("onboarding.welcome")}</h2>
+          <div className="ob-header-text">
+            <h2><img className="ob-mark" src="/dots.svg" alt="" />{t("onboarding.welcome")}</h2>
+            <p className="ob-header-sub">{t("onboarding.subtitle")}</p>
+          </div>
+          <span className="ob-step-count">
+            {t("onboarding.stepOf", { current: step, total: TOTAL_STEPS })}
+          </span>
+        </div>
+
+        <div className="ob-progress" aria-hidden>
+          <span style={{ width: `${(step / TOTAL_STEPS) * 100}%` }} />
         </div>
 
         <div className="ob-shell-layout">
           <nav className="ob-rail">
-            {rail.map(({ n, label }) => {
+            {rail.map(({ n, label, caption }) => {
               const reachable = maxStep >= n && !envBusy;
+              const done = maxStep > n && step !== n;
               return (
-                <Button
+                <button
                   key={n}
                   type="button"
-                  variant={step === n ? "primary" : "secondary"}
-                  label={label}
+                  className={`ob-rail-item${step === n ? " is-active" : ""}${done ? " is-done" : ""}`}
                   onClick={() => reachable && go(n)}
-                  isDisabled={!reachable}
-                  size="sm"
-                  icon={maxStep > n && step !== n ? <Check size={13} weight="bold" /> : undefined}
-                  className="ob-rail-step"
-                />
+                  disabled={!reachable}
+                >
+                  <span className="ob-rail-num">
+                    {done ? <Check size={13} weight="bold" /> : n}
+                  </span>
+                  <span className="ob-rail-text">
+                    <span className="ob-rail-label">{label}</span>
+                    <span className="ob-rail-cap">{caption}</span>
+                  </span>
+                </button>
               );
             })}
           </nav>
@@ -221,17 +176,24 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             {step === 1 && (
               <div className="ob-body">
-                <h3>{t("onboarding.step1Title")}</h3>
-                <p className="ob-sub">{t("onboarding.step1Description")}</p>
-                <TextInput
-                  hasAutoFocus
-                  label={t("onboarding.step1Placeholder")}
-                  value={userName}
-                  onChange={(value: string) => setUserName(value)}
-                  placeholder={t("onboarding.step1Placeholder")}
-                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleNextFromName()}
-                  isLabelHidden
-                />
+                <div className="ob-step-head">
+                  <div className="ob-step-head-text">
+                    <h3>{t("onboarding.step1Title")}</h3>
+                    <p className="ob-sub">{t("onboarding.step1Description")}</p>
+                  </div>
+                </div>
+                <div className="ob-name-field">
+                  <TextInput
+                    hasAutoFocus
+                    label={t("onboarding.step1Placeholder")}
+                    value={userName}
+                    onChange={(value: string) => setUserName(value)}
+                    placeholder={t("onboarding.step1Placeholder")}
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleNextFromName()}
+                    isLabelHidden
+                  />
+                  <p className="ob-sub2">{t("onboarding.step1Hint")}</p>
+                </div>
                 <div className="ob-actions">
                   <Button variant="ghost" label={t("onboarding.skip")} onClick={() => go(2)} />
                   <Button variant="primary" label={saving ? t("onboarding.saving") : t("onboarding.next")} onClick={handleNextFromName} isDisabled={saving} isLoading={saving} />
@@ -240,48 +202,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             )}
 
             {step === 2 && (
-              <div className="ob-body">
-                <h3>{t("onboarding.step2Title")}</h3>
-                <p className="ob-sub">{t("onboarding.step2Description")}</p>
-
-                <Selector
-                  label={t("onboarding.step2Provider")}
-                  value={selectedProvider}
-                  onChange={(v: string) => { setSelectedProvider(v); setDefaultModel(""); }}
-                  options={providers.map((p) => ({ value: p.id, label: `${p.name}${p.api_key_set ? " ✓" : ""}` }))}
-                />
-
-                <TextInput
-                  type="password"
-                  label={`${t("onboarding.step2ApiKey")} ${selectedProviderObj?.api_key_set ? `(${t("onboarding.step2ApiKeyHint")})` : ""}`}
-                  value={apiKey}
-                  onChange={(value: string) => setApiKey(value)}
-                  placeholder={selectedProviderObj?.api_key_set ? t("onboarding.step2ApiKeyNewPlaceholder") : t("onboarding.step2ApiKeyPlaceholder")}
-                  style={{ marginTop: 12 }}
-                />
-                <Button variant="secondary" label={t("onboarding.step2SaveKey")} onClick={handleSaveKey} isDisabled={saving || !apiKey.trim()} size="sm" />
-
-                <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center" }}>
-                  <label className="ob-label">{t("onboarding.step2DefaultModel")}</label>
-                  <Button variant="ghost" label={t("onboarding.step2Refresh")} onClick={refreshModels} size="sm" />
-                </div>
-                <Selector
-                  label={t("onboarding.step2DefaultModel")}
-                  value={defaultModel}
-                  onChange={(v: string) => setDefaultModel(v)}
-                  options={[{ value: "", label: t("onboarding.step2SelectModel") }, ...providerModels.map((m) => ({ value: m.id, label: m.name ?? m.id }))]}
-                  isLabelHidden
-                />
-                {providerModels.length === 0 && (
-                  <p className="ob-sub2">{t("onboarding.step2NoModels")}</p>
-                )}
-
+              <>
+                <ProviderStep onDefaultModelChange={setDefaultModel} />
                 <div className="ob-actions">
                   <Button variant="ghost" label={t("onboarding.back")} onClick={() => go(1)} />
                   <Button variant="ghost" label={t("onboarding.skip")} onClick={() => go(3)} />
-                  <Button variant="primary" label={saving ? "…" : t("onboarding.next")} onClick={handleNextFromProvider} isDisabled={saving} isLoading={saving} />
+                  <Button variant="primary" label={t("onboarding.next")} onClick={handleNextFromProvider} isDisabled={!defaultModel} />
                 </div>
-              </div>
+              </>
             )}
 
             {step === 3 && (
@@ -297,15 +225,20 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
             {step === 4 && (
               <div className="ob-body">
-                <h3>{t("onboarding.step4Title")}</h3>
-                <p className="ob-sub">{t("onboarding.step4Description")}</p>
-                <ul className="ob-bullets">
-                  <li>{t("onboarding.skillDocx")}</li>
-                  <li>{t("onboarding.skillXlsx")}</li>
-                  <li>{t("onboarding.skillPptx")}</li>
-                  <li>{t("onboarding.skillPdf")}</li>
-                  <li>{t("onboarding.skillCreate")}</li>
-                </ul>
+                <div className="ob-step-head">
+                  <div className="ob-step-head-text">
+                    <h3>{t("onboarding.step4Title")}</h3>
+                    <p className="ob-sub">{t("onboarding.step4Description")}</p>
+                  </div>
+                </div>
+                <div className="ob-skill-grid">
+                  {skills.map((s) => (
+                    <div key={s.text} className="ob-skill-tile">
+                      <span className="ob-skill-ic">{s.icon}</span>
+                      <span className="ob-skill-text">{s.text}</span>
+                    </div>
+                  ))}
+                </div>
                 <p className="ob-sub2">{t("onboarding.skillsSource")}</p>
 
                 <div className="ob-actions">
