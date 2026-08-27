@@ -362,6 +362,7 @@ Built on the shoulders of:
 - **[SymPy](https://www.sympy.org)** + **[mpmath](https://mpmath.org)** — the symbolic and arbitrary-precision engine behind the verification contour
 - **[Model Context Protocol](https://modelcontextprotocol.io)** — open standard by Anthropic for connecting AI models to external tools and data sources
 - **[Agent Skills](https://agentskills.io)** — the shared skill ecosystem the agent hooks into
+- **[Agent Plugins](https://agent-plugins.org/specification)** — open standard for packaging skills and MCP servers together into one installable unit; AgentChat is a conformant 1.0.0 client (see `AGENTS.md` for the implementation contour)
 - **[Astryx](https://astryx.atmeta.com/)** — Meta's design system; the interface is built end-to-end on its React components, theming, and chat-specific building blocks (composer, message list, tool-call groups)
 
 ## License
