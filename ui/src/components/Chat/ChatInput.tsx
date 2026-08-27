@@ -269,10 +269,13 @@ export function ChatInput({
 
   const handleChange = useCallback((v: string) => setValue(v), []);
 
-  /* ── large-text / image paste ─────────────── */
+  /* ── large-text paste ─────────────────────── */
+  // Image/file pastes never reach here: Astryx's ChatComposerInput intercepts
+  // any paste whose clipboardData carries files and routes it to `onFiles`
+  // below instead (see the `onFiles={processFiles}` prop on ChatComposerInput).
 
   const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLDivElement>, plainText: string): boolean | void => {
+    (_event: React.ClipboardEvent<HTMLDivElement>, plainText: string): boolean | void => {
       if (plainText.length > LARGE_TEXT_CHARS) {
         const fileName = `pasted_${Date.now()}.txt`;
         const file = new File([plainText], fileName, { type: "text/plain" });
@@ -281,31 +284,6 @@ export function ChatInput({
           type: "text/plain", content: null, dataUrl: null, uploading: false, error: null,
         }]);
         return true; // handled — don't insert the text
-      }
-      const items = event.clipboardData?.items;
-      if (items) {
-        let handled = false;
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (item?.type.startsWith("image/")) {
-            const blob = item.getAsFile();
-            if (!blob) continue;
-            const name = `pasted_${Date.now()}.png`;
-            const reader = new FileReader();
-            reader.onload = () => {
-              setPendingFiles((prev) => [...prev, {
-                id: nextFid(),
-                file: new File([blob], name, { type: blob.type }),
-                name, size: blob.size, type: blob.type,
-                content: null, dataUrl: reader.result as string,
-                uploading: false, error: null,
-              }]);
-            };
-            reader.readAsDataURL(blob);
-            handled = true;
-          }
-        }
-        if (handled) return true;
       }
       return false;
     },
@@ -734,6 +712,7 @@ export function ChatInput({
               triggers={[mentionTrigger]}
               onSubmit={() => { void handleSend(); }}
               onPaste={handlePaste}
+              onFiles={processFiles}
               onFocus={refreshMentions}
               pasteAsToken={false}
               hasHistory={false}
