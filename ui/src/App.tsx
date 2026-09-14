@@ -15,7 +15,7 @@ import { SettingsPanel, type NavTab } from "./components/Settings/SettingsPanel"
 import { LibraryPage } from "./components/LibraryPage";
 import { ProjectsView } from "./components/Projects/ProjectsView";
 import { UsageDashboardPage } from "./components/Usage/UsageDashboardPage";
-import { OnboardingWizard } from "./components/Onboarding/OnboardingWizard";
+import { EnvironmentSetup } from "./components/Onboarding/EnvironmentSetup";
 import { MobileConnect } from "./components/Mobile/MobileConnect";
 import { GlobalDropZone } from "./components/GlobalDropZone";
 import type { AttachmentInfo } from "./types/chat";
@@ -548,7 +548,7 @@ export function App() {
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <GlobalDropZone enabled={view === "chat"} />
       {onboardingDone === false && (
-        <OnboardingWizard onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
+        <EnvironmentSetup onComplete={() => { setOnboardingDone(true); fetchSettings(); }} />
       )}
       {backendDisconnected && (
         <MobileConnect

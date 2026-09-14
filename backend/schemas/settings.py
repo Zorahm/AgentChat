@@ -95,7 +95,7 @@ class SettingsData(BaseModel):
     default_model: str = "openai/gpt-4o"
     temperature: float = 0.7
     max_iterations: int = 50
-    user_name: str = ""
+    user_name: str = "AgentChat"
     theme: str = "system"
     # Play a chime when a model reply or an install finishes (only while the
     # window is unfocused/hidden). Opt-in — off by default.

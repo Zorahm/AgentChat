@@ -635,3 +635,153 @@
 .mc-connecting .ob-spin { color: var(--muted); }
 .mc-connecting-title { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0; }
 .mc-connecting-hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* ── Environment Setup (Single Screen with Spinner) ────────────────────────── */
+
+.ob-card--setup {
+  width: min(520px, 92vw);
+  padding: 36px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.ob-setup-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.ob-setup-mark {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 4px;
+}
+
+.ob-setup-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.ob-setup-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 400px;
+  line-height: 1.4;
+}
+
+.ob-setup-body {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.ob-setup-spinner-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+
+.ob-setup-spinner-wrap--success {
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.ob-setup-spinner-wrap--error {
+  background: color-mix(in srgb, var(--err) 15%, transparent);
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.ob-setup-status-box {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ob-setup-status-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ob-setup-status-detail {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  word-break: break-word;
+}
+
+.ob-setup-log-toggle {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ob-setup-log-toggle:hover {
+  text-decoration: underline;
+}
+
+.ob-setup-log {
+  width: 100%;
+  max-height: 140px;
+  overflow-y: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ob-setup-error-box {
+  width: 100%;
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+  border: 1px solid var(--err);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+}
+
+.ob-setup-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
+}
+
