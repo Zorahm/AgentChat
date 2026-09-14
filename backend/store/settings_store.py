@@ -177,7 +177,7 @@ class SettingsStore:
         self._default_model = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
         self._temperature = 0.7
         self._max_iterations = 50
-        self._user_name = ""
+        self._user_name = "AgentChat"
         self._theme = "system"
         self._notify_sound = False
         self._notify_sound_data: str | None = None

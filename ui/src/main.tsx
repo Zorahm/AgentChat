@@ -56,7 +56,7 @@ createRoot(document.getElementById("root")!).render(
         : window.location.search.includes("debug-images") ? <DebugImageHarness />
         : window.location.search.includes("debug-math") ? <DebugMathHarness />
         : window.location.search.includes("debug-toolstream") ? <DebugToolStreamHarness />
-        : window.location.search.includes("debug-onboarding") ? <DebugOnboardingHarness />
+        : (window.location.search.includes("debug-onboarding") || window.location.search.includes("debug-setup")) ? <DebugOnboardingHarness />
         : <App />}
     </ErrorBoundary>
   </StrictMode>
